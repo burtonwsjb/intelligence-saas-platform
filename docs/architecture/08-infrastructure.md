@@ -1,0 +1,98 @@
+# Infrastructure
+
+No cloud resources are created in Phase 00. No TCG Card Central infrastructure is used.
+
+## Target topology
+
+```text
+GitHub  burtonwsjb/intelligence-saas-platform
+   │
+   ├── apps/web     → Vercel staging / production
+   ├── apps/api     → Railway staging / production
+   └── apps/worker  → Railway staging / production
+
+Data plane (independent):
+   Neon Postgres (staging branch / prod)
+   Redis (Upstash or Railway)
+   Cloudflare R2
+   Resend
+   Stripe test / live
+```
+
+Local development does not require Vercel or Railway.
+
+## Planned services (later)
+
+| Service | Host | Notes |
+|---|---|---|
+| `web` | Vercel | Next.js |
+| `api` | Railway | Hono, `PORT` |
+| `worker` | Railway | BullMQ consumer |
+| `postgres` | Neon | RLS enabled |
+| `redis` | Upstash or Railway | Queue and rate limits |
+| `objects` | Cloudflare R2 | Exports and artifacts |
+
+## Planned variable names only
+
+- `DATABASE_URL`
+- `REDIS_URL`
+- `BETTER_AUTH_SECRET`
+- `BETTER_AUTH_URL`
+- `API_KEY_PEPPER`
+- `R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_BUCKET`
+- `RESEND_API_KEY`
+- `STRIPE_SECRET_KEY` (Phase 07+)
+- `STRIPE_WEBHOOK_SECRET` (Phase 07+)
+- `APP_URL`
+- `API_URL`
+
+Later, only if the TCG pack is implemented:
+
+- `TCC_API_BASE_URL`
+- `TCC_API_TOKEN` or HMAC secret
+
+Do not copy variables from any other product.
+
+## Domains
+
+Production hostname is TBD. Docs use `https://app.example.invalid` and `https://api.example.invalid` as placeholders. Do not buy or attach a domain in this phase.
+
+## CI
+
+When added:
+
+- install, typecheck, unit tests
+- no production deploy from pull requests
+- GitHub Actions preferred
+
+Not created in Phase 00.
+
+## Secrets
+
+- `.env` is local only and never committed
+- Vercel, Railway, Neon, and R2 hold cloud secrets
+- API keys are hashed before storage
+- Connector secrets use a `secret_ref`
+
+## Backups
+
+Neon point-in-time recovery on production when the project is created. Tenant export is a later feature.
+
+## Observability
+
+v1:
+
+- structured JSON logs
+- Vercel / Railway logs
+- `job_runs` rows
+- audit log
+- Sentry at first staging deploy
+
+## What Phase 01 may do locally
+
+- pnpm monorepo shell
+- Next.js chrome only
+- `.env.example` with names only
+- No Neon, Railway, Vercel, Stripe, Resend, or TCG Card Central projects
+
+Phase 01 may **not** create cloud resources.
