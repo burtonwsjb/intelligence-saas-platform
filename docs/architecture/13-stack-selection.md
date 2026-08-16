@@ -14,7 +14,9 @@ Selection criteria, in order of weight:
 8. Stripe billing, email, and CRM fit
 9. Future multi-industry expansion
 
-## Locked stack
+## Provisionally approved stack
+
+Not irrevocably locked. Do not implement in this phase. Revisit Neon + Better Auth vs Supabase in [28-neon-vs-supabase.md](./28-neon-vs-supabase.md) before Phase 02 cloud provisioning. Do not switch stacks in this corrective pass.
 
 | Layer | Choice | Independent reason |
 |---|---|---|
@@ -110,3 +112,4 @@ These may **not** change casually:
 - Dedicated worker
 - Stripe as billing
 - No TCG Card Central stack reuse
+- TCG as the first commercial vertical (kernel stays industry-independent)

@@ -1,69 +1,53 @@
-# Billing
+# Billing and API entitlements
 
-Stripe is **planned, not connected**. No Stripe account objects, products, webhooks, or SDKs are created in Phase 00.
+Stripe is **planned, not connected**. Prices are not finalized.
 
-## Commercial model
+## Model
 
-Subscription + metered usage.
+Subscription + usage-based API monetization. The tenant is the customer.
 
-The tenant is the customer. Users inside a tenant are not billed individually.
+Plan keys remain `free` · `starter` · `growth` · `scale` (names only).
 
-## Planned plans
+## Entitlements (eventual)
 
-| Plan | Intent | Included |
-|---|---|---|
-| `free` | Evaluation | 1 tenant, 1 API key, low ingest and decision caps |
-| `starter` | First paid | Higher caps, email support |
-| `growth` | Operator use | Multiple keys, more members, longer retention |
-| `scale` | First-party / high volume | Custom caps, priority support |
+A plan may gate:
 
-Exact prices are not locked in Phase 00. Plan keys are locked so implementation does not invent parallel catalogs.
+- API requests
+- API keys
+- team members
+- projects / workspaces
+- history depth
+- predictions
+- creator analytics
+- content generation
+- alerts
+- webhooks
+- exports
+- premium datasets
 
-## Meters
+Soft cap: `402` / `429` with a machine-readable code. Do not silently drop work.
 
-| Meter key | What it counts |
+## Meters (planned)
+
+| Meter key | Counts |
 |---|---|
-| `ingest.events` | Accepted source events |
-| `decisions.generated` | New Decision Records, excluding supersede copies if marked internal |
-| `api.reads` | Decision and entity read API calls |
+| `api.requests` | Commercial API calls |
+| `ingest.events` | Accepted ingest |
+| `predictions.issued` | Platform predictions |
+| `webhooks.delivered` | Successful deliveries |
+| `content.generated` | Approved generations |
+| `exports.bytes` | Export volume |
 
-Console page views are not billable in v1.
+Console page views are not billable.
 
 ## Stripe objects (later)
 
-When Phase 07 connects Stripe test mode:
+Customer, products, recurring + metered prices, Checkout, Portal, Billing Meters, standard subscription webhooks.
 
-- One Stripe Customer per tenant
-- One Stripe Product per plan
-- Recurring Price for the subscription
-- Metered Prices or Billing Meters for usage
-- Checkout for first subscribe
-- Customer Portal for plan and payment method
-- Webhooks: `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.paid`, `invoice.payment_failed`
+Store customer id, subscription id, plan key, status, period end. Never card PAN. Never TCC Stripe objects.
 
-Store only:
+Phase 04 implements **test** foundations. Live is Phase 23 with an explicit go-ahead.
 
-- `stripe_customer_id`
-- `stripe_subscription_id`
-- plan key and status
-- period end
+## Separation
 
-Do not store raw card numbers. Do not reuse TCG Card Central Stripe products, webhook endpoints, or customer IDs.
-
-## Entitlement checks
-
-`apps/api` checks `subscriptions.status` and plan caps before:
-
-- accepting ingest over the free/paid cap
-- creating additional API keys
-- extending retention
-
-Soft cap: return `402` or `429` with a machine-readable code. Do not silently drop events.
-
-## Separation from other products
-
-This platform bills **tenants** for decision intelligence. Users of TCG Card Central, or any other external system, are not entitled to this product by virtue of that other membership. If TCC later becomes a customer or reseller, it is a normal tenant (or a later reseller mapping), not a shared Stripe customer.
-
-## Phase 00 constraint
-
-No Stripe keys in this repo. No webhook handler code. No price IDs. Documentation only.
+TCC memberships do not entitle this product. TCC as customer is a normal tenant.

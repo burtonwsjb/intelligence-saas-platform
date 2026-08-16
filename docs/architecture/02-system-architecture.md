@@ -10,9 +10,9 @@ One monorepo. Three runtimes later. Independent data, auth, and billing.
 │  Next.js                 │     │  Hono + OpenAPI          │
 │  Vercel                  │     │  Railway                 │
 │                          │     │                          │
-│  /         marketing     │     │  /v1/events              │
-│  /app      tenant console│     │  /v1/decisions           │
-│  /admin    platform admin│     │  /v1/entities            │
+│  /         marketing     │     │  /v1 ingest + commercial │
+│  /app      TCG console   │     │  intelligence domains    │
+│  /admin    CRM · ops     │     │  customer webhooks       │
 │  /auth     Better Auth   │     │  /webhooks/stripe        │
 └────────────┬─────────────┘     └────────────┬─────────────┘
              │                                │
@@ -31,7 +31,7 @@ One monorepo. Three runtimes later. Independent data, auth, and billing.
    │ Railway      │  └────────────┘  └───────────┘
    └──────────────┘
 
-Later: Stripe · Resend · optional TCC external API
+Stripe · Resend · sources (YouTube, Reddit) · later TCC API
 ```
 
 ## Process responsibilities
@@ -48,21 +48,20 @@ Later: Stripe · Resend · optional TCC external API
 
 - Commercial, versioned JSON API
 - API key authentication, scopes, and Redis rate limits
-- Ingest acceptance and Decision Record reads
-- Stripe webhooks
+- Ingest plus commercial intelligence domains (printings, creators, indices, predictions, opportunities)
+- Customer webhooks (signed) and Stripe webhooks
 - Published OpenAPI document
-- Entitlement checks before expensive work
+- Entitlement and meter checks before expensive work
 
 ### `apps/worker`
 
 - Consume BullMQ jobs
-- Resolve or create entities
-- Compute or refresh features
-- Evaluate the active policy version
-- Write Decision Records
-- Expire stale decisions
-- Roll up usage for Stripe meters
-- Optional outbound calls to a reference-data API (later, TCG pack)
+- Ingest normalize, entity resolution, observations, signals
+- TCG market bars, indices, opportunity scores, predictions
+- Creator extraction, authority slices, outcomes
+- Content evidence jobs
+- Usage rollup and webhook delivery
+- Optional outbound TCC reference API (sandbox/production per roadmap)
 
 Phase 01 may run a single local process that only renders chrome. Production is three services.
 

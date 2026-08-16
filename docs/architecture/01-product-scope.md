@@ -2,102 +2,64 @@
 
 ## Problem
 
-Operational systems already collect the data needed to make better decisions: what to price, restock, allocate, investigate, or ignore. Those systems are built to **run one business**, not to sell durable, explainable decisions as a multi-tenant product.
+Collectible markets move on thin books, language-split printings, creator calls, and social hype that often does not match transactions. Operators need explainable intelligence — not a single score and not a blog farm.
 
-This platform exists so any tenant, in any industry, can send signals in and get Decision Records out — with isolation, billing, audit, and APIs that can be commercialized.
+The same kernel should later serve other industries. The first product that must be complete is **TCG market intelligence**.
 
-## Solution
+## Two layers
 
-An independent SaaS that:
+### Core platform (industry-independent)
 
-1. Signs up tenants and bills them on Stripe
-2. Accepts events through a versioned public API
-3. Computes tenant-scoped features
-4. Evaluates versioned policies
-5. Emits Decision Records with rationale
-6. Records accept / reject / action feedback
-7. Gives operators a console, CRM, and email loop
+- Multi-tenancy, auth, RBAC, RLS
+- Stripe billing, entitlements, API keys, metering
+- CRM and email
+- Versioned API platform and customer webhooks
+- Ingestion, entity resolution
+- Observations, signals, scoring, predictions
+- Content intelligence pipeline
 
-Industry systems are integrations, not the product kernel.
+### First commercial vertical
+
+- TCG / trading-card market intelligence
+- Canonical printing identity and first-class language
+- Market history and collectible-adapted analytics
+- YouTube / Reddit / social sources
+- Creator calls, contextual authority, trust states
+- Indices, alpha, opportunity, buy/hold/sell
+- Accountable predictions
+- TCG dashboard, commercial TCG API, SEO/content
+
+Generic HTTP ingest stays available. It is not the v1 commercial offering. **v1 success requires the TCG vertical**, not merely generic events.
 
 ## Users
 
 | Actor | Job |
 |---|---|
-| Tenant owner | Creates the workspace, manages billing, owns API keys |
-| Tenant admin | Manages members, connectors, and policies |
-| Analyst | Reviews decisions, tunes policies, inspects features |
-| Viewer | Read-only decision and metric access |
-| API customer | Machine principal that posts events and reads decisions |
-| Platform operator | Plans, CRM, abuse, pack catalog |
+| Tenant owner / admin | Billing, keys, members, webhooks |
+| Analyst | Reads TCG intelligence, creators, predictions |
+| API customer | Machines consuming commercial intelligence |
+| Platform operator | CRM, packs, creator trust, index specs, abuse |
+| Creator (data subject) | Appears in profiles because public calls were extracted |
 
-End users of an integrated system (for example TCG Card Central shoppers) are **not** users of this platform unless a later product decision exposes a consumer surface.
+TCG Card Central shoppers are not users of this platform unless they become tenants.
 
-## Jobs to be done
+## In scope
 
-- “Show me the next best action for this entity, with a reason.”
-- “Tell me which records need attention today.”
-- “Apply the same policy consistently.”
-- “Prove why a recommendation was made.”
-- “Learn whether operators accepted or ignored the recommendation.”
-- “Meter and bill API usage.”
-
-## In scope for the product
-
-- Multi-tenant auth, membership, and Postgres RLS
-- Commercial versioned APIs and hashed API keys
-- Connector registration and inbound event ingest
-- Entity resolution by `(tenant_id, entity_type, external_id)`
-- Feature computation and policy evaluation
-- Decision Records, suggested actions, and receipts
-- Tenant console
-- Platform admin, first-party CRM, and Resend email
-- Stripe subscriptions and metered usage
-- Audit log
-- Industry packs, with TCG as one optional later pack
-- Contract for TCG Card Central as a future external provider and/or API customer
+Everything in the core list and the TCG vertical list above, as architecture. Implementation follows the revised roadmap.
 
 ## Out of scope
 
-- TCG scanning, OCR, camera capture, marketplace, eBay listing, shipping
-- Collection folders or consumer portfolio UX
-- Writing into TCG Card Central’s database
-- Reusing TCG Card Central’s stack, hosting, auth, email, or Stripe catalog
-- Training or hosting foundation models in v1
-- Cross-tenant data pooling without an explicit, consented product
-- Custom tenant-owned SQL / warehouse access in v1
+- Building inside TCG Card Central
+- Reusing TCC stack, DB, auth, Stripe, or email
+- TCC scanner / marketplace / collection UX
+- Silently merging language books
+- Ranking creators on raw 4/4 accuracy
+- Social-only buy signals
+- Unvalidated embedding “models”
+- Final prices or final URL paths
 
-## Generic model, optional TCG mapping
+## Success (commercial v1)
 
-The platform does not create TCG-only tables. If a TCG tenant appears later, mapping is pack-level:
+A TCG tenant (or the first-party TCG surface) can use exact-printing market history, resolved creator calls, contextual authority, indices, opportunity scores with explainability, accountable predictions, and the commercial API/webhooks — on this platform’s own tenancy and billing.
 
-| External TCG concept | Platform type |
-|---|---|
-| Card / SKU | `entity_type = sku` |
-| Inventory / collection item | `entity_type = inventory_item` |
-| Listing | `entity_type = listing` |
-| Location / shop | `entity_type = location` |
-| Price snapshot | `metric_key = price.usd` |
-| Suggested list price | `decision_type = price.recommend` |
-| Buy / hold / sell | `decision_type = position.action` |
-| Restock priority | `decision_type = restock.priority` |
-| Identification or anomaly risk | `decision_type = risk.flag` |
-
-The same entity and decision types can be used by a non-TCG tenant.
-
-## Success criteria for v1
-
-A tenant can:
-
-1. Sign up and create one tenant
-2. Authenticate users and issue an API key
-3. Ingest events through the documented contract
-4. See entities and Decision Records in the console
-5. Accept or reject a decision
-6. Subscribe to a paid plan in Stripe test mode
-
-TCG Card Central is **not** required for v1 success.
-
-## Non-goals for Phase 00
-
-Phase 00 does not name a public brand, pick a production domain, create cloud resources, or implement any of the above.
+TCG Card Central production connection is still a later integration phase, not a substitute for the vertical.

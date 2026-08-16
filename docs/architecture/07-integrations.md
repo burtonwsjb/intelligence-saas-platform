@@ -1,117 +1,60 @@
 # Integrations
 
-All integrations are **contracts only** in Phase 00. Nothing is connected. TCG Card Central is not modified.
+Contracts only. Nothing is connected. TCG Card Central is not modified.
 
 ## Integration law
 
-1. This platform never opens another product’s database.
-2. This platform never deploys into another product’s host.
-3. This platform never reuses another product’s Stripe, auth, or email objects.
-4. External systems never write directly to this database.
-5. The only coupling is HTTPS + credentials + versioned contracts.
-6. TCG Card Central’s stack is irrelevant to this platform’s stack.
+1. Never open another product’s database
+2. Never deploy into another product’s host
+3. Never reuse another product’s Stripe, auth, or email
+4. External systems never write this database directly
+5. HTTPS + credentials + versioned contracts only
+6. TCC’s stack is irrelevant to this stack
+7. TCG **vertical** is first-party in this repo; TCC **product** is external
 
-## Connector model
+## Ingest connectors
 
-A connector is a tenant-owned instance of a platform `connector_definitions.type`.
-
-v1 types:
-
-| Type | Direction | Phase that may implement |
+| Type | Role | Phase |
 |---|---|---|
-| `generic_http` | inbound events from any API customer | 04 |
-| `tcg_card_central` | later; see below | 08 sandbox, 10 production |
+| `generic_http` | Reusable capability | 05 |
+| `market_feed` | Licensed/TCC/other price & sales | 08 |
+| `youtube` | Permitted metadata + derived extracts | 09 |
+| `reddit` | Permitted posts + derived social signals | 09 |
+| `tcg_card_central` | Sandbox 07; production 23 only with go-ahead | 07 / 23 |
 
-## Generic HTTP ingest
+## TCG Card Central
 
-Any customer posts a source event to `/v1/events` with an API key.
+Roles only:
 
-Required fields:
+1. External integration
+2. Potential authoritative identity/set/language/price/history **provider** via TCC’s future versioned API
+3. One future **customer** of this SaaS’s intelligence APIs
 
-- `event_type`
-- `occurred_at`
-- `idempotency_key`
-- `payload`
-- optional `entity` `{ type, external_id, display_name, attributes }`
-- optional `metrics[]`
+This platform still owns canonical printing identity ([17-tcg-canonical-identity.md](./17-tcg-canonical-identity.md)). TCC ids are `provider_refs`.
 
-This is enough to build and sell the product without TCG Card Central.
-
-## TCG Card Central — future external system only
-
-Inspected only to understand what data it already holds and what a future API would need. Not a foundation.
-
-TCG Card Central already holds, in its own product:
-
-- Card identity (game, set, collector number, language, finish)
-- Catalog metadata
-- Current prices and price history
-- Operational objects this platform must **not** clone as source of truth (scans, collections, listings, vendors)
-
-Those facts inform a **future TCC-owned versioned API**, which TCC would have to expose. This repo does not build that API and does not modify TCC.
-
-### Role 1 — external integration
-
-Signed HTTPS only. No shared schema, no shared runtime.
-
-### Role 2 — potential authoritative TCG reference provider
-
-If TCC exposes a secure versioned API, this platform’s TCG industry pack may call it as an outbound client to resolve:
-
-| Resource (conceptual) | Why a tenant might need it |
-|---|---|
-| Card identity | Canonical game / set / language / finish / identifier |
-| Set metadata | Set membership and print context |
-| Current price | Feature input for `price.recommend` |
-| Price history | Feature input for movement and risk |
-| Related market facts | Only what the published TCC API documents |
-
-This platform caches **derived features**, not a full shadow catalog, unless a later phase explicitly decides a bounded cache.
-
-Planned client shape (not implemented):
+Conceptual TCC provider routes (TCC would build; we do not implement them here):
 
 ```text
-GET {TCC_API_BASE}/v1/cards/{id}
-GET {TCC_API_BASE}/v1/cards?game=&set=&number=&language=
-GET {TCC_API_BASE}/v1/cards/{id}/price
-GET {TCC_API_BASE}/v1/cards/{id}/price-history
+GET /v1/cards/{id}
+GET /v1/cards?game=&set=&number=&language=
+GET /v1/cards/{id}/price
+GET /v1/cards/{id}/price-history
 ```
 
-Auth: bearer token or HMAC issued by TCC to this platform’s connector, stored in this platform’s secret store. Timeouts, retries, and circuit breaking live on the worker. No request-path fetch from `apps/web`.
+As customer, TCC would call this platform’s commercial `/v1` intelligence API with a normal tenant key.
 
-If TCC never ships that API, the TCG pack can still work from customer-supplied ingest events.
+Phase 07 uses fixtures or TCC **staging**. Production TCC is Phase 23 with an explicit command.
 
-### Role 3 — one future API customer
+## YouTube and Reddit
 
-TCC may become a tenant of this SaaS and call:
+See [20-source-intelligence.md](./20-source-intelligence.md). ToS and copyright reviewed before Phase 09. Prefer URL + structured extracts over raw transcripts.
 
-- `POST /v1/events`
-- `GET /v1/decisions`
-- `POST /v1/decisions/:id/receipts`
+## Stripe and Resend
 
-TCC would use a normal tenant API key. Displaying Decision Records inside TCC is a TCC change, not work in this repo.
+[06-billing.md](./06-billing.md), [14-crm-and-gtm.md](./14-crm-and-gtm.md).
 
-### Mapping rules
+## Forbidden
 
-- Foreign ids become `entities.external_id`
-- Foreign table names do not become platform table names
-- Send only decision-relevant fields
-- Do not clone TCC `card_intelligence` or operational tables
-
-### Sandbox before production
-
-Phase 08 uses fixtures or a TCC **staging** API if one exists. Phase 10 is the first production TCC connection and requires an explicit go-ahead.
-
-## Stripe
-
-See [06-billing.md](./06-billing.md). Connected in Phase 07 test mode only.
-
-## Email
-
-See [14-crm-and-gtm.md](./14-crm-and-gtm.md). Resend only.
-
-## Forbidden in early phases
-
-- Any TCG Card Central database or service-role access
-- TCGPlayer, eBay, or other market-source connections unless a later pack defines them
-- Embedding this app inside another product’s host
+- TCC database or service-role access
+- Embedding this app on TCC Railway
+- Using social APIs as a buy-signal oracle

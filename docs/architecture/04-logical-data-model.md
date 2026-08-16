@@ -218,7 +218,7 @@ Platform-owned. Not tenant Decision Record data.
 - `id`
 - `name`
 - `tenant_id` nullable unique
-- `status` (`lead` | `trial` | `customer` | `churned`)
+- `status` (`lead` | `trial` | `active` | `at_risk` | `past_due` | `cancelled` | `churned` | `reactivated` | `enterprise_prospect`)
 - `owner_user_id` nullable
 
 ### `crm_contacts`
@@ -264,14 +264,26 @@ Platform-owned. Not tenant Decision Record data.
 - `status`
 - `current_period_end`
 
+### `entitlements`
+
+- `tenant_id`
+- `flag` / `limit_key`
+- `value`
+- `source` (`plan` | `override`)
+
 ### `usage_events`
 
 - `id`
 - `tenant_id`
-- `meter_key` (`ingest.events`, `decisions.generated`, `api.reads`)
+- `meter_key` (`api.requests`, `ingest.events`, `predictions.issued`, `webhooks.delivered`, `content.generated`)
 - `quantity`
 - `occurred_at`
 - `stripe_reported_at` nullable
+
+### `webhook_endpoints` / `webhook_deliveries`
+
+- tenant endpoint URL, secret ref, subscribed event types, disabled_at
+- delivery: event_id, attempt, status, response_code, next_retry
 
 ### `job_runs`
 
@@ -302,6 +314,68 @@ Observability only. Redis + BullMQ is the broker.
 - `ip` nullable
 - `created_at`
 
+## Kernel intelligence (industry-independent)
+
+These are not TCG tables. TCG printings bind to `entities` / pack tables.
+
+### `source_documents`
+
+- `id`, `source_type`, `external_id`, `url`, `author_id`, `published_at`, `license_status`, `raw_ref`, `derived`, `data_quality`
+
+### `mentions` + `entity_resolutions`
+
+- raw text, context, status (`exact`|`high_confidence`|`probable`|`ambiguous`|`unresolved`), confidence, evidence, versions
+
+### `observations` / `signals` / `score_snapshots`
+
+- dated facts, derived conditions, component scores (`opportunity`,`risk`,`confidence`,`liquidity`) plus `recommendation`
+
+### `creators` / `creator_calls` / `creator_call_outcomes` / `creator_authority_slices` / `creator_trust_states`
+
+- calls immutable; outcomes and slices versioned; trust audited
+
+### `index_specs` / `index_constituents` / `index_levels`
+
+- point-in-time membership for survivorship-safe history
+
+### `predictions` / `prediction_outcomes`
+
+- horizons, ranges, versions; outcomes include alpha and calibration
+
+### `content_candidates` / `evidence_packages`
+
+- no generation without evidence
+
+### `market_bars_*` / `market_state_vectors`
+
+- partitioned time series; vectors for later similarity (not a model until validated)
+
+## TCG pack identity (not in the kernel)
+
+### `tcg_card_concepts`
+
+- `id`, `game`, `canonical_name`
+
+### `tcg_printings`
+
+- exact printing key: game, set_id, collector_number, language, variant, printing, finish, artwork_id, edition, parallel, rarity, foil_type, promo_status, region, release_date
+- `provider_refs` json (e.g. TCC id)
+- unique on normalized printing key
+
+### `tcg_sets` / `tcg_languages`
+
+- language catalog: `en`, `ja`, `zh-Hans` required; others extensible
+
+### `tcg_market_variants` / `tcg_graded_populations` / `tcg_slabbed_items`
+
+- market split and grade layers
+
+### `tcg_holdings` (tenant RLS)
+
+- printing, language, qty, cost basis, acquired_at — personalized intelligence only
+
+Do not store TCG market history on the concept. Do not merge language series by default.
+
 ## Relationships
 
 ```text
@@ -318,6 +392,9 @@ tenants 1──* usage_events
 crm_accounts 0..1──1 tenants
 crm_accounts 1──* crm_contacts
 crm_accounts 1──* crm_opportunities
+entities 1──* observations 1──* signals
+creators 1──* creator_calls 1──* creator_call_outcomes
+tcg_card_concepts 1──* tcg_printings 1──* market_bars
 ```
 
 ## Indexes that must exist later
@@ -333,7 +410,8 @@ crm_accounts 1──* crm_opportunities
 
 ## What is intentionally absent
 
-- TCG card, set, language, or price-history tables
-- Cloned operational tables from any external system
+- Cloned TCG Card Central operational tables (scans, collections, marketplace)
 - Production SQL
 - Seed data for real tenants
+- A single `cards.price` without language/printing
+- A single `creators.authority` as the only score

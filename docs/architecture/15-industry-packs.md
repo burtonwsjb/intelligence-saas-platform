@@ -1,54 +1,42 @@
-# Industry packs and multi-industry expansion
+# Industry packs: kernel vs first vertical
 
-The core platform is industry-agnostic. Vertical knowledge is added as a **pack**.
+The **shared kernel is not TCG-specific**.  
+**TCG is the first complete commercial vertical**, not an optional later experiment.
 
-A pack is configuration and code boundaries, not a second database.
+## Rule
 
-## Pack contents
-
-| Part | Examples |
+| Layer | TCG-specific? |
 |---|---|
-| Connector types | How an industry system sends events or exposes reference data |
-| Entity type hints | Suggested `entity_type` keys (`sku`, `listing`, `location`) |
-| Metric keys | Suggested measures (`price.usd`, `qty.on_hand`) |
-| Decision types | `price.recommend`, `restock.priority`, `risk.flag` |
-| Policy templates | Starting rules a tenant can clone |
-| Reference-data clients | Optional outbound clients to an industry authority |
+| Tenancy, auth, billing, CRM, email, API, webhooks, jobs | No |
+| Observation, signal, score, prediction, content, resolution, creator, index | No (generic types) |
+| Printing key, language books, collectible analytics, TCG dashboard | Yes (TCG pack) |
+| Generic HTTP ingest | No (reusable capability) |
 
-Core tables do not gain TCG columns, restaurant columns, or any other vertical columns.
+Core tables do not grow `pokemon_*` columns. TCG tables and feature catalogs live in the TCG pack and **bind** to kernel ids.
 
-## Packs in view
+## Packs
 
 | Pack | Status | Role |
 |---|---|---|
-| `generic` | v1 required | HTTP ingest, generic entities, generic decisions |
-| `tcg` | later | Optional. Uses TCG Card Central only as an external API provider/consumer |
-| future packs | unscheduled | Other industries when a tenant and contract exist |
+| `kernel` | Required | Platform + intelligence objects |
+| `tcg` | **First commercial vertical** | Complete TCG intelligence implementation |
+| `generic_http` | Supporting | Reusable ingest for any tenant |
+| future packs | After TCG proves the kernel | Other industries |
 
-v1 success does not require the TCG pack.
+v1 commercial success **requires** the TCG pack. Generic HTTP success is not sufficient.
 
-## TCG pack, when added
+## TCG Card Central vs TCG pack
 
-TCG Card Central is **not** the pack. It is one external system the TCG pack may talk to.
+TCG Card Central is an external system. The TCG pack is **this** product’s vertical.
 
-The TCG pack may:
+The pack may later:
 
-1. Map TCC’s future versioned API into generic entities and metrics
-2. Let a TCC tenant call this platform’s intelligence APIs
-3. Ship TCG-oriented policy templates
+1. Consume TCC’s versioned API as a reference/market provider
+2. Sell intelligence APIs to TCC as a customer
+3. Ingest YouTube/Reddit/other sources independently of TCC
 
-The TCG pack may not:
+The pack may not import TCC’s stack or database.
 
-- Import TCC’s application stack
-- Clone TCC tables into this database as the source of truth
-- Share auth, billing, or hosting with TCC
-- Make TCG identity a required concept for non-TCG tenants
+## Adding a later industry
 
-## Adding a new industry
-
-1. Define connector and decision types
-2. Add policy templates
-3. If a reference authority exists, add an outbound client behind the same secrets model
-4. Do not fork the core schema
-
-This is how the product expands without becoming a TCG company that later pretends to be a platform.
+Copy the TCG pattern: identity plugin, source bindings, feature catalog, dashboards — without forking tenancy, billing, or the observation/prediction kernel.

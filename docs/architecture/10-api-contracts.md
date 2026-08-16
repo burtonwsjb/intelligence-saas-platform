@@ -5,8 +5,9 @@ These are planned HTTP contracts. They are not implemented in Phase 00 and are n
 Served by `apps/api` (Hono).  
 Base path: `/v1`  
 Auth: `Authorization: Bearer <api_key>` unless noted  
-All JSON. All tenant-scoped.  
 OpenAPI 3.1 will be published at `/v1/openapi.json` when the API is implemented.
+
+Kernel ingest routes below remain. **Customer-facing intelligence products** are specified conceptually in [27-commercial-api-and-webhooks.md](./27-commercial-api-and-webhooks.md) (`cards`, `printings`, `sets`, `prices`, `market-history`, `signals`, `creators`, `creator-calls`, `indices`, `predictions`, `opportunities`, `content`). URLs are not finalized.
 
 ## Common error shape
 
@@ -126,6 +127,6 @@ v1 is additive. Breaking changes require `/v2`. Clients must send `idempotency_k
 ## Out of scope here
 
 - GraphQL
-- Public unauthenticated decision APIs
+- Public unauthenticated intelligence APIs
 - Implementing TCG Card Central’s own API
-- TCC-specific paths in v1 except a later optional connector webhook if HMAC is chosen over API-key ingest
+- Finalizing every commercial URL in Phase 00

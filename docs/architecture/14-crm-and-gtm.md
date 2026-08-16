@@ -1,59 +1,53 @@
 # CRM, email, and go-to-market
 
-A commercial multi-tenant SaaS needs its own revenue system. This is not inherited from TCG Card Central or any other product.
+First-class. Not inherited from TCG Card Central.
 
-Nothing here is implemented in Phase 00.
+## CRM account lifecycle
 
-## First-party CRM
-
-Platform operators sell and support **tenants**, not TCG shoppers.
-
-| Object | Meaning |
+| Status | Meaning |
 |---|---|
-| `crm_accounts` | Company or buyer. May exist before a tenant is created. Links to `tenants.id` when they convert. |
-| `crm_contacts` | People. May later match a user. |
-| `crm_opportunities` | Pipeline: lead → trial → paid → expansion → churn risk |
-| `crm_activities` | Notes, calls, emails, support touches |
-| `crm_segments` | Manual or rule-based groups for outreach |
+| `lead` | Not signed up |
+| `trial` | In trial |
+| `active` | Paying or entitled |
+| `at_risk` | Usage drop, complaints, cancel intent |
+| `past_due` | Failed payment |
+| `cancelled` | Ended by customer |
+| `churned` | Lapsed after cancel / unpaid |
+| `reactivated` | Returned |
+| `enterprise_prospect` | Sales-led |
 
-v1 CRM lives in the platform admin. It is intentionally small. It is not Salesforce.
+`crm_accounts` link optionally to `tenants`. Contacts, opportunities, and activities form a **unified timeline** (`crm_activities` plus billing and usage events).
 
-Later, a connector may sync accounts and opportunities to Attio or HubSpot. The first-party tables remain the system of record for tenant lifecycle that billing already knows about.
+v1 is first-party. Later optional Attio/HubSpot sync. Not Salesforce.
 
-## Relationship to tenants
+## Email (Resend)
 
-```text
-crm_account ──optional──► tenant ──► Stripe customer
-     │
-     └── crm_contacts
-```
+### Transactional (no marketing unsubscribe)
 
-A lead can be worked before signup. Signup may create both a tenant and an account. Churn updates the opportunity and the tenant status, but does not delete Decision Records until retention rules say so.
+- verification
+- password reset
+- invitation
+- security
+- billing
+- usage warnings
+- system alerts
 
-## Email
+### Lifecycle / marketing (suppression + unsubscribe)
 
-**Provider:** Resend.
+- onboarding
+- trial conversion
+- education
+- upgrade
+- usage summaries
+- inactivity
+- newsletters
+- product announcements
+- win-back
 
-| Mail type | Trigger |
-|---|---|
-| Auth magic link / verification | Better Auth |
-| Member invite | Admin adds a member |
-| Billing receipt / failed payment | Stripe → this app → Resend, or Stripe-hosted email |
-| Trial / usage approaching cap | Entitlement worker |
-| Decision digest | Optional tenant setting, later |
-| Operator CRM sequences | Platform admin, later |
-
-Domains and templates are owned by this product. Do not use another product’s email host.
-
-Unsubscribe and suppression apply to marketing and digest mail only. Auth and billing mail are transactional.
-
-## Support surface
-
-v1: email to the operator plus tenant status in admin.  
-Later: help desk if volume requires it. Not in Phase 00–07.
+Do not mix lists. Auth/billing mail must still send when a contact is unsubscribed from marketing.
 
 ## What is not CRM
 
-- TCG Card Central users, vendors, or memberships
-- Consumer collector contacts
-- Shared Stripe customers with any other product
+- TCC shoppers or vendors
+- Shared Stripe customers with other products
+- Public creator profiles (those are intelligence objects, not sales leads — unless a creator becomes a tenant)

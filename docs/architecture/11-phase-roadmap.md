@@ -2,172 +2,207 @@
 
 Do not start a later phase until the user explicitly says to begin that phase.
 
+TCG is the first commercial vertical. Generic platform work comes first only as **foundation**, then TCG is implemented completely. Generic HTTP ingest must not postpone TCG indefinitely.
+
 ## Phase 00 — Architecture
 
-Status: **complete (revised for independent stack)**
+Status: **corrective pass complete (documentation only)**
 
-Allowed: documentation in this repository  
-Forbidden: app scaffold, migrations, cloud resources, Stripe, TCG Card Central, production APIs
+Allowed: documentation  
+Forbidden: scaffold, migrations, cloud, Stripe, TCC, production APIs
 
-## Phase 01 — Local application shell
+## Phase 01 — Local monorepo / application shell
 
-Allowed:
+- pnpm + Turborepo
+- `apps/web` Next.js chrome
+- Stub `apps/api` and `apps/worker`
+- `.env.example` names only
+- No cloud, no Stripe, no TCC, no real intelligence APIs
 
-- pnpm + Turborepo monorepo
-- `apps/web` Next.js chrome (marketing + empty console)
-- Placeholder `apps/api` and `apps/worker` package stubs without real integrations
-- `.env.example` with names only
-- Unit test runner
+Exit: local web chrome runs.
 
-Forbidden:
+## Phase 02 — Database / auth / tenant foundation
 
-- Neon, Vercel, Railway, Redis cloud, R2, Resend projects
-- Stripe
-- TCG Card Central
-- Real API implementations beyond a stub health route
-- Production migrations
+- Local Postgres (Docker) or a **new** cloud DB only after [28-neon-vs-supabase.md](./28-neon-vs-supabase.md) is decided
+- Better Auth (or chosen auth), tenants, memberships
+- No TCC, no Stripe live, no TCG market ingest yet
 
-Exit: local web chrome runs. No cloud resources exist.
+Exit: sign-in creates one tenant.
 
-## Phase 02 — Auth and tenant foundation
+## Phase 03 — RLS, RBAC, and security foundation
 
-Allowed:
+- RLS on tenant tables
+- Roles, audit log
+- Isolation tests
 
-- Local Postgres (Docker) or a **new** Neon dev project
-- Better Auth magic link
-- `users` / `profiles` / `tenants` / `memberships`
-- Identity migrations only
+Exit: tenant hop tests fail closed.
 
-Forbidden:
+## Phase 04 — Stripe / entitlements / API key foundations
 
-- TCG Card Central
-- Stripe
-- Production hosts
-- Ingest/decision APIs
+- Stripe **test** mode
+- Plan entitlements catalog (no final prices)
+- Hashed API keys
+- Meter stubs
 
-Exit: a user can sign in and own one tenant locally.
+Exit: test subscribe + key issue. (Moved earlier than the old Phase 07 so API monetization exists before TCG data scale.)
 
-## Phase 03 — Data model and RLS
+## Phase 05 — Queue, worker, and ingestion foundations
 
-Allowed:
+- Redis + BullMQ
+- Generic `/v1/events` ingest
+- `source_documents` / jobs
+- Generic HTTP remains available here as a capability
 
-- Migrations for the logical model
-- RLS policies
-- Drizzle repositories
+Exit: an event becomes a stored observation job.
 
-Forbidden:
+## Phase 06 — Core observation / signal / entity model
 
-- Production hosts
-- Stripe live
-- TCG Card Central
+- Kernel entities, observations, signals
+- Resolution **framework** (statuses, evidence) without TCG printing keys yet
+- Score snapshot shape
 
-Exit: tenant isolation is proven with tests.
+Exit: fixture events produce observations and signals.
 
-## Phase 04 — Commercial ingest API and jobs
+## Phase 07 — TCG canonical identity and TCG Card Central sandbox contract
 
-Allowed:
+- Printing / concept / variant / grade layers
+- First-class language codes
+- Provider alias map
+- TCC **sandbox** contract only (fixtures or TCC staging API if it exists)
+- Do not modify the TCC repo
 
-- Hono `/v1/events`
-- API keys
-- Local Redis + BullMQ worker
-- Entity upsert from events
+Exit: exact printing keys exist; sandbox mapping tests pass.
 
-Forbidden:
+## Phase 08 — TCG market-history ingestion
 
-- TCG Card Central connector
-- Stripe
+- Price, sales, volume, listings, spread, liquidity series
+- Daily bars, quality flags
+- No silent cross-language merge
 
-Exit: generic HTTP ingest creates entities.
+Exit: a printing has a durable history.
 
-## Phase 05 — Decision engine v1
+## Phase 09 — YouTube / Reddit / source ingestion
 
-Allowed:
+- Source documents, lawful extracts
+- Mentions without silent printing binds
 
-- Deterministic policy interpreter
-- Feature snapshots
-- Decision Records
+Exit: sources land as documents + mention spans.
 
-Forbidden:
+## Phase 10 — Entity resolution
 
-- LLM decisioning
-- TCG Card Central
-- Stripe live
+- TCG resolver plugin
+- exact / high_confidence / probable / ambiguous / unresolved
+- Persist evidence
 
-Exit: a fixture event produces a Decision Record.
+Exit: “Greninja 214” vs “Japanese Greninja” do not collapse.
 
-## Phase 06 — Tenant console and operator CRM
+## Phase 11 — Creator call extraction
 
-Allowed:
+- Immutable calls
+- Extraction + resolution confidence
+- Price and market snapshot at call
 
-- Decisions, entities, members, API keys, usage views
-- Accept/reject receipts
-- First-party CRM screens for platform admin
+Exit: a fixture video/post becomes a call row.
 
-Forbidden:
+## Phase 12 — Creator authority and outcome tracking
 
-- TCG Card Central UI embedding
-- Stripe live
+- Contextual slices
+- Bayesian / Wilson sample-size handling
+- Trust states
+- Horizon outcomes + alpha
 
-Exit: an operator can review a decision; an admin can see a CRM account.
+Exit: 4/4 does not outrank 730/1000 on raw rate.
 
-## Phase 07 — Stripe test mode and Resend
+## Phase 13 — Market analytics and indices
 
-Allowed:
+- Collectible-adapted analytics
+- Generalized index spec, survivorship-safe history
+- Benchmark selection
 
-- Stripe test keys
-- Checkout, portal, webhooks
-- Entitlement caps
-- Resend transactional mail
+Exit: an index reconstructs historically.
 
-Forbidden:
+## Phase 14 — Opportunity scoring
 
-- Stripe live
-- TCG Card Central
+- Separate opportunity / risk / confidence / liquidity / recommendation
+- Explainability payloads
+- Provisional weights, versioned
 
-Exit: a tenant can subscribe in test mode.
+Exit: a printing emits an explained recommendation or `insufficient_data`.
 
-## Phase 08 — TCG Card Central sandbox contract
+## Phase 15 — Prediction engine and accountability
 
-Allowed:
+- Horizons 7/30/90/180/365
+- Ranges, not false precision
+- Immutable issues + later outcomes
 
-- Fixtures for TCC as API customer
-- Optional client against a TCC **staging** versioned API if it exists
-- Mapping tests in the TCG pack
+Exit: a prediction can be scored after a fixture horizon.
 
-Forbidden:
+## Phase 16 — Customer API / webhooks / usage metering
 
-- TCC production database
-- TCC production writes
-- Any shared stack or hosting
-- Modifying the TCG Card Central repository
+- Commercial domains (cards, printings, creators, indices, …)
+- Signed webhooks, delivery logs
+- Stripe meters wired to real usage
 
-Exit: sandbox events or fixture provider data produce decisions.
+Exit: a test key reads an opportunity and receives a signed webhook.
 
-## Phase 09 — Staging harden and first controlled deploy
+## Phase 17 — CRM / email / billing completion
 
-Allowed:
+- Full CRM lifecycle states and activity timeline
+- Transactional vs lifecycle mail
+- Entitlement polish
 
-- Vercel staging for web
-- Railway staging for API and worker
-- Neon staging
-- Redis, R2, Resend, Stripe test
+Exit: trial → active → at-risk paths exist in test.
 
-Forbidden:
+## Phase 18 — TCG customer dashboard
 
-- TCC production connector
-- Hosting this product on TCC infrastructure
+- Printings, history, creators, indices, opportunities, predictions
+- Explainability UI
 
-Exit: staging URLs run this product independently.
+Exit: an analyst can use the TCG product in the browser.
 
-## Phase 10 — TCG Card Central production integration
+## Phase 19 — Content / SEO intelligence
 
-Allowed only after an explicit user command.
+- Evidence packages, validation, approval
+- Canonical URL rules, thin-page blockers
 
-- TCC production as API customer and/or reference-data provider
-- Still no shared database or stack
+Exit: one evidence-backed card analysis can be approved.
 
-Forbidden until then: any production TCC connection.
+## Phase 20 — Admin platform
+
+- Creator trust, index specs, source health, break-glass audit
+
+Exit: operators can exclude a creator without deleting history.
+
+## Phase 21 — Staging / security / load testing
+
+- Vercel + Railway + Neon staging
+- RLS/security review, load on ingest and bars
+
+Exit: staging is independently hosted (not on TCC infra).
+
+## Phase 22 — Controlled beta
+
+- Invited TCG tenants
+- Stripe test or limited live per explicit go-ahead
+
+Exit: beta checklist signed off.
+
+## Phase 23 — Production
+
+- Production hosts and Stripe live
+- TCC **production** integration only with an explicit command
+
+Exit: production TCG intelligence SaaS is live on this stack.
+
+## Sequencing notes
+
+- Stripe/keys (04) sit before heavy TCG ingest so entitlements exist when data gets expensive
+- Identity (07) before market history (08) and resolution (10)
+- Sources (09) before resolution (10) and calls (11)
+- Accountability (15) before selling predictions on the API (16)
+- Dashboard (18) after the intelligence objects exist
+- CRM completion (17) after API metering so usage warnings are real; CRM **foundation** still starts in 02/04
 
 ## Stop rule
 
-If a later prompt is ambiguous, do not continue to the next phase. Ask or stop.
+If a prompt is ambiguous, do not advance a phase. Ask or stop.

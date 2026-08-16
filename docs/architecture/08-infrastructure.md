@@ -92,7 +92,8 @@ v1:
 
 - pnpm monorepo shell
 - Next.js chrome only
+- Stub api/worker packages
 - `.env.example` with names only
-- No Neon, Railway, Vercel, Stripe, Resend, or TCG Card Central projects
+- No Neon, Railway, Vercel, Stripe, Resend, Redis cloud, R2, or TCG Card Central projects
 
-Phase 01 may **not** create cloud resources.
+Phase 01 may **not** create cloud resources or implement TCG intelligence.

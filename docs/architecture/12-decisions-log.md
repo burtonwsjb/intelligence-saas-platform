@@ -1,53 +1,51 @@
 # Architecture decisions
 
-Locked in Phase 00. Change only with an explicit new decision, not during implementation.
+Change only with an explicit new decision.
 
 | ID | Decision | Choice | Why |
 |---|---|---|---|
-| D01 | Product type | Independent commercial multi-tenant decision intelligence SaaS | Greenfield product, not a module of another app |
-| D02 | TCG Card Central | External integration only: future provider API and/or API customer | Not a stack, database, or design constraint |
-| D03 | Tenancy | Shared schema + `tenant_id` + Postgres RLS | Enforceable isolation without per-tenant databases |
-| D04 | Language | TypeScript | Shared contracts across web, API, and worker |
-| D05 | Repo shape | pnpm + Turborepo; `web` / `api` / `worker` | API commercialization and intelligence jobs are first-class |
-| D06 | Console | Next.js App Router | Commercial SaaS UI standard |
-| D07 | Public API | Hono + Zod OpenAPI | Versioned, documented, always-on API product |
-| D08 | Worker | BullMQ + Redis | Intelligence workloads, retries, rate limits |
-| D09 | Database | Neon Postgres + Drizzle | Independent Postgres, branching, RLS, write-path fit |
-| D10 | Auth | Better Auth organizations | B2B tenants without inheriting another product’s auth |
-| D11 | Machine auth | Hashed API keys | Commercial API customers |
-| D12 | Objects | Cloudflare R2 | Cheap artifacts |
-| D13 | Email | Resend | Transactional and GTM mail owned by this product |
-| D14 | CRM | First-party objects, later optional sync | Commercial GTM without Salesforce in v1 |
-| D15 | Billing | Stripe subscriptions + meters | Tenant is the customer |
-| D16 | Hosting | Vercel (web) + Railway (api, worker) | Fit each runtime; no shared host with other products |
-| D17 | Decision engine v1 | Deterministic policies, not LLM | Explainable, cheaper, safer |
-| D18 | Source of truth | External systems keep operational data; this platform keeps events, features, decisions | Avoid cloning foreign catalogs |
-| D19 | Industry expansion | Packs, not core-schema forks | Multi-industry without becoming a TCG kernel |
-| D20 | Cross-tenant learning | Forbidden in v1 | Isolation and consent |
+| D01 | Product type | Independent commercial multi-tenant decision intelligence SaaS | Greenfield, not a module of another app |
+| D02 | TCG Card Central | External provider API and/or API customer only | Not a stack or database |
+| D03 | Tenancy | Shared schema + `tenant_id` + Postgres RLS | Isolation without DB-per-tenant |
+| D04 | First commercial vertical | TCG market intelligence | Proves the kernel; not optional |
+| D05 | Kernel | Industry-independent observations/signals/scores/predictions/content | Later industries must not require a rewrite |
+| D06 | Generic HTTP ingest | Supporting capability, not the v1 product | Reusable, not the commercial wedge |
+| D07 | Language / repo | TypeScript, pnpm, Turborepo, web/api/worker | **Provisionally approved** |
+| D08 | Console | Next.js App Router | **Provisional** |
+| D09 | Public API | Hono + OpenAPI + commercial domains | Intelligence products, not only /events |
+| D10 | Worker | BullMQ + Redis | Intelligence jobs |
+| D11 | Database / auth | Neon + Drizzle + Better Auth | **Provisional**; compare Supabase before Phase 02 cloud |
+| D12 | Objects / email / billing | R2, Resend, Stripe | Independent GTM |
+| D13 | Hosting | Vercel + Railway | **Provisional** |
+| D14 | TCG identity | Concept / printing / variant / inventory / grade; language in the key | Name+number is forbidden |
+| D15 | Cross-language books | Separate unless an explicit cross-language job | EN/JA/ZH are different markets |
+| D16 | Resolution | Persisted statuses; never silent ambiguous binds | Safety |
+| D17 | Creator authority | Contextual slices + shrinkage; trust states | Not one number; not 4/4 > 730/1000 |
+| D18 | Sample-size method | Hierarchical Bayesian shrinkage + Wilson/credible intervals | Defensible ranking |
+| D19 | Alpha | Vs language/era/set/tier benchmark | Do not reward beta as skill |
+| D20 | Opportunity | Separate opportunity/risk/confidence/liquidity/recommendation | Explainable |
+| D21 | Predictions | Horizons + ranges + immutable accountability | No silent deletes |
+| D22 | Content | Evidence package before generation | No AI spam |
+| D23 | Webhooks | Signed, retried, logged, disable-on-fail | API product |
+| D24 | Cross-tenant learning | Forbidden unless later consented | Isolation |
+| D25 | Stack lock | Provisional until Phase 02 vendor gate | Review instruction |
 
-## Superseded Phase 00 decisions
+## Void
 
-The first Phase 00 pass locked TanStack Start, Supabase, and a TCC-similar stack. That is **void**. Those choices were constraints from TCG Card Central and are not authorized.
+- TanStack Start / TCC-similar stack as foundation
+- “TCG is an optional later pack”
+- “v1 success does not require TCG”
+- Generic `/events`+`/decisions` as the only customer API
+- Irrevocable Neon lock without the Phase 02 comparison
 
-## Rejected alternatives
+## Open questions
 
-| Alternative | Rejected because |
-|---|---|
-| Build inside TCG Card Central | Cannot sell or isolate an independent SaaS |
-| Reuse TCC stack (TanStack Start, TCC Supabase, TCC Railway, Lovable) | Explicitly forbidden; wrong foundation |
-| Share any TCC database or Stripe catalog | Security and product coupling |
-| Next.js-only public API | Weak API product, request limits |
-| NestJS | Heavier than needed for a founding team |
-| Database-per-tenant | Ops cost too high for v1 |
-| LLM-first engine | Cost, opacity, prompt-injection |
-| Direct SQL access to TCC | Breaks independence |
-
-## Open items (not blockers for Phase 01)
-
-- Public brand name
-- Production domains
-- Exact plan prices
+- Public brand and domains
+- Exact prices (not to be finalized in Phase 00)
+- Final commercial URL paths
+- Whether TCC ships a versioned reference API, and when
 - Redis vendor
-- Whether TCC will ship a versioned reference API, and when
-- Whether TCC will display Decision Records in its own UI (TCC’s decision, not this repo)
-- CRM sync target later
+- Neon vs Supabase at Phase 02 gate
+- Licensed market-data sources besides TCC
+- YouTube/Reddit ToS and transcript licensing details (reviewed before Phase 09)
+- CRM sync target (Attio vs HubSpot) later

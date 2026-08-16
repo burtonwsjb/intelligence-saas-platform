@@ -2,41 +2,37 @@
 
 Independent commercial multi-tenant decision intelligence SaaS.
 
-This repository is a greenfield product. It does not use TCG Card Central’s stack, database, auth, hosting, email, or Stripe catalog.
+**Core kernel** is industry-independent.  
+**First commercial vertical** is TCG / trading-card market intelligence.
 
-TCG Card Central is only a future external integration: a potential TCG reference-data API provider, and one possible customer of this platform’s intelligence APIs.
+TCG Card Central is only a future external integration (optional reference-data provider and/or API customer). This repo does not use TCC’s stack, database, auth, hosting, email, or Stripe catalog.
 
 ## Current phase
 
-**Phase 00 in progress — documentation only.**
+**Phase 00 — PASS WITH CHANGES (corrective documentation).**
 
 Do not begin Phase 01 until explicitly instructed.
 
-## Planned stack (not provisioned)
+## Provisional stack (not implemented)
 
-- Next.js console on Vercel
-- Hono commercial API + BullMQ worker on Railway
-- Neon Postgres, Drizzle, Better Auth, Redis, Cloudflare R2, Resend, Stripe
+TypeScript, pnpm/Turborepo, Next.js, Hono, BullMQ, PostgreSQL/Neon, Drizzle, Better Auth, Redis, R2, Resend, Stripe, Vercel, Railway.
+
+Neon vs Supabase is compared in docs and decided before Phase 02 cloud provisioning.
 
 ## Documentation
 
 - [Phase 00 result](docs/PHASE_00_RESULT.md)
-- [Architecture overview](docs/architecture/00-overview.md)
-- [Stack selection](docs/architecture/13-stack-selection.md)
-- [Product scope](docs/architecture/01-product-scope.md)
-- [System architecture](docs/architecture/02-system-architecture.md)
-- [Integrations](docs/architecture/07-integrations.md)
-- [Phase roadmap](docs/architecture/11-phase-roadmap.md)
-- [Decisions log](docs/architecture/12-decisions-log.md)
+- [Overview](docs/architecture/00-overview.md)
+- [Roadmap (phases 00–23)](docs/architecture/11-phase-roadmap.md)
+- [TCG identity](docs/architecture/17-tcg-canonical-identity.md)
+- [TCG market intelligence](docs/architecture/18-tcg-market-intelligence.md)
+- [Creator intelligence](docs/architecture/21-creator-intelligence.md)
+- [Commercial API and webhooks](docs/architecture/27-commercial-api-and-webhooks.md)
 
 ## Status
 
 | Work | Status |
 |---|---|
-| Architecture docs | In progress (Phase 00) |
+| Architecture docs | Corrective Phase 00 complete |
 | Application scaffold | Not started |
-| Neon / Vercel / Railway / Redis / R2 | Not created |
-| Stripe | Not connected |
-| Resend | Not connected |
-| TCG Card Central | Not connected, not modified |
-| Production APIs | Not created |
+| Cloud / Stripe / TCC | Not created, not connected, not modified |
