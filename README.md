@@ -9,11 +9,20 @@ TCG Card Central is only a future external integration (optional reference-data 
 
 ## Current phase
 
-**Phase 00 — PASS WITH CHANGES (corrective documentation).**
+**Phase 01 complete.** Local monorepo/application shell only.
 
-Do not begin Phase 01 until explicitly instructed.
+Do not begin Phase 02 until explicitly instructed.
 
-## Provisional stack (not implemented)
+## Local commands
+
+See [docs/PHASE_01.md](docs/PHASE_01.md).
+
+```bash
+pnpm install
+pnpm dev:web
+pnpm dev:api
+pnpm dev:worker
+```
 
 TypeScript, pnpm/Turborepo, Next.js, Hono, BullMQ, PostgreSQL/Neon, Drizzle, Better Auth, Redis, R2, Resend, Stripe, Vercel, Railway.
 
@@ -33,6 +42,6 @@ Neon vs Supabase is compared in docs and decided before Phase 02 cloud provision
 
 | Work | Status |
 |---|---|
-| Architecture docs | Corrective Phase 00 complete |
-| Application scaffold | Not started |
+| Architecture docs | Phase 00 complete |
+| Application shell | Phase 01 complete (local only) |
 | Cloud / Stripe / TCC | Not created, not connected, not modified |

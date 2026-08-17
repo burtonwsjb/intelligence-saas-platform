@@ -1,0 +1,59 @@
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: Segoe UI, system-ui, sans-serif;
+  color: #111;
+  background: #f6f6f4;
+  line-height: 1.5;
+}
+
+a {
+  color: inherit;
+}
+
+.shell-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid #ddd;
+  background: #fff;
+}
+
+.shell-brand {
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.shell-nav {
+  display: flex;
+  gap: 1rem;
+}
+
+.shell-nav a {
+  text-decoration: none;
+}
+
+.shell-nav a:hover {
+  text-decoration: underline;
+}
+
+.shell-main {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 4rem;
+}
+
+.shell-main h1 {
+  font-size: 1.5rem;
+  font-weight: 650;
+}
+
+.muted {
+  color: #555;
+}

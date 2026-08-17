@@ -13,6 +13,10 @@ Forbidden: scaffold, migrations, cloud, Stripe, TCC, production APIs
 
 ## Phase 01 — Local monorepo / application shell
 
+Status: **complete**
+
+See [PHASE_01.md](../PHASE_01.md) for commands and layout.
+
 - pnpm + Turborepo
 - `apps/web` Next.js chrome
 - Stub `apps/api` and `apps/worker`

@@ -1,0 +1,25 @@
+{
+  "name": "intelligence-saas-platform",
+  "private": true,
+  "packageManager": "pnpm@11.22.0",
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "scripts": {
+    "dev": "turbo dev",
+    "dev:web": "turbo dev --filter=@isp/web",
+    "dev:api": "turbo dev --filter=@isp/api",
+    "dev:worker": "turbo dev --filter=@isp/worker",
+    "build": "turbo build",
+    "typecheck": "turbo typecheck",
+    "lint": "turbo lint",
+    "test": "turbo test",
+    "start:web": "pnpm --filter @isp/web start",
+    "start:api": "pnpm --filter @isp/api start",
+    "start:worker": "pnpm --filter @isp/worker start"
+  },
+  "devDependencies": {
+    "turbo": "^2.10.10",
+    "typescript": "^5.9.2"
+  }
+}
