@@ -1,11 +1,14 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { HeaderNav } from "@/components/HeaderNav";
 import "./globals.css";
+
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Intelligence Platform",
-  description: "Standalone decision intelligence SaaS — Phase 01 shell",
+  description: "Standalone decision intelligence SaaS",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
@@ -16,12 +19,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <Link className="shell-brand" href="/">
             Intelligence Platform
           </Link>
-          <nav className="shell-nav" aria-label="Primary">
-            <Link href="/login">Log in</Link>
-            <Link href="/signup">Sign up</Link>
-            <Link href="/app">App</Link>
-            <Link href="/admin">Admin</Link>
-          </nav>
+          <HeaderNav />
         </header>
         <main className="shell-main">{children}</main>
       </body>

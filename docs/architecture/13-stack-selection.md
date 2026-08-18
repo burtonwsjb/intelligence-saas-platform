@@ -16,7 +16,7 @@ Selection criteria, in order of weight:
 
 ## Provisionally approved stack
 
-Not irrevocably locked. Do not implement in this phase. Revisit Neon + Better Auth vs Supabase in [28-neon-vs-supabase.md](./28-neon-vs-supabase.md) before Phase 02 cloud provisioning. Do not switch stacks in this corrective pass.
+Not irrevocably locked for hosting, email, or billing. **Phase 02 locked Neon + Drizzle + Better Auth + RLS** for database and authentication. See [28-neon-vs-supabase.md](./28-neon-vs-supabase.md) and [12-decisions-log.md](./12-decisions-log.md).
 
 | Layer | Choice | Independent reason |
 |---|---|---|

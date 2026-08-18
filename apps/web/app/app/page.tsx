@@ -1,10 +1,18 @@
-export default function AppPage() {
+import { requirePageOrganization } from "@/lib/session";
+
+export const dynamic = "force-dynamic";
+
+export default async function AppPage() {
+  const { session, organizationId } = await requirePageOrganization();
+
   return (
     <>
-      <h1>Customer console</h1>
+      <h1>Customer application</h1>
+      <p>Signed in as {session.user.email}.</p>
+      <p>Active tenant (server-resolved): {organizationId}</p>
       <p className="muted">
-        Placeholder. The SaaS console, TCG dashboards, and customer features are
-        not implemented in Phase 01.
+        Dashboard features land in later phases. This page only proves the
+        authenticated tenant session.
       </p>
     </>
   );

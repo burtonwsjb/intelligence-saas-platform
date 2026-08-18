@@ -1,0 +1,19 @@
+# Disposable local Postgres for Phase 02 development.
+# Cloud database provider remains Neon. Do not use this compose file in production.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: isp
+      POSTGRES_PASSWORD: isp_dev_only
+      POSTGRES_DB: isp
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./docker-data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U isp -d isp"]
+      interval: 5s
+      timeout: 5s
+      retries: 10

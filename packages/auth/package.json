@@ -1,0 +1,33 @@
+{
+  "name": "@isp/auth",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@better-auth/drizzle-adapter": "^1.7.1",
+    "@isp/db": "workspace:*",
+    "better-auth": "^1.7.1",
+    "drizzle-orm": "^0.45.2"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.5",
+    "@isp/config": "workspace:*",
+    "@types/node": "^24.3.0",
+    "eslint": "^9.32.0",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

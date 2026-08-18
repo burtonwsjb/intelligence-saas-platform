@@ -11,6 +11,6 @@ coverage
 *.log
 .DS_Store
 Thumbs.db
-.vercel
-.railway
+.local/
+docker-data/
 .pnpm-debug.log

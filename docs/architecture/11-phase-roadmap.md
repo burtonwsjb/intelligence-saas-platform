@@ -27,15 +27,23 @@ Exit: local web chrome runs.
 
 ## Phase 02 — Database / auth / tenant foundation
 
-- Local Postgres (Docker) or a **new** cloud DB only after [28-neon-vs-supabase.md](./28-neon-vs-supabase.md) is decided
-- Better Auth (or chosen auth), tenants, memberships
-- No TCC, no Stripe live, no TCG market ingest yet
+Status: **complete locally** (see [PHASE_02.md](../PHASE_02.md)). Cloud Neon is not provisioned yet.
 
-Exit: sign-in creates one tenant.
+- GitHub Actions CI (validate only)
+- `packages/db` (Drizzle schema, migrations, RLS helper)
+- `packages/auth` (Better Auth + organizations)
+- Signup, email verification architecture, login, logout, session
+- Initial organization/tenant with owner membership
+- Protected `/app` with server-resolved active organization
+- No TCC, no Stripe live, no TCG market ingest, no Phase 03 isolation test suite
+
+Exit: sign-in can create one tenant. Phase 03 has **not** started.
 
 ## Phase 03 — RLS, RBAC, and security foundation
 
-- RLS on tenant tables
+Status: **not started**
+
+- RLS on tenant tables with a non-superuser role
 - Roles, audit log
 - Isolation tests
 

@@ -14,7 +14,7 @@ Change only with an explicit new decision.
 | D08 | Console | Next.js App Router | **Provisional** |
 | D09 | Public API | Hono + OpenAPI + commercial domains | Intelligence products, not only /events |
 | D10 | Worker | BullMQ + Redis | Intelligence jobs |
-| D11 | Database / auth | Neon + Drizzle + Better Auth | **Provisional**; compare Supabase before Phase 02 cloud |
+| D11 | Database / auth | Neon + Drizzle + Better Auth | **Phase 02 decision.** Standard Postgres + RLS; Better Auth organizations for B2B tenants. Not Supabase. Independent of TCG Card Central. |
 | D12 | Objects / email / billing | R2, Resend, Stripe | Independent GTM |
 | D13 | Hosting | Vercel + Railway | **Provisional** |
 | D14 | TCG identity | Concept / printing / variant / inventory / grade; language in the key | Name+number is forbidden |
@@ -28,7 +28,7 @@ Change only with an explicit new decision.
 | D22 | Content | Evidence package before generation | No AI spam |
 | D23 | Webhooks | Signed, retried, logged, disable-on-fail | API product |
 | D24 | Cross-tenant learning | Forbidden unless later consented | Isolation |
-| D25 | Stack lock | Provisional until Phase 02 vendor gate | Review instruction |
+| D25 | Stack lock | Phase 02 locked Neon + Drizzle + Better Auth + RLS | Other hosting/email/billing vendors remain for later phases |
 
 ## Void
 
@@ -36,7 +36,7 @@ Change only with an explicit new decision.
 - “TCG is an optional later pack”
 - “v1 success does not require TCG”
 - Generic `/events`+`/decisions` as the only customer API
-- Irrevocable Neon lock without the Phase 02 comparison
+- Supabase as the Phase 02 database/auth platform
 
 ## Open questions
 
@@ -45,7 +45,6 @@ Change only with an explicit new decision.
 - Final commercial URL paths
 - Whether TCC ships a versioned reference API, and when
 - Redis vendor
-- Neon vs Supabase at Phase 02 gate
 - Licensed market-data sources besides TCC
 - YouTube/Reddit ToS and transcript licensing details (reviewed before Phase 09)
 - CRM sync target (Attio vs HubSpot) later
