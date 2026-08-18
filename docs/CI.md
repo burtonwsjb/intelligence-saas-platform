@@ -9,7 +9,7 @@ GitHub Actions workflow: `.github/workflows/ci.yml`.
 
 ## What it runs
 
-Uses **Node 20** and **pnpm 11.22.0** (the repository’s declared package manager).
+Uses **Node 22** and **pnpm 11.22.0** (the repository’s declared package manager). pnpm 11 requires Node.js 22.13 or newer (`node:sqlite`).
 
 1. `pnpm install --frozen-lockfile`
 2. `pnpm typecheck`
