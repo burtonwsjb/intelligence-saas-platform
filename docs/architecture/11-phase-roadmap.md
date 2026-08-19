@@ -35,21 +35,28 @@ Status: **complete locally** (see [PHASE_02.md](../PHASE_02.md)). Cloud Neon is 
 - Signup, email verification architecture, login, logout, session
 - Initial organization/tenant with owner membership
 - Protected `/app` with server-resolved active organization
-- No TCC, no Stripe live, no TCG market ingest, no Phase 03 isolation test suite
+- No TCC, no Stripe live, no TCG market ingest
 
-Exit: sign-in can create one tenant. Phase 03 has **not** started.
+Exit: sign-in can create one tenant.
 
 ## Phase 03 — RLS, RBAC, and security foundation
 
-Status: **not started**
+Status: **complete** (see [PHASE_03.md](../PHASE_03.md)). Phase 04 has **not** started.
 
-- RLS on tenant tables with a non-superuser role
-- Roles, audit log
-- Isolation tests
+- Non-superuser `app_user` without `BYPASSRLS`
+- Separate `DATABASE_URL` / `DATABASE_ADMIN_URL`
+- Active-tenant RLS (no multi-org widening)
+- Server-side RBAC helpers
+- Tenant status fail-closed
+- Append-only tenant audit log
+- Real PostgreSQL isolation tests in CI
 
 Exit: tenant hop tests fail closed.
 
 ## Phase 04 — Stripe / entitlements / API key foundations
+
+Status: **not started**
+
 
 - Stripe **test** mode
 - Plan entitlements catalog (no final prices)

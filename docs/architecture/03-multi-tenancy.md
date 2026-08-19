@@ -42,7 +42,7 @@ A user may belong to multiple tenants. The console always has exactly one **acti
 
 1. Every tenant-owned table has `tenant_id uuid not null`.
 2. Application queries always include `tenant_id`.
-3. RLS policies require `tenant_id` to match `current_tenant_ids()` derived from memberships.
+3. RLS policies require `organization_id` to match the **active** organization context and a membership in that same organization. Membership in other organizations must not widen the query.
 4. API keys are bound to exactly one tenant.
 5. Jobs, logs, cache keys, storage paths, and Stripe metadata include `tenant_id`.
 6. A request with no tenant context cannot read tenant data.
@@ -51,7 +51,7 @@ A user may belong to multiple tenants. The console always has exactly one **acti
 
 | Client | How tenant is bound |
 |---|---|
-| Browser | Session user → memberships → selected `tenant_id` |
+| Browser | Session user → memberships → server-resolved active organization |
 | API key | Key row → `tenant_id` |
 | Stripe webhook | `metadata.tenant_id` plus Stripe customer mapping |
 | Worker job | BullMQ job payload → `tenant_id` |
@@ -81,4 +81,6 @@ Tenants and members are soft-deleted. Source events and Decision Records are ret
 
 ## Abuse and suspension
 
-`tenants.status = suspended` blocks ingest and decision reads except for owner billing access. The worker must skip jobs for suspended tenants.
+`tenant.status = suspended` or `deleted` denies normal application access. Owner billing-only exceptions belong to a later billing phase. The worker must skip jobs for suspended tenants.
+
+Phase 03 binds application-owned rows with `organization_id` (the Better Auth organization id) and transaction-local `app.current_organization_id` / `app.current_user_id`. See [PHASE_03.md](../PHASE_03.md).

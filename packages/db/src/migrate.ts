@@ -1,8 +1,8 @@
-import { requireDatabaseUrl } from "./env.js";
+import { requireDatabaseAdminUrl } from "./env.js";
 import { applyMigrations } from "./migrate-lib.js";
 
 async function main() {
-  const url = requireDatabaseUrl();
+  const url = requireDatabaseAdminUrl();
   await applyMigrations(url);
   console.log("db: migrations applied");
 }

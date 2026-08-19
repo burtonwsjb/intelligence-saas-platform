@@ -15,6 +15,9 @@ describe("CI workflow", () => {
     expect(workflow).toMatch(/pnpm typecheck/);
     expect(workflow).toMatch(/pnpm lint/);
     expect(workflow).toMatch(/pnpm test/);
+    expect(workflow).toMatch(/pnpm test:isolation/);
+    expect(workflow).toMatch(/postgres:16-alpine/);
+    expect(workflow).toMatch(/node-version: 22/);
     expect(workflow).toMatch(/pnpm build/);
     expect(workflow).not.toMatch(/vercel/i);
     expect(workflow).not.toMatch(/railway/i);

@@ -1,3 +1,5 @@
+import { MissingDatabaseAdminUrlError } from "./errors.js";
+
 export class MissingDatabaseUrlError extends Error {
   constructor() {
     super(
@@ -17,8 +19,23 @@ export function requireDatabaseUrl(
   return url;
 }
 
+export function requireDatabaseAdminUrl(
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const url = env.DATABASE_ADMIN_URL?.trim();
+  if (!url) {
+    throw new MissingDatabaseAdminUrlError();
+  }
+  return url;
+}
+
 export function isMissingDatabaseUrlError(
   error: unknown,
 ): error is MissingDatabaseUrlError {
   return error instanceof MissingDatabaseUrlError;
 }
+
+export {
+  isMissingDatabaseAdminUrlError,
+  MissingDatabaseAdminUrlError,
+} from "./errors.js";

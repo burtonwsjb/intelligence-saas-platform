@@ -29,6 +29,8 @@ Change only with an explicit new decision.
 | D23 | Webhooks | Signed, retried, logged, disable-on-fail | API product |
 | D24 | Cross-tenant learning | Forbidden unless later consented | Isolation |
 | D25 | Stack lock | Phase 02 locked Neon + Drizzle + Better Auth + RLS | Other hosting/email/billing vendors remain for later phases |
+| D26 | Database roles | `app_migrate` / `app_user` / `app_worker` / `app_admin` | Least privilege; runtime is not superuser and cannot bypass RLS |
+| D27 | Active-tenant RLS | Policies bind to the active organization + membership in that org | Multi-membership must not widen a request scoped to A |
 
 ## Void
 

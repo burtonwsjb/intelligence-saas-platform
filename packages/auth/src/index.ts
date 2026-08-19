@@ -25,6 +25,16 @@ export {
   type OrganizationRoleName,
 } from "./permissions.js";
 export {
+  hasPermission,
+  parseOrganizationRoles,
+  PERMISSIONS,
+  PermissionDeniedError,
+  requirePermission,
+  resolveOrganizationRole,
+  UnknownRoleError,
+  type PermissionName,
+} from "./rbac.js";
+export {
   AuthRequiredError,
   OrganizationAccessError,
   OrganizationRequiredError,
@@ -32,3 +42,14 @@ export {
   requireSession,
 } from "./session.js";
 export { ensureTenantRow } from "./tenant.js";
+export {
+  assertTenantActive,
+  authorizeOrganizationSwitch,
+  loadTenantStatus,
+  organizationIdInput,
+  recordOrganizationSwitch,
+  requireUsableTenant,
+  TenantInactiveError,
+  TenantNotFoundError,
+  type TenantStatus,
+} from "./tenant-access.js";

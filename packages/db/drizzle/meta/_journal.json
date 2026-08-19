@@ -15,6 +15,13 @@
       "when": 1,
       "tag": "0002_account_issuer",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 2,
+      "tag": "0003_phase03_security",
+      "breakpoints": true
     }
   ]
 }

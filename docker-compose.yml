@@ -1,4 +1,4 @@
-# Disposable local Postgres for Phase 02 development.
+# Disposable local Postgres for Phase 02–03 development.
 # Cloud database provider remains Neon. Do not use this compose file in production.
 
 services:

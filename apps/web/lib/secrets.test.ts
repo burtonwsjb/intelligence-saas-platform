@@ -10,11 +10,16 @@ describe("committed secrets", () => {
     const example = readFileSync(path.join(repoRoot, ".env.example"), "utf8");
     expect(example).toMatch(/^BETTER_AUTH_SECRET=$/m);
     expect(example).toMatch(/^DATABASE_URL=$/m);
+    expect(example).toMatch(/^DATABASE_ADMIN_URL=$/m);
     expect(example).not.toMatch(/postgresql:\/\/[^:]+:[^@]+@/);
     expect(example).not.toMatch(/sk_live_/);
 
     const phase02 = readFileSync(path.join(repoRoot, "docs/PHASE_02.md"), "utf8");
     expect(phase02).not.toMatch(/BETTER_AUTH_SECRET=[^\s]+/);
     expect(phase02).not.toMatch(/postgresql:\/\/[^:]+:[^@]+@neondb/);
+
+    const phase03 = readFileSync(path.join(repoRoot, "docs/PHASE_03.md"), "utf8");
+    expect(phase03).not.toMatch(/BETTER_AUTH_SECRET=[^\s]+/);
+    expect(phase03).not.toMatch(/postgresql:\/\/[^:]+:[^@]+@neondb/);
   });
 });

@@ -14,11 +14,13 @@
     "typecheck": "turbo typecheck",
     "lint": "turbo lint",
     "test": "turbo test",
+    "test:isolation": "pnpm --filter @isp/db test:isolation",
     "start:web": "pnpm --filter @isp/web start",
     "start:api": "pnpm --filter @isp/api start",
     "start:worker": "pnpm --filter @isp/worker start",
     "db:generate": "pnpm --filter @isp/db generate",
     "db:migrate": "pnpm --filter @isp/db migrate",
+    "db:bootstrap": "pnpm --filter @isp/db bootstrap",
     "db:status": "pnpm --filter @isp/db status"
   },
   "devDependencies": {

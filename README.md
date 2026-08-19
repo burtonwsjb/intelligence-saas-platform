@@ -9,21 +9,22 @@ TCG Card Central is only a future external integration (optional reference-data 
 
 ## Current phase
 
-**Phase 02 complete locally.** Database package, Better Auth, tenant/organization foundation, and CI.
+**Phase 03 complete locally.** Tenant isolation is enforced by PostgreSQL RLS, a non-superuser `app_user` role, server-side RBAC, and real Postgres isolation tests in CI.
 
-Do not begin Phase 03 until explicitly instructed.
+Do not begin Phase 04 until explicitly instructed.
 
-Cloud Neon is not provisioned yet. See [docs/PHASE_02.md](docs/PHASE_02.md).
+Cloud Neon is not provisioned yet. See [docs/PHASE_03.md](docs/PHASE_03.md).
 
 ## Local commands
 
-See [docs/PHASE_01.md](docs/PHASE_01.md) and [docs/PHASE_02.md](docs/PHASE_02.md).
+See [docs/PHASE_01.md](docs/PHASE_01.md), [docs/PHASE_02.md](docs/PHASE_02.md), and [docs/PHASE_03.md](docs/PHASE_03.md).
 
 ```bash
 pnpm install
 pnpm typecheck
 pnpm lint
 pnpm test
+pnpm test:isolation
 pnpm build
 pnpm dev:web
 pnpm dev:api
@@ -37,6 +38,7 @@ TypeScript, pnpm/Turborepo, Next.js, Hono, PostgreSQL/Neon, Drizzle, Better Auth
 - [Phase 00 result](docs/PHASE_00_RESULT.md)
 - [Phase 01](docs/PHASE_01.md)
 - [Phase 02](docs/PHASE_02.md)
+- [Phase 03](docs/PHASE_03.md)
 - [CI](docs/CI.md)
 - [Overview](docs/architecture/00-overview.md)
 - [Roadmap (phases 00–23)](docs/architecture/11-phase-roadmap.md)
@@ -52,5 +54,6 @@ TypeScript, pnpm/Turborepo, Next.js, Hono, PostgreSQL/Neon, Drizzle, Better Auth
 | Architecture docs | Phase 00 complete |
 | Application shell | Phase 01 complete |
 | Database / auth / tenant | Phase 02 complete locally; Neon cloud not provisioned |
+| RLS / RBAC / isolation | Phase 03 complete locally; proven in CI Postgres |
 | Cloud / Stripe / TCC | Not created, not connected, not modified |
-| Phase 03 RLS isolation tests | Not started |
+| Phase 04 billing / API keys | Not started |

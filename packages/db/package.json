@@ -15,8 +15,10 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
+    "test:isolation": "vitest run --config vitest.isolation.config.ts",
     "generate": "drizzle-kit generate",
     "migrate": "tsx src/migrate.ts",
+    "bootstrap": "tsx src/bootstrap.ts",
     "status": "tsx src/status.ts"
   },
   "dependencies": {

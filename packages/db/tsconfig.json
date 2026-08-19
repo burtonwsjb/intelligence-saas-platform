@@ -5,5 +5,11 @@
     "rootDir": "src"
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["src/**/*.test.ts", "src/migrate.ts", "src/status.ts"]
+  "exclude": [
+    "src/**/*.test.ts",
+    "src/**/*.pg.test.ts",
+    "src/migrate.ts",
+    "src/bootstrap.ts",
+    "src/status.ts"
+  ]
 }

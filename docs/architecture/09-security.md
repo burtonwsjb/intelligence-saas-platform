@@ -18,7 +18,7 @@
 
 ## Tenant isolation
 
-Postgres RLS is mandatory on every tenant-owned table. Application filters are not enough.
+Postgres RLS is mandatory on every tenant-owned table. Application filters are not enough. The runtime role is `app_user` (no `BYPASSRLS`). Context is transaction-local (`app.current_organization_id` + `app.current_user_id`) and bound to the active tenant only.
 
 API keys cannot select a different tenant. Redis keys, BullMQ job names, and R2 paths include `tenant_id`. Platform admin access is audited.
 
