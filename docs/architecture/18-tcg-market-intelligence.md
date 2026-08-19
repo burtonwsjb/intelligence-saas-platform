@@ -2,6 +2,10 @@
 
 First commercial vertical. Built on the kernel in [16-core-intelligence-kernel.md](./16-core-intelligence-kernel.md). Series are keyed by **exact printing** (and grade/variant when the market is split).
 
+## Phase 08 boundary
+
+Phase 07 implemented canonical identity only ([PHASE_07.md](../PHASE_07.md), [17-tcg-canonical-identity.md](./17-tcg-canonical-identity.md)). Phase 08 has **not** started. Do not ingest eBay sold, TCGplayer, TCC market price, listing counts, volume, liquidity, spreads, or grading population until Phase 08 is explicitly begun.
+
 ## Market data to track
 
 Per exact printing, as available:

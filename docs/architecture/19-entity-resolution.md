@@ -8,7 +8,21 @@ Phase 06 implements **deterministic identifier mapping only**:
 
 `source_namespace` + `identifier_type` + `normalized_value` → existing `entity`, else create a new canonical entity.
 
-There is no fuzzy matching, no mention span resolver, no multi-source merge, and no TCG printing keys. Those belong to Phase 10 (and TCG pack identity in Phase 07). Identifier collisions (same external id already bound to a different entity) fail closed.
+There is no fuzzy matching, no mention span resolver, and no multi-source merge. Those belong to Phase 10. Phase 07 adds **deterministic exact-printing resolution** against TCG pack tables (`exact` / `ambiguous` / `not_found`; identifier rebind is `conflict` and fail-closed). Identifier collisions (same external id already bound to a different entity or printing) fail closed.
+
+## Phase 07 exact printing resolution
+
+Phase 07 implements deterministic lookup only (see [PHASE_07.md](../PHASE_07.md)):
+
+Inputs: `game` + `set` + `collector_number` + **required** `language` + optional `variant`, or an external provider id.
+
+- Missing language fails validation (never defaulted to English)
+- Missing variant with multiple remaining printings → `ambiguous`, confidence `null`
+- Unique match → `exact`, confidence `1.0` (not a probability model)
+- No match → `not_found`
+- External id already bound to a different printing → write conflict, original mapping kept
+
+No image/OCR, no fuzzy name matching, no guessed language or variant. Phase 10 still owns mention-span resolution (“Greninja 214” vs “Japanese Greninja”).
 
 ## Problem
 

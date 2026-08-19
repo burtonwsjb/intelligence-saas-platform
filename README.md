@@ -9,9 +9,9 @@ TCG Card Central is only a future external integration (optional reference-data 
 
 ## Current phase
 
-**Phase 06 complete locally.** Generic intelligence kernel (`entity`, identifiers, observations, metrics, signals, evidence, feature snapshots, decision-record foundation) and real worker normalization from `source_event`. Cloud Redis and Neon are not provisioned. Stripe live mode is forbidden. See [docs/PHASE_06.md](docs/PHASE_06.md).
+**Phase 07 complete locally.** TCG canonical identity (game/set/concept/exact printing, first-class language and variant) and a TCG Card Central **sandbox fixture** provider. Generic kernel tables were not given TCG columns. Cloud Redis and Neon are not provisioned. Stripe live mode is forbidden. See [docs/PHASE_07.md](docs/PHASE_07.md).
 
-Do not begin Phase 07 until explicitly instructed.
+Do not begin Phase 08 until explicitly instructed.
 
 ## Local commands
 
@@ -41,6 +41,7 @@ TypeScript, pnpm/Turborepo, Next.js, Hono, PostgreSQL/Neon, Drizzle, Better Auth
 - [Phase 04](docs/PHASE_04.md)
 - [Phase 05](docs/PHASE_05.md)
 - [Phase 06](docs/PHASE_06.md)
+- [Phase 07](docs/PHASE_07.md)
 - [CI](docs/CI.md)
 - [Overview](docs/architecture/00-overview.md)
 - [Roadmap (phases 00–23)](docs/architecture/11-phase-roadmap.md)
@@ -59,6 +60,7 @@ TypeScript, pnpm/Turborepo, Next.js, Hono, PostgreSQL/Neon, Drizzle, Better Auth
 | RLS / RBAC / isolation | Phase 03 complete locally; proven in CI Postgres |
 | Billing / API keys | Phase 04 complete locally; local simulation default; Stripe Checkout deferred |
 | Queue / ingest | Phase 05 complete locally; Docker Redis + Postgres; no cloud Redis |
-| Intelligence kernel | Phase 06 complete locally; generic entities/observations/signals; no TCG identity |
-| Cloud / Stripe live / TCC | Not created, not connected, not modified |
-| Phase 07 TCG identity / TCC sandbox | Not started |
+| Intelligence kernel | Phase 06 complete locally; generic entities/observations/signals; no TCG columns on kernel tables |
+| TCG identity / TCC sandbox | Phase 07 complete locally; fixture provider only; no real TCC calls |
+| Cloud / Stripe live / TCC production | Not created, not connected, not modified |
+| Phase 08 TCG market-history ingest | Not started |

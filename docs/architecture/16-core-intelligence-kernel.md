@@ -37,7 +37,7 @@ Every stage stores evidence, versions, and confidence. Later stages may not sile
 
 TCG printings, languages, and collectible-market metrics are **pack bindings** of these objects, not replacements for them.
 
-Phase 06 implements the generic substrate in PostgreSQL (`packages/db` migration `0006_phase06_kernel`) and `normalizeSourceEvent` in `@isp/db`. Typed contracts live in `@isp/contracts`. See [PHASE_06.md](../PHASE_06.md). Phase 07 TCG identity is not started.
+Phase 06 implements the generic substrate in PostgreSQL (`packages/db` migration `0006_phase06_kernel`) and `normalizeSourceEvent` in `@isp/db`. Typed contracts live in `@isp/contracts`. See [PHASE_06.md](../PHASE_06.md). Phase 07 TCG identity is pack tables plus `entity_type=tcg_printing`; see [PHASE_07.md](../PHASE_07.md). Kernel tables still have no TCG columns.
 
 ## Observation rules
 

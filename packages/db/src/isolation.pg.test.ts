@@ -50,6 +50,9 @@ import {
   observation,
   featureSnapshot,
   signal,
+  ensureTcgPrintingEntity,
+  seedTcgIdentityFixtures,
+  tcgGame,
 } from "./index.js";
 
 const passwords = {
@@ -486,6 +489,8 @@ describe("PostgreSQL RLS isolation", () => {
     const signalB = `sig_b_${crypto.randomUUID()}`;
     const decisionA = `dec_a_${crypto.randomUUID()}`;
     const decisionB = `dec_b_${crypto.randomUUID()}`;
+    const skuA = `sku-a-${crypto.randomUUID()}`;
+    const skuB = `sku-b-${crypto.randomUUID()}`;
 
     await asUser(ids.userA, ids.orgA, async (db) => {
       await insertSourceEvent(db, {
@@ -495,7 +500,7 @@ describe("PostgreSQL RLS isolation", () => {
         occurredAt: new Date("2026-01-01T00:00:00.000Z"),
         idempotencyKey: `idem_${eventA1}`,
         fingerprint: `fp_${eventA1}`,
-        entity: { type: "sku", external_id: "sku-a" },
+        entity: { type: "sku", external_id: skuA },
         metrics: [{ key: "price.usd", value: 1 }],
         payload: {},
       });
@@ -506,7 +511,7 @@ describe("PostgreSQL RLS isolation", () => {
         occurredAt: new Date("2026-03-01T00:00:00.000Z"),
         idempotencyKey: `idem_${eventA2}`,
         fingerprint: `fp_${eventA2}`,
-        entity: { type: "sku", external_id: "sku-a" },
+        entity: { type: "sku", external_id: skuA },
         metrics: [{ key: "price.usd", value: 2 }],
         payload: {},
       });
@@ -514,7 +519,7 @@ describe("PostgreSQL RLS isolation", () => {
         id: entityA,
         organizationId: ids.orgA,
         entityType: "sku",
-        canonicalKey: "sku:ingest:sku:sku-a",
+        canonicalKey: `sku:ingest:sku:${skuA}`,
       });
       await insertEntityIdentifier(db, {
         id: `eid_a_${crypto.randomUUID()}`,
@@ -522,8 +527,8 @@ describe("PostgreSQL RLS isolation", () => {
         entityId: entityA,
         sourceNamespace: "ingest",
         identifierType: "sku",
-        identifierValue: "SKU-A",
-        normalizedValue: "sku-a",
+        identifierValue: skuA,
+        normalizedValue: skuA,
       });
       await insertObservation(db, {
         id: eventA1,
@@ -603,7 +608,7 @@ describe("PostgreSQL RLS isolation", () => {
         occurredAt: new Date("2026-02-01T00:00:00.000Z"),
         idempotencyKey: `idem_${eventB}`,
         fingerprint: `fp_${eventB}`,
-        entity: { type: "sku", external_id: "sku-b" },
+        entity: { type: "sku", external_id: skuB },
         metrics: [],
         payload: {},
       });
@@ -611,7 +616,7 @@ describe("PostgreSQL RLS isolation", () => {
         id: entityB,
         organizationId: ids.orgB,
         entityType: "sku",
-        canonicalKey: "sku:ingest:sku:sku-b",
+        canonicalKey: `sku:ingest:sku:${skuB}`,
       });
       await insertObservation(db, {
         id: eventB,
@@ -845,7 +850,7 @@ describe("PostgreSQL RLS isolation", () => {
           id: `ent_a2_${crypto.randomUUID()}`,
           organizationId: ids.orgA,
           entityType: "sku",
-          canonicalKey: "sku:ingest:sku:other-a",
+          canonicalKey: `sku:ingest:sku:other-${skuA}`,
         });
         await insertEntityIdentifier(db, {
           id: `eid_a2_${crypto.randomUUID()}`,
@@ -853,8 +858,8 @@ describe("PostgreSQL RLS isolation", () => {
           entityId: other!.id,
           sourceNamespace: "ingest",
           identifierType: "sku",
-          identifierValue: "SKU-A",
-          normalizedValue: "sku-a",
+          identifierValue: skuA,
+          normalizedValue: skuA,
         });
       }),
     ).rejects.toBeInstanceOf(IdentifierCollisionError);
@@ -867,5 +872,74 @@ describe("PostgreSQL RLS isolation", () => {
       listSignalEvidence(db, { organizationId: ids.orgA, signalId: signalA }),
     );
     expect(evidence).toHaveLength(1);
+  });
+
+  it("prevents tenants from mutating global TCG canonical identity", async () => {
+    const adminConn = createDbConnection(adminUrl);
+    try {
+      const seeded = await seedTcgIdentityFixtures(adminConn.db);
+      const raw = postgres(replaceConnectionRole(adminUrl, DB_ROLES.user, passwords.user), {
+        max: 1,
+        prepare: false,
+      });
+      try {
+        const games = await raw`select game_key from tcg_game where game_key = 'pokemon'`;
+        expect(games).toHaveLength(1);
+        await expect(
+          raw`insert into tcg_game (game_key, display_name) values ('hacked_game', 'Hacked')`,
+        ).rejects.toThrow();
+        await expect(
+          raw`update tcg_game set display_name = 'Hacked' where game_key = 'pokemon'`,
+        ).rejects.toThrow();
+        await expect(raw`delete from tcg_game where game_key = 'pokemon'`).rejects.toThrow();
+        await expect(
+          raw`insert into tcg_set (id, game_key, canonical_set_key, name) values ('set_hack', 'pokemon', 'hacked', 'Hacked')`,
+        ).rejects.toThrow();
+        await expect(
+          raw`update tcg_set set name = 'Hacked' where id = ${seeded.sets.twm.id}`,
+        ).rejects.toThrow();
+        await expect(
+          raw`insert into tcg_card_concept (id, game_key, concept_key, canonical_name, normalized_name) values ('crd_hack', 'pokemon', 'hacked', 'Hacked', 'Hacked')`,
+        ).rejects.toThrow();
+        await expect(
+          raw`update tcg_card_concept set canonical_name = 'Hacked' where id = ${seeded.concepts.greninja.id}`,
+        ).rejects.toThrow();
+        await expect(
+          raw`update tcg_printing set collector_number = '000' where id = ${seeded.printings.greninjaEnNormal.id}`,
+        ).rejects.toThrow();
+        await expect(
+          raw`delete from tcg_printing where id = ${seeded.printings.greninjaEnNormal.id}`,
+        ).rejects.toThrow();
+      } finally {
+        await raw.end({ timeout: 5 });
+      }
+
+      await expect(
+        asUser(ids.userA, ids.orgA, (db) =>
+          db.insert(tcgGame).values({
+            gameKey: "tenant_hack",
+            displayName: "Should fail",
+          }),
+        ),
+      ).rejects.toThrow();
+
+      const entityA = await asUser(ids.userA, ids.orgA, (db) =>
+        ensureTcgPrintingEntity(db, {
+          organizationId: ids.orgA,
+          printing: seeded.printings.greninjaEnNormal,
+        }),
+      );
+      const entityB = await asUser(ids.userB, ids.orgB, (db) =>
+        ensureTcgPrintingEntity(db, {
+          organizationId: ids.orgB,
+          printing: seeded.printings.greninjaEnNormal,
+        }),
+      );
+      expect(entityA.entityType).toBe("tcg_printing");
+      expect(entityA.id).not.toBe(entityB.id);
+      expect(await asUser(ids.userA, ids.orgA, (db) => listEntities(db, ids.orgB))).toEqual([]);
+    } finally {
+      await adminConn.end();
+    }
   });
 });

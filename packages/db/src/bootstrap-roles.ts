@@ -88,6 +88,13 @@ export async function bootstrapRoles(
       "signal_evidence",
       "decision_record",
       "decision_evidence",
+      "tcg_game",
+      "tcg_language",
+      "tcg_set",
+      "tcg_card_concept",
+      "tcg_printing",
+      "tcg_printing_identifier",
+      "tcg_identifier_conflict",
     ];
     for (const table of tables) {
       await sql.unsafe(`ALTER TABLE "${table}" OWNER TO ${DB_ROLES.migrate}`);
@@ -110,6 +117,7 @@ export async function bootstrapRoles(
       ALTER FUNCTION app.protect_entity() OWNER TO ${DB_ROLES.migrate};
       ALTER FUNCTION app.protect_decision_record() OWNER TO ${DB_ROLES.migrate};
       ALTER FUNCTION app.install_kernel_rls(text, boolean) OWNER TO ${DB_ROLES.migrate};
+      ALTER FUNCTION app.forbid_tcg_canonical_mutate() OWNER TO ${DB_ROLES.migrate};
     `);
 
     await sql.unsafe(`
@@ -125,6 +133,14 @@ export async function bootstrapRoles(
       GRANT UPDATE ON TABLE "decision_record" TO ${DB_ROLES.user}, ${DB_ROLES.worker};
       REVOKE DELETE ON TABLE "entity" FROM ${DB_ROLES.user}, ${DB_ROLES.worker};
       GRANT SELECT ON TABLE "plan", "plan_entitlement", "source_definition" TO ${DB_ROLES.user}, ${DB_ROLES.worker};
+      GRANT SELECT ON TABLE
+        "tcg_game", "tcg_language", "tcg_set", "tcg_card_concept",
+        "tcg_printing", "tcg_printing_identifier", "tcg_identifier_conflict"
+      TO ${DB_ROLES.user}, ${DB_ROLES.worker};
+      REVOKE INSERT, UPDATE, DELETE ON TABLE
+        "tcg_game", "tcg_language", "tcg_set", "tcg_card_concept",
+        "tcg_printing", "tcg_printing_identifier", "tcg_identifier_conflict"
+      FROM ${DB_ROLES.user}, ${DB_ROLES.worker};
       GRANT SELECT, INSERT ON TABLE "audit_event" TO ${DB_ROLES.user}, ${DB_ROLES.worker};
       REVOKE UPDATE, DELETE ON TABLE "audit_event" FROM ${DB_ROLES.user}, ${DB_ROLES.worker};
       REVOKE SELECT, INSERT, UPDATE, DELETE ON TABLE "stripe_event" FROM ${DB_ROLES.user}, ${DB_ROLES.worker};

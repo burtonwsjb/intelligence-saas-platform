@@ -78,7 +78,7 @@ Exit: an accepted event is durable, tenant-bound, retried safely, and visible wh
 
 ## Phase 06 — Core observation / signal / entity model
 
-Status: **complete** (see [PHASE_06.md](../PHASE_06.md)). Phase 07 has **not** started.
+Status: **complete** (see [PHASE_06.md](../PHASE_06.md)).
 
 - Kernel entities, identifiers, observations, metrics, signals, evidence, feature snapshots
 - Decision-record **foundation** only
@@ -89,17 +89,22 @@ Exit: fixture events produce observations and signals.
 
 ## Phase 07 — TCG canonical identity and TCG Card Central sandbox contract
 
-- Printing / concept / variant / grade layers
-- First-class language codes
-- Provider alias map
-- TCC **sandbox** contract only (fixtures or TCC staging API if it exists)
+Status: **complete** (see [PHASE_07.md](../PHASE_07.md)). Phase 08 has **not** started.
+
+- Game / set / card-concept / exact-printing layers (grade/inventory later)
+- First-class language codes (`en`, `ja`, `zh-Hans` required; catalog extensible)
+- Canonical variant keys; collector numbers preserved as text
+- Provider alias map (`tcg_printing_identifier`); conflicts fail closed
+- TCC **sandbox** fixture provider only (no network, no credentials)
 - Do not modify the TCC repo
 
 Exit: exact printing keys exist; sandbox mapping tests pass.
 
 ## Phase 08 — TCG market-history ingestion
 
-- Price, sales, volume, listings, spread, liquidity series
+Status: **not started**. Do not begin until explicitly instructed.
+
+- Price, sales, volume, listings, spread, liquidity series keyed by exact printing
 - Daily bars, quality flags
 - No silent cross-language merge
 

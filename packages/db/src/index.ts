@@ -140,4 +140,45 @@ export {
   listDecisionRecords,
 } from "./repos/decision.js";
 export { getSourceDefinition, listSourceDefinitions } from "./repos/source-definition.js";
+export {
+  TCG_ENTITY_TYPE,
+  TCG_GAME_KEYS,
+  TCG_LANGUAGE_CODES,
+  TCG_PRINTING_IDENTIFIER_TYPE,
+  TCG_SOURCE_NAMESPACE,
+  TCG_VARIANT_KEYS,
+  TcgIdentifierConflictError,
+  TcgValidationError,
+  canonicalPrintingKey,
+  kernelCanonicalKeyForPrinting,
+  normalizeCollectorNumber,
+  normalizeTcgName,
+  parseTcgLanguage,
+  parseTcgVariant,
+} from "./tcg/identity.js";
+export {
+  findTcgPrintingIdentifier,
+  getTcgGame,
+  getTcgPrintingByKey,
+  getTcgSet,
+  insertTcgCardConcept,
+  insertTcgPrinting,
+  insertTcgPrintingIdentifier,
+  insertTcgSet,
+  listTcgGames,
+  listTcgIdentifierConflicts,
+  listTcgLanguages,
+} from "./tcg/catalog.js";
+export {
+  resolveTcgPrinting,
+  type TcgResolveQuery,
+  type TcgResolveResult,
+} from "./tcg/resolve.js";
+export { TCC_ID_TYPE, TCC_NAMESPACE, seedTcgIdentityFixtures } from "./tcg/fixtures.js";
+export {
+  SandboxTcgCardCentralProvider,
+  sandboxProviderFromFixtures,
+  type TcgIdentityProvider,
+} from "./tcg/provider.js";
+export { ensureTcgPrintingEntity } from "./tcg/kernel-link.js";
 export * from "./schema/index.js";

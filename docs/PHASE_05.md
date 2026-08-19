@@ -1,6 +1,6 @@
 # Phase 05 — Queue, worker, generic ingest, job durability, and retries
 
-Status: **implemented**. Phase 06 is complete; see [PHASE_06.md](PHASE_06.md). Phase 07 has **not** started.
+Status: **implemented**. Phase 06 is complete; see [PHASE_06.md](PHASE_06.md). Phase 07 is complete; see [PHASE_07.md](PHASE_07.md). Phase 08 has **not** started.
 
 No cloud Redis, Neon production, Railway, Vercel, Stripe live Checkout, TCG identity, TCC, market data, YouTube/Reddit, creator intelligence, or prediction engine.
 

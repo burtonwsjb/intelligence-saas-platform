@@ -46,6 +46,12 @@ Change only with an explicit new decision.
 | D40 | Source catalog | Platform `source_definition` with reliability prior; no credentials | Connector instances and secret_ref stay later |
 | D41 | Confidence | Normalized 0..1 numeric; observations nullable; signals required | Do not invent confidence or conflate with quality flags |
 | D42 | Analytical immutability | Triggers + revoked UPDATE/DELETE on fact tables | History is append-only; corrections are new rows |
+| D43 | TCG pack location | TCG schema/modules in `@isp/db` + contracts in `@isp/contracts`; Zod in `apps/api` | Avoid a new lockfile workspace package; keep kernel tables generic |
+| D44 | TCG reference data | Platform-global games/sets/concepts/printings/identifiers; no tenant RLS | Canonical identity is shared reference data, not tenant-duplicated |
+| D45 | TCG identity key | `tcg:{game}:{concept}:{set}:{normalized_collector}:{language}:{variant}` | Name+number is forbidden; language and variant are mandatory |
+| D46 | Printing identifiers | Immutable alias map; rebind writes `tcg_identifier_conflict` and throws | No silent remap when TCC/external ids change |
+| D47 | Kernel link | Per-tenant `entity_type=tcg_printing` keyed from the printing canonical key | Domain identity stays global; analytical subject stays tenant-scoped |
+| D48 | TCC in Phase 07 | `SandboxTcgCardCentralProvider` fixtures only | No network, no production URL, no real token |
 
 ## Void
 

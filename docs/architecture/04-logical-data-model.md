@@ -352,29 +352,43 @@ Phase 06 implements tenant-scoped `observation`, `observation_metric`, `signal`,
 
 ## TCG pack identity (not in the kernel)
 
-### `tcg_card_concepts`
+Implemented in Phase 07 as platform-global tables (no tenant RLS). See [PHASE_07.md](../PHASE_07.md).
 
-- `id`, `game`, `canonical_name`
+### `tcg_game` / `tcg_language`
 
-### `tcg_printings`
+- Game registry (`pokemon`, `one_piece`, `magic`, `lorcana`, `yugioh`, `other`)
+- Language catalog: `en`, `ja`, `zh-Hans` required; `zh-Hant`, `ko`, `de`, `fr`, `es`, `it`, `pt` extensible
 
-- exact printing key: game, set_id, collector_number, language, variant, printing, finish, artwork_id, edition, parallel, rarity, foil_type, promo_status, region, release_date
-- `provider_refs` json (e.g. TCC id)
-- unique on normalized printing key
+### `tcg_set`
 
-### `tcg_sets` / `tcg_languages`
+- Per-game `canonical_set_key`; optional language scope and release date
+- Localized releases may be distinct sets
 
-- language catalog: `en`, `ja`, `zh-Hans` required; others extensible
+### `tcg_card_concept`
+
+- Conceptual card (`concept_key`, canonical + normalized name)
+- Not exact-printing identity
+
+### `tcg_printing`
+
+- Exact printing: game, concept, set, collector number (text), language, variant
+- Deterministic `canonical_printing_key`
+- Optional rarity/finish/edition/promo + bounded JSON attributes
+
+### `tcg_printing_identifier` / `tcg_identifier_conflict`
+
+- External aliases (TCC catalog id, future TCGplayer/eBay ids) point at one printing
+- Rebind attempts are recorded and rejected
 
 ### `tcg_market_variants` / `tcg_graded_populations` / `tcg_slabbed_items`
 
-- market split and grade layers
+- Market split and grade layers (not Phase 07)
 
 ### `tcg_holdings` (tenant RLS)
 
-- printing, language, qty, cost basis, acquired_at — personalized intelligence only
+- printing, language, qty, cost basis, acquired_at — personalized intelligence only (later)
 
-Do not store TCG market history on the concept. Do not merge language series by default.
+Do not store TCG market history on the concept. Do not merge language series by default. Do not put TCG fields on kernel `entity` / `observation` tables.
 
 ## Relationships
 

@@ -32,18 +32,20 @@ Roles only:
 
 This platform still owns canonical printing identity ([17-tcg-canonical-identity.md](./17-tcg-canonical-identity.md)). TCC ids are `provider_refs`.
 
-Conceptual TCC provider routes (TCC would build; we do not implement them here):
+Conceptual TCC provider routes (TCC would build; this platform does not host TCC):
 
 ```text
 GET /v1/cards/{id}
-GET /v1/cards?game=&set=&number=&language=
-GET /v1/cards/{id}/price
-GET /v1/cards/{id}/price-history
+GET /v1/printings/{id}
+POST /v1/printings/resolve
+GET /v1/sets/{id}
+GET /v1/cards/{id}/price              (deferred; Phase 08+)
+GET /v1/cards/{id}/price-history      (deferred; Phase 08+)
 ```
 
 As customer, TCC would call this platform’s commercial `/v1` intelligence API with a normal tenant key.
 
-Phase 07 uses fixtures or TCC **staging**. Production TCC is Phase 23 with an explicit command.
+Phase 07 uses **in-memory fixtures only** (`SandboxTcgCardCentralProvider`). No staging or production TCC network calls. Production TCC is Phase 23 with an explicit command.
 
 ## YouTube and Reddit
 

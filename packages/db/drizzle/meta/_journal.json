@@ -43,6 +43,13 @@
       "when": 5,
       "tag": "0006_phase06_kernel",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 6,
+      "tag": "0007_phase07_tcg",
+      "breakpoints": true
     }
   ]
 }

@@ -112,6 +112,20 @@ describe("migrations", () => {
     expect(sql).not.toMatch(/ALTER TABLE "session" ENABLE ROW LEVEL SECURITY/);
     expect(sql).not.toMatch(/ALTER TABLE "organization" ENABLE ROW LEVEL SECURITY/);
     expect(sql).not.toMatch(/ALTER TABLE "member" ENABLE ROW LEVEL SECURITY/);
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "tcg_game"/);
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "tcg_printing"/);
+    expect(sql).toMatch(/app.forbid_tcg_canonical_mutate/);
+    expect(sql).not.toMatch(/ALTER TABLE "tcg_game" ENABLE ROW LEVEL SECURITY/);
+    expect(sql).not.toMatch(/ALTER TABLE "tcg_printing" ENABLE ROW LEVEL SECURITY/);
+  });
+
+  it("does not add TCG identity columns to generic kernel tables", async () => {
+    const sql = await readMigrationSql();
+    const entityCreate = sql.slice(sql.indexOf('CREATE TABLE IF NOT EXISTS "entity"'), sql.indexOf('CREATE TABLE IF NOT EXISTS "entity_identifier"'));
+    expect(entityCreate).not.toMatch(/collector_number/);
+    expect(entityCreate).not.toMatch(/language_code/);
+    expect(entityCreate).not.toMatch(/variant_key/);
+    expect(entityCreate).not.toMatch(/card_name/);
   });
 });
 
@@ -123,6 +137,9 @@ describe("committed env example", () => {
     expect(example).toMatch(/^DATABASE_ADMIN_URL=$/m);
     expect(example).toMatch(/^REDIS_URL=$/m);
     expect(example).toMatch(/^QUEUE_PREFIX=$/m);
+    expect(example).toMatch(/^TCC_API_BASE_URL=$/m);
+    expect(example).toMatch(/^TCC_API_TOKEN=$/m);
+    expect(example).not.toMatch(/tcgcardcentral\.com/i);
     expect(example).not.toMatch(/postgresql:\/\/[^:]+:[^@]+@/);
   });
 });

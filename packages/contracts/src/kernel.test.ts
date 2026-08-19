@@ -36,6 +36,7 @@ describe("kernel contracts", () => {
   it("normalizes identifiers deterministically and rejects confidence bounds", () => {
     expect(normalizeIdentifierValue("  SKU  123 ")).toBe("sku 123");
     expect(parseEntityType("sku")).toBe("sku");
+    expect(parseEntityType("tcg_printing")).toBe("tcg_printing");
     expect(
       canonicalEntityKey({
         entityType: "sku",

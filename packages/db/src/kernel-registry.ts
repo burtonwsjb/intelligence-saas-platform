@@ -18,6 +18,8 @@ export const GENERIC_ENTITY_TYPES = [
   "generic",
 ] as const;
 
+export const TCG_KERNEL_ENTITY_TYPES = ["tcg_printing"] as const;
+
 export const GENERIC_IDENTIFIER_TYPES = [
   "sku",
   "external_product_id",
@@ -52,6 +54,9 @@ export function normalizeIdentifierValue(value: string): string {
 export function parseEntityType(value: string): string {
   const lowered = value.trim().toLowerCase();
   if ((GENERIC_ENTITY_TYPES as readonly string[]).includes(lowered)) {
+    return lowered;
+  }
+  if ((TCG_KERNEL_ENTITY_TYPES as readonly string[]).includes(lowered)) {
     return lowered;
   }
   return "generic";

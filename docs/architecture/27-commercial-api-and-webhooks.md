@@ -24,6 +24,8 @@ URLs are conceptual. Do not treat them as final routes. Versioning stays `/v1`. 
 
 Generic `/v1/events`, `/v1/decisions`, `/v1/entities` remain for kernel/integration use and may stay scoped separately (`ingest:write`, `decisions:read`).
 
+Phase 07 does **not** open commercial `cards` / `printings` / `prices` / `markets` endpoints. Customer API expansion is Phase 16.
+
 Commercial scopes (planned, not final):
 
 - `market:read`
