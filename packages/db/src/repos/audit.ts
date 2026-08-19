@@ -8,7 +8,7 @@ export async function insertAuditEvent(
   input: {
     id: string;
     organizationId: string;
-    actorUserId: string;
+    actorUserId?: string | null;
     action: string;
     targetType?: string;
     targetId?: string;

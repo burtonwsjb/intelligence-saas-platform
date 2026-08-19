@@ -43,6 +43,26 @@ export {
 } from "./session.js";
 export { ensureTenantRow } from "./tenant.js";
 export {
+  ApiKeyDeniedError,
+  ISSUABLE_SCOPES,
+  InvalidApiKeyNameError,
+  KNOWN_SCOPES,
+  MissingApiKeyPepperError,
+  UnknownScopeError,
+  createTenantApiKey,
+  generateApiKeySecret,
+  hasScope,
+  hashApiKeySecret,
+  parsePresentedApiKey,
+  parseScopes,
+  requireApiKeyPepper,
+  revokeTenantApiKey,
+  rotateTenantApiKey,
+  verifyPresentedApiKey,
+  type IssuableScope,
+  type KnownScope,
+} from "./api-key.js";
+export {
   assertTenantActive,
   authorizeOrganizationSwitch,
   loadTenantStatus,

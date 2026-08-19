@@ -31,6 +31,11 @@ Change only with an explicit new decision.
 | D25 | Stack lock | Phase 02 locked Neon + Drizzle + Better Auth + RLS | Other hosting/email/billing vendors remain for later phases |
 | D26 | Database roles | `app_migrate` / `app_user` / `app_worker` / `app_admin` | Least privilege; runtime is not superuser and cannot bypass RLS |
 | D27 | Active-tenant RLS | Policies bind to the active organization + membership in that org | Multi-membership must not widen a request scoped to A |
+| D28 | Billing source of truth | Application DB entitlements; Stripe is the processor | Do not call Stripe on every request |
+| D29 | API keys | `isp_test_` prefix, HMAC-SHA256 + pepper, tenant-bound scopes | Shown once; never stored plaintext |
+| D30 | Machine RLS | `principal_type=machine` + validated key row | Does not weaken browser membership isolation |
+| D31 | Quota | Database monthly aggregates; 402 entitlement / 429 quota | Stripe meters deferred |
+| D32 | Local billing simulation | Default non-production billing mode; no Stripe network or IDs | Hosted Checkout/Portal deferred; entitlements use normalized `tenant_billing` |
 
 ## Void
 

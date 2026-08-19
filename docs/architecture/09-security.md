@@ -20,7 +20,7 @@
 
 Postgres RLS is mandatory on every tenant-owned table. Application filters are not enough. The runtime role is `app_user` (no `BYPASSRLS`). Context is transaction-local (`app.current_organization_id` + `app.current_user_id`) and bound to the active tenant only.
 
-API keys cannot select a different tenant. Redis keys, BullMQ job names, and R2 paths include `tenant_id`. Platform admin access is audited.
+API keys cannot select a different tenant. Machine requests set transaction-local `app.current_principal_type=machine` and `app.current_api_key_id`. Prefix and Stripe-customer lookups use constrained `SECURITY DEFINER` functions plus `app_migrate`-only SELECT policies; they do not grant `app_user` a tenant bypass. Redis keys, BullMQ job names, and R2 paths include `tenant_id`. Platform admin access is audited.
 
 ## Secrets
 

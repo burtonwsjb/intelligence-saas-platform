@@ -13,10 +13,12 @@
   },
   "dependencies": {
     "@isp/auth": "workspace:*",
+    "@isp/billing": "workspace:*",
     "@isp/contracts": "workspace:*",
     "@isp/db": "workspace:*",
     "@isp/shared": "workspace:*",
     "better-auth": "^1.7.1",
+    "drizzle-orm": "^0.45.2",
     "next": "^16.3.1",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",

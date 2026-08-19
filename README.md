@@ -9,11 +9,11 @@ TCG Card Central is only a future external integration (optional reference-data 
 
 ## Current phase
 
-**Phase 03 complete locally.** Tenant isolation is enforced by PostgreSQL RLS, a non-superuser `app_user` role, server-side RBAC, and real Postgres isolation tests in CI.
+**Phase 04 complete locally.** Billing simulation (no Stripe network), data-driven entitlements, hashed tenant-bound API keys, and usage/quota stubs. Hosted Stripe Checkout/Portal is deferred.
 
-Do not begin Phase 04 until explicitly instructed.
+Do not begin Phase 05 until explicitly instructed.
 
-Cloud Neon is not provisioned yet. See [docs/PHASE_03.md](docs/PHASE_03.md).
+Cloud Neon is not provisioned. Stripe live mode is forbidden. See [docs/PHASE_04.md](docs/PHASE_04.md).
 
 ## Local commands
 
@@ -39,6 +39,7 @@ TypeScript, pnpm/Turborepo, Next.js, Hono, PostgreSQL/Neon, Drizzle, Better Auth
 - [Phase 01](docs/PHASE_01.md)
 - [Phase 02](docs/PHASE_02.md)
 - [Phase 03](docs/PHASE_03.md)
+- [Phase 04](docs/PHASE_04.md)
 - [CI](docs/CI.md)
 - [Overview](docs/architecture/00-overview.md)
 - [Roadmap (phases 00–23)](docs/architecture/11-phase-roadmap.md)
@@ -55,5 +56,6 @@ TypeScript, pnpm/Turborepo, Next.js, Hono, PostgreSQL/Neon, Drizzle, Better Auth
 | Application shell | Phase 01 complete |
 | Database / auth / tenant | Phase 02 complete locally; Neon cloud not provisioned |
 | RLS / RBAC / isolation | Phase 03 complete locally; proven in CI Postgres |
-| Cloud / Stripe / TCC | Not created, not connected, not modified |
-| Phase 04 billing / API keys | Not started |
+| Billing / API keys | Phase 04 complete locally; local simulation default; Stripe Checkout deferred |
+| Cloud / Stripe live / TCC | Not created, not connected, not modified |
+| Phase 05 queue / ingest | Not started |

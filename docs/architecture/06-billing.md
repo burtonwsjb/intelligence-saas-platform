@@ -1,6 +1,6 @@
 # Billing and API entitlements
 
-Stripe is **planned, not connected**. Prices are not finalized.
+Stripe **test-mode foundation is implemented** (see [PHASE_04.md](../PHASE_04.md)). Local development uses **billing simulation** (no Stripe network). Hosted Checkout/Portal are deferred. Prices are not finalized. Live Stripe is forbidden until a later explicit go-ahead.
 
 ## Model
 
@@ -46,7 +46,7 @@ Customer, products, recurring + metered prices, Checkout, Portal, Billing Meters
 
 Store customer id, subscription id, plan key, status, period end. Never card PAN. Never TCC Stripe objects.
 
-Phase 04 implements **test** foundations. Live is Phase 23 with an explicit go-ahead.
+Phase 04 implemented **test** foundations: normalized `tenant_billing`, data-driven plans, signed webhooks, fail-closed Checkout/Portal server actions, local billing simulation, and internal usage/quota stubs. Stripe Billing Meters are **not** wired. Hosted Checkout/Portal against Stripe test products are deferred. Live is Phase 23 with an explicit go-ahead.
 
 ## Separation
 

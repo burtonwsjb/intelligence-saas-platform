@@ -1,5 +1,10 @@
 import { eq } from "drizzle-orm";
-import { tenant, withOrganizationContext, type Database } from "@isp/db";
+import {
+  ensureTenantBilling,
+  tenant,
+  withOrganizationContext,
+  type Database,
+} from "@isp/db";
 
 export async function ensureTenantRow(
   db: Database,
@@ -17,14 +22,14 @@ export async function ensureTenantRow(
         .from(tenant)
         .where(eq(tenant.organizationId, input.organizationId))
         .limit(1);
-      if (existing[0]) {
-        return;
+      if (!existing[0]) {
+        await scoped.insert(tenant).values({
+          organizationId: input.organizationId,
+          status: "active",
+          createdByUserId: input.createdByUserId,
+        });
       }
-      await scoped.insert(tenant).values({
-        organizationId: input.organizationId,
-        status: "active",
-        createdByUserId: input.createdByUserId,
-      });
+      await ensureTenantBilling(scoped, input.organizationId);
     },
   );
 }

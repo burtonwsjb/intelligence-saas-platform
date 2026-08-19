@@ -1,6 +1,6 @@
 # API contracts
 
-These are planned HTTP contracts. They are not implemented in Phase 00 and are not production APIs.
+These are planned HTTP contracts. Phase 04 added machine auth and a test `/v1/me` probe. Commercial intelligence routes are not implemented.
 
 Served by `apps/api` (Hono).  
 Base path: `/v1`  
@@ -28,7 +28,7 @@ Kernel ingest routes below remain. **Customer-facing intelligence products** are
 | 402 | Plan entitlement |
 | 404 | Unknown resource in this tenant |
 | 409 | Idempotency conflict with different payload |
-| 429 | Rate or quota |
+| 429 | Rate or quota (`quota_exceeded` for monthly plan limits) |
 | 202 | Event accepted for processing |
 
 ## `POST /v1/events`

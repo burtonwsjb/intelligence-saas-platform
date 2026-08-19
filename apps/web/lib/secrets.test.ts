@@ -21,5 +21,15 @@ describe("committed secrets", () => {
     const phase03 = readFileSync(path.join(repoRoot, "docs/PHASE_03.md"), "utf8");
     expect(phase03).not.toMatch(/BETTER_AUTH_SECRET=[^\s]+/);
     expect(phase03).not.toMatch(/postgresql:\/\/[^:]+:[^@]+@neondb/);
+
+    expect(example).toMatch(/^BILLING_MODE=$/m);
+    expect(example).toMatch(/^STRIPE_SECRET_KEY=$/m);
+    expect(example).toMatch(/^API_KEY_PEPPER=$/m);
+    expect(example).not.toMatch(/sk_live_/);
+
+    const phase04 = readFileSync(path.join(repoRoot, "docs/PHASE_04.md"), "utf8");
+    expect(phase04).not.toMatch(/BETTER_AUTH_SECRET=[^\s]+/);
+    expect(phase04).not.toMatch(/sk_live_[A-Za-z0-9]+/);
+    expect(phase04).not.toMatch(/sk_test_[A-Za-z0-9]{10,}/);
   });
 });

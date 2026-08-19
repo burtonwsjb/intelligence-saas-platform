@@ -55,17 +55,19 @@ Exit: tenant hop tests fail closed.
 
 ## Phase 04 — Stripe / entitlements / API key foundations
 
-Status: **not started**
+Status: **complete** (see [PHASE_04.md](../PHASE_04.md)). Phase 05 has **not** started.
 
-
-- Stripe **test** mode
+- Stripe **test** mode only; hosted Checkout/Portal **deferred**
+- Local billing simulation for disposable databases (no Stripe network)
 - Plan entitlements catalog (no final prices)
-- Hashed API keys
-- Meter stubs
+- Hashed API keys + Hono machine auth
+- Internal usage/quota stubs (not Stripe meters)
 
-Exit: test subscribe + key issue. (Moved earlier than the old Phase 07 so API monetization exists before TCG data scale.)
+Exit: entitlements + key issue work locally. Hosted Stripe Checkout remains deferred.
 
 ## Phase 05 — Queue, worker, and ingestion foundations
+
+Status: **not started**
 
 - Redis + BullMQ
 - Generic `/v1/events` ingest

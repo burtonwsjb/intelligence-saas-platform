@@ -13,8 +13,12 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.19.0",
+    "@isp/auth": "workspace:*",
+    "@isp/billing": "workspace:*",
     "@isp/contracts": "workspace:*",
+    "@isp/db": "workspace:*",
     "@isp/shared": "workspace:*",
+    "drizzle-orm": "^0.45.2",
     "hono": "^4.13.2"
   },
   "devDependencies": {

@@ -4,16 +4,22 @@ import postgres from "postgres";
 import {
   applyMigrations,
   bootstrapRoles,
+  claimStripeEvent,
   createDbConnection,
+  findOrganizationIdByStripeCustomer,
   DB_ROLES,
   deleteTenantResource,
+  getTenantBilling,
   insertAuditEvent,
   insertTenantResource,
+  listApiKeys,
   listAuditEvents,
   listTenantResources,
+  recordUsage,
   replaceConnectionRole,
   requireDatabaseAdminUrl,
   updateTenantResource,
+  withMachineContext,
   withOrganizationContext,
   type Database,
 } from "./index.js";
@@ -89,6 +95,16 @@ describe("PostgreSQL RLS isolation", () => {
         ('${ids.resourceA}', '${ids.orgA}', 'Alpha'),
         ('${ids.resourceB}', '${ids.orgB}', 'Beta')
       ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title;
+      INSERT INTO "tenant_billing" (organization_id, plan_key, status)
+      VALUES
+        ('${ids.orgA}', 'free', 'none'),
+        ('${ids.orgB}', 'free', 'none')
+      ON CONFLICT (organization_id) DO NOTHING;
+      INSERT INTO "api_key" (id, organization_id, name, prefix, secret_hash, scopes, status)
+      VALUES
+        ('key_a', '${ids.orgA}', 'A', 'isp_test_aaaaaaaa', 'hash_a', 'decisions:read', 'active'),
+        ('key_b', '${ids.orgB}', 'B', 'isp_test_bbbbbbbb', 'hash_b', 'decisions:read', 'active')
+      ON CONFLICT (id) DO NOTHING;
     `);
   }, 60_000);
 
@@ -251,9 +267,10 @@ describe("PostgreSQL RLS isolation", () => {
   });
 
   it("prevents the application role from rewriting audit history", async () => {
+    const auditId = `audit_${crypto.randomUUID()}`;
     await asUser(ids.userA, ids.orgA, (db) =>
       insertAuditEvent(db, {
-        id: "audit_a",
+        id: auditId,
         organizationId: ids.orgA,
         actorUserId: ids.userA,
         action: "organization.switch",
@@ -262,7 +279,7 @@ describe("PostgreSQL RLS isolation", () => {
     const events = await asUser(ids.userA, ids.orgA, (db) =>
       listAuditEvents(db, ids.orgA),
     );
-    expect(events.some((event) => event.id === "audit_a")).toBe(true);
+    expect(events.some((event) => event.id === auditId)).toBe(true);
 
     const raw = postgres(replaceConnectionRole(adminUrl, DB_ROLES.user, passwords.user), {
       max: 1,
@@ -270,11 +287,111 @@ describe("PostgreSQL RLS isolation", () => {
     });
     try {
       await expect(
-        raw.unsafe(`update audit_event set action = 'forged' where id = 'audit_a'`),
+        raw.unsafe(`update audit_event set action = 'forged' where id = '${auditId}'`),
       ).rejects.toThrow();
-      await expect(raw.unsafe(`delete from audit_event where id = 'audit_a'`)).rejects.toThrow();
+      await expect(raw.unsafe(`delete from audit_event where id = '${auditId}'`)).rejects.toThrow();
     } finally {
       await raw.end({ timeout: 5 });
     }
+  });
+
+  it("keeps API keys and billing rows inside the active tenant", async () => {
+    const keys = await asUser(ids.userA, ids.orgA, (db) => listApiKeys(db, ids.orgA));
+    expect(keys.map((key) => key.id)).toEqual(["key_a"]);
+    const hop = await asUser(ids.userA, ids.orgA, (db) => listApiKeys(db, ids.orgB));
+    expect(hop).toEqual([]);
+    const billing = await asUser(ids.userA, ids.orgA, (db) => getTenantBilling(db, ids.orgA));
+    expect(billing?.organizationId).toBe(ids.orgA);
+    const foreignBilling = await asUser(ids.userA, ids.orgA, (db) =>
+      getTenantBilling(db, ids.orgB),
+    );
+    expect(foreignBilling).toBeNull();
+  });
+
+  it("binds machine principals to the key tenant and rejects hops", async () => {
+    const own = await withMachineContext(
+      appDb,
+      { organizationId: ids.orgA, apiKeyId: "key_a" },
+      (db) => listApiKeys(db, ids.orgA),
+    );
+    expect(own.map((key) => key.id)).toEqual(["key_a"]);
+    const hop = await withMachineContext(
+      appDb,
+      { organizationId: ids.orgA, apiKeyId: "key_a" },
+      (db) => listApiKeys(db, ids.orgB),
+    );
+    expect(hop).toEqual([]);
+    const wrongTenant = await withMachineContext(
+      appDb,
+      { organizationId: ids.orgB, apiKeyId: "key_a" },
+      (db) => listApiKeys(db, ids.orgB),
+    );
+    expect(wrongTenant).toEqual([]);
+  });
+
+  it("stores API key hashes, not plaintext secrets", async () => {
+    const rows = await admin<{ secret_hash: string; prefix: string }[]>`
+      select secret_hash, prefix from api_key where id = 'key_a'
+    `;
+    expect(rows[0]?.prefix).toBe("isp_test_aaaaaaaa");
+    expect(rows[0]?.secret_hash).toBe("hash_a");
+    expect(rows[0]?.secret_hash).not.toMatch(/^isp_test_/);
+  });
+
+  it("maps a Stripe customer to exactly one tenant and fails closed otherwise", async () => {
+    await admin`
+      update tenant_billing
+      set stripe_customer_id = 'cus_testPhase04A'
+      where organization_id = ${ids.orgA}
+    `;
+    await expect(findOrganizationIdByStripeCustomer(appDb, "cus_testPhase04A")).resolves.toBe(
+      ids.orgA,
+    );
+    await expect(findOrganizationIdByStripeCustomer(appDb, "cus_unknown")).resolves.toBeNull();
+    await expect(findOrganizationIdByStripeCustomer(appDb, "not-a-customer")).resolves.toBeNull();
+  });
+
+  it("denies revoked machine keys and inactive-tenant machine writes", async () => {
+    await admin`update api_key set status = 'revoked', revoked_at = now() where id = 'key_a'`;
+    const revoked = await withMachineContext(
+      appDb,
+      { organizationId: ids.orgA, apiKeyId: "key_a" },
+      (db) => listApiKeys(db, ids.orgA),
+    );
+    expect(revoked).toEqual([]);
+    await admin`update api_key set status = 'active', revoked_at = null where id = 'key_a'`;
+
+    await admin`update tenant set status = 'suspended' where organization_id = ${ids.orgA}`;
+    await expect(
+      withMachineContext(appDb, { organizationId: ids.orgA, apiKeyId: "key_a" }, (db) =>
+        recordUsage(db, {
+          id: "usage_suspended",
+          organizationId: ids.orgA,
+          meterKey: "api.reads",
+          quantity: 1,
+        }),
+      ),
+    ).rejects.toThrow();
+    await admin`update tenant set status = 'active' where organization_id = ${ids.orgA}`;
+  });
+
+  it("claims Stripe events once", async () => {
+    const eventId = `evt_${crypto.randomUUID()}`;
+    await expect(
+      claimStripeEvent(appDb, {
+        id: eventId,
+        type: "invoice.paid",
+        organizationId: ids.orgA,
+        stripeCustomerId: "cus_test_a",
+      }),
+    ).resolves.toBe(true);
+    await expect(
+      claimStripeEvent(appDb, {
+        id: eventId,
+        type: "invoice.paid",
+        organizationId: ids.orgA,
+        stripeCustomerId: "cus_test_a",
+      }),
+    ).resolves.toBe(false);
   });
 });

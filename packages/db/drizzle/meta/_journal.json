@@ -22,6 +22,13 @@
       "when": 2,
       "tag": "0003_phase03_security",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 3,
+      "tag": "0004_phase04_billing",
+      "breakpoints": true
     }
   ]
 }

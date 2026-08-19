@@ -10,6 +10,8 @@ import {
 describe("protected paths", () => {
   it("protects /app and onboarding", () => {
     expect(isProtectedPath("/app")).toBe(true);
+    expect(isProtectedPath("/app/keys")).toBe(true);
+    expect(isProtectedPath("/app/billing")).toBe(true);
     expect(isProtectedPath("/app/settings")).toBe(true);
     expect(isProtectedPath("/onboarding")).toBe(true);
     expect(isProtectedPath("/login")).toBe(false);

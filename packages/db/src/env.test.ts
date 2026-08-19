@@ -17,9 +17,13 @@ import {
   organization,
   session,
   tenant,
+  tenantBilling,
   tenantResource,
   user,
   verification,
+  apiKey,
+  plan,
+  usageEvent,
 } from "./schema/index.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -59,6 +63,13 @@ describe("schema ownership", () => {
     expect(auditEvent).toBeDefined();
     expect(tenantResource).toBeDefined();
   });
+
+  it("exports billing and API key tables", () => {
+    expect(plan).toBeDefined();
+    expect(tenantBilling).toBeDefined();
+    expect(apiKey).toBeDefined();
+    expect(usageEvent).toBeDefined();
+  });
 });
 
 describe("migrations", () => {
@@ -71,6 +82,9 @@ describe("migrations", () => {
     expect(sql).toMatch(/app.has_active_membership\(\)/);
     expect(sql).toMatch(/app.tenant_is_active\(\)/);
     expect(sql).toMatch(/CREATE POLICY tenant_select ON "tenant"/);
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "api_key"/);
+    expect(sql).toMatch(/app.has_machine_principal\(\)/);
+    expect(sql).toMatch(/app.claim_stripe_event/);
     expect(sql).not.toMatch(/ALTER TABLE "user" ENABLE ROW LEVEL SECURITY/);
     expect(sql).not.toMatch(/ALTER TABLE "session" ENABLE ROW LEVEL SECURITY/);
     expect(sql).not.toMatch(/ALTER TABLE "organization" ENABLE ROW LEVEL SECURITY/);

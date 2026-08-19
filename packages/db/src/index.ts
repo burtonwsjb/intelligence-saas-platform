@@ -24,9 +24,13 @@ export {
   assertContextId,
   assertTenantContext,
   parseOrganizationContext,
+  withMachineContext,
   withOrganizationContext,
+  withSystemContext,
   withTenantScope,
+  type MachineContext,
   type OrganizationContext,
+  type SystemContext,
 } from "./rls.js";
 export { insertAuditEvent, listAuditEvents } from "./repos/audit.js";
 export {
@@ -35,4 +39,24 @@ export {
   listTenantResources,
   updateTenantResource,
 } from "./repos/tenant-resource.js";
+export {
+  claimStripeEvent,
+  ensureTenantBilling,
+  findOrganizationIdByStripeCustomer,
+  getTenantBilling,
+  listPlanCatalog,
+  listTenantEntitlementOverrides,
+  upsertTenantBilling,
+  upsertTenantEntitlementOverride,
+} from "./repos/billing.js";
+export {
+  countActiveApiKeys,
+  insertApiKey,
+  listApiKeys,
+  lookupApiKeyByPrefix,
+  revokeApiKey,
+  touchApiKeyLastUsed,
+  type ApiKeyLookup,
+} from "./repos/api-key.js";
+export { getMonthUsage, monthStartUtc, recordUsage } from "./repos/usage.js";
 export * from "./schema/index.js";
