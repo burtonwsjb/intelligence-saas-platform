@@ -120,6 +120,9 @@ describe("migrations", () => {
     expect(sql).not.toMatch(/ALTER TABLE "tcg_game" ENABLE ROW LEVEL SECURITY/);
     expect(sql).not.toMatch(/ALTER TABLE "tcg_printing" ENABLE ROW LEVEL SECURITY/);
     expect(sql).not.toMatch(/ALTER TABLE "tcg_market_snapshot" ENABLE ROW LEVEL SECURITY/);
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "source_content"/);
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "source_mention"/);
+    expect(sql).not.toMatch(/ALTER TABLE "source_content" ENABLE ROW LEVEL SECURITY/);
   });
 
   it("does not add TCG identity columns to generic kernel tables", async () => {

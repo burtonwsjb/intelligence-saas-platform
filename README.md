@@ -9,9 +9,9 @@ TCG Card Central is only a future external integration (optional reference-data 
 
 ## Current phase
 
-**Phase 08 complete locally.** Exact-printing TCG market history (sold, listings, reference, volume), fixture providers only, global immutable snapshots, optional tenant kernel projection. Cloud Redis and Neon are not provisioned. Stripe live mode is forbidden. See [docs/PHASE_08.md](docs/PHASE_08.md).
+**Phase 09 complete locally.** Source intelligence ingestion (YouTube/Reddit fixture providers, immutable content, segments, unresolved mentions, engagement). Cloud Redis and Neon are not provisioned. Stripe live mode is forbidden. See [docs/PHASE_09.md](docs/PHASE_09.md).
 
-Do not begin Phase 09 until explicitly instructed.
+Do not begin Phase 10 until explicitly instructed.
 
 ## Local commands
 
@@ -43,6 +43,7 @@ TypeScript, pnpm/Turborepo, Next.js, Hono, PostgreSQL/Neon, Drizzle, Better Auth
 - [Phase 06](docs/PHASE_06.md)
 - [Phase 07](docs/PHASE_07.md)
 - [Phase 08](docs/PHASE_08.md)
+- [Phase 09](docs/PHASE_09.md)
 - [CI](docs/CI.md)
 - [Overview](docs/architecture/00-overview.md)
 - [Roadmap (phases 00–23)](docs/architecture/11-phase-roadmap.md)
@@ -64,5 +65,6 @@ TypeScript, pnpm/Turborepo, Next.js, Hono, PostgreSQL/Neon, Drizzle, Better Auth
 | Intelligence kernel | Phase 06 complete locally; generic entities/observations/signals; no TCG columns on kernel tables |
 | TCG identity / TCC sandbox | Phase 07 complete locally; fixture provider only; no real TCC calls |
 | TCG market history | Phase 08 complete locally; fixture providers only; no real TCC/TCGplayer/eBay calls |
+| Source intelligence ingest | Phase 09 complete locally; YouTube/Reddit fixtures only; no scrape |
 | Cloud / Stripe live / TCC production | Not created, not connected, not modified |
-| Phase 09 YouTube / Reddit / source ingest | Not started |
+| Phase 10 entity resolution | Not started |

@@ -17,6 +17,7 @@ export {
   JOB_ENVELOPE_VERSION,
   createMarketNormalizeEnvelope,
   createNormalizeEnvelope,
+  createSourceNormalizeEnvelope,
   jobEnvelopeSchema,
   parseJobEnvelope,
   type JobEnvelope,

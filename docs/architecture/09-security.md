@@ -37,6 +37,7 @@ API keys cannot select a different tenant. Machine requests set transaction-loca
 - Store source payloads, but do not render them as HTML
 - Do not evaluate policy documents as code; rules are data interpreted by a fixed engine
 - Outbound HTTP only to allowlisted connector bases, never to tenant-supplied arbitrary URLs in v1
+- Source intelligence text is untrusted; excerpts are bounded and never executed as HTML or prompts
 
 ## Decision integrity
 

@@ -100,6 +100,13 @@ export async function bootstrapRoles(
       "tcg_market_snapshot",
       "tcg_market_quarantine",
       "tcg_market_revision",
+      "source_platform",
+      "source_account",
+      "source_ingest",
+      "source_content",
+      "source_content_segment",
+      "source_mention",
+      "source_engagement_snapshot",
     ];
     for (const table of tables) {
       await sql.unsafe(`ALTER TABLE "${table}" OWNER TO ${DB_ROLES.migrate}`);
@@ -125,6 +132,8 @@ export async function bootstrapRoles(
       ALTER FUNCTION app.forbid_tcg_canonical_mutate() OWNER TO ${DB_ROLES.migrate};
       ALTER FUNCTION app.forbid_tcg_market_mutate() OWNER TO ${DB_ROLES.migrate};
       ALTER FUNCTION app.require_system_tcg_market_write() OWNER TO ${DB_ROLES.migrate};
+      ALTER FUNCTION app.forbid_source_mutate() OWNER TO ${DB_ROLES.migrate};
+      ALTER FUNCTION app.require_system_source_write() OWNER TO ${DB_ROLES.migrate};
     `);
 
     await sql.unsafe(`
@@ -144,13 +153,30 @@ export async function bootstrapRoles(
         "tcg_game", "tcg_language", "tcg_set", "tcg_card_concept",
         "tcg_printing", "tcg_printing_identifier", "tcg_identifier_conflict",
         "tcg_market_source", "tcg_market_ingest", "tcg_market_snapshot",
-        "tcg_market_quarantine", "tcg_market_revision"
+        "tcg_market_quarantine", "tcg_market_revision",
+        "source_platform", "source_account", "source_ingest", "source_content",
+        "source_content_segment", "source_mention", "source_engagement_snapshot"
       TO ${DB_ROLES.user}, ${DB_ROLES.worker};
       REVOKE INSERT, UPDATE, DELETE ON TABLE
         "tcg_game", "tcg_language", "tcg_set", "tcg_card_concept",
         "tcg_printing", "tcg_printing_identifier", "tcg_identifier_conflict",
         "tcg_market_source"
       FROM ${DB_ROLES.user}, ${DB_ROLES.worker};
+      REVOKE INSERT, UPDATE, DELETE ON TABLE
+        "source_platform"
+      FROM ${DB_ROLES.user}, ${DB_ROLES.worker};
+      GRANT SELECT, INSERT, UPDATE ON TABLE "source_account", "source_ingest" TO ${DB_ROLES.worker};
+      GRANT SELECT, INSERT ON TABLE
+        "source_content", "source_content_segment", "source_mention", "source_engagement_snapshot"
+      TO ${DB_ROLES.worker};
+      REVOKE INSERT, UPDATE, DELETE ON TABLE
+        "source_account", "source_ingest", "source_content", "source_content_segment",
+        "source_mention", "source_engagement_snapshot"
+      FROM ${DB_ROLES.user};
+      REVOKE UPDATE, DELETE ON TABLE
+        "source_content", "source_content_segment", "source_mention", "source_engagement_snapshot"
+      FROM ${DB_ROLES.worker};
+      REVOKE DELETE ON TABLE "source_account", "source_ingest" FROM ${DB_ROLES.worker};
       GRANT SELECT, INSERT ON TABLE
         "tcg_market_snapshot", "tcg_market_quarantine", "tcg_market_revision"
       TO ${DB_ROLES.worker};

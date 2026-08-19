@@ -221,4 +221,33 @@ export {
 } from "./tcg/market-provider.js";
 export { tcgMarketFixtureRecords } from "./tcg/market-fixtures.js";
 export { projectTcgMarketSnapshotToTenant } from "./tcg/market-project.js";
+export {
+  MAX_SOURCE_EXCERPT_CHARS,
+  SOURCE_EXTRACTOR_VERSION,
+  SourceValidationError,
+  boundSourceExcerpt,
+  deriveSentimentFoundation,
+  normalizeMentionText,
+  summarizeMentionVelocity,
+  type SourceContentRecordInput,
+} from "./source/identity.js";
+export {
+  getSourceContentByExternal,
+  ingestSourceContentRecord,
+  listSourceAccounts,
+  listSourceContent,
+  listSourceEngagement,
+  listSourceMentions,
+  listSourceSegments,
+  markSourceIngestFailed,
+  normalizeSourceIntelligenceIngest,
+  receiveSourceContentRecord,
+} from "./source/ingest.js";
+export { sourceIntelligenceFixtures } from "./source/fixtures.js";
+export {
+  FixtureRedditSourceProvider,
+  FixtureYoutubeSourceProvider,
+  type RedditSourceProvider,
+  type YoutubeSourceProvider,
+} from "./source/provider.js";
 export * from "./schema/index.js";

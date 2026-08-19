@@ -35,7 +35,7 @@ Kernel ingest routes below remain. Historical kernel queries are repository-only
 
 Implemented in Phase 05. Scope: `ingest:write`. Tenant is the API key organization. Max body **65536** bytes (`413 payload_too_large`). Requires `idempotency_key`. Same key + same body returns the original `202`. Same key + different body returns `409 idempotency_conflict`. Optional `x-request-id` is echoed when well-formed; it is not an idempotency key.
 
-v1 generic `event_type` registry (unknown types return `400`): `metric.snapshot`, `pricing.snapshot`, `transaction.summary`, `inventory.snapshot`, `sentiment.snapshot`, `ranking.snapshot`. `pricing.snapshot` is preserved as a generic metric event and normalizes to observation type `metric.snapshot`. TCG pack event types (`tcg.market.sold`, `tcg.market.listing_snapshot`, `tcg.market.reference_price`, `tcg.market.volume_snapshot`) are **not** accepted on this route; they are processed by `tcg.market.normalize.v1`. No public market-history HTTP API in Phase 08 (see [PHASE_08.md](../PHASE_08.md)).
+v1 generic `event_type` registry (unknown types return `400`): `metric.snapshot`, `pricing.snapshot`, `transaction.summary`, `inventory.snapshot`, `sentiment.snapshot`, `ranking.snapshot`. `pricing.snapshot` is preserved as a generic metric event and normalizes to observation type `metric.snapshot`. TCG pack event types (`tcg.market.sold`, `tcg.market.listing_snapshot`, `tcg.market.reference_price`, `tcg.market.volume_snapshot`) and source pack types (`source.content.ingested`, `source.engagement.snapshot`) are **not** accepted on this route.
 
 ```json
 {

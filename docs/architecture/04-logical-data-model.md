@@ -322,6 +322,14 @@ These are not TCG tables. TCG printings bind to `entities` / pack tables.
 
 - `id`, `source_type`, `external_id`, `url`, `author_id`, `published_at`, `license_status`, `raw_ref`, `derived`, `data_quality`
 
+### `source_platform` / `source_account` / `source_content` / `source_content_segment` / `source_mention` / `source_engagement_snapshot` / `source_ingest`
+
+Implemented in Phase 09 as platform-global tables (no tenant RLS). See [PHASE_09.md](../PHASE_09.md).
+
+- Public source accounts and content are shared reference facts
+- Mentions do not bind exact printings in Phase 09
+- Excerpts are bounded; full transcripts are not stored
+
 ### `mentions` + `entity_resolutions`
 
 - raw text, context, status (`exact`|`high_confidence`|`probable`|`ambiguous`|`unresolved`), confidence, evidence, versions

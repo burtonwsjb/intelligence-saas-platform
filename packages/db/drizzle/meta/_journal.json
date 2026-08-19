@@ -57,6 +57,13 @@
       "when": 7,
       "tag": "0008_phase08_tcg_market",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 8,
+      "tag": "0009_phase09_source",
+      "breakpoints": true
     }
   ]
 }

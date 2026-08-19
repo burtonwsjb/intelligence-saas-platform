@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { UnrecoverableJobError } from "./errors.js";
-import { createMarketNormalizeEnvelope, createNormalizeEnvelope, parseJobEnvelope } from "./envelope.js";
+import { createMarketNormalizeEnvelope, createNormalizeEnvelope, createSourceNormalizeEnvelope, parseJobEnvelope } from "./envelope.js";
 import { DEFAULT_BACKOFF_MS, DEFAULT_JOB_ATTEMPTS, ingestQueueName } from "./names.js";
 import { queueEnvironmentName, requireRedisUrl, MissingRedisUrlError } from "./env.js";
 
@@ -28,6 +28,14 @@ describe("job envelope", () => {
     expect(() =>
       parseJobEnvelope({ ...envelope, source_event_id: "event_12345678" }),
     ).not.toThrow();
+  });
+
+  it("accepts a versioned source intelligence normalize envelope", () => {
+    const envelope = createSourceNormalizeEnvelope({
+      jobId: "outbox_source01",
+      sourceIngestId: "sin_12345678",
+    });
+    expect(parseJobEnvelope(envelope).job_type).toBe("source.intelligence.normalize.v1");
   });
 });
 

@@ -1,6 +1,6 @@
 # Phase 08 — TCG market-history model and exact-printing ingest
 
-Status: **implemented**. Phase 09 has **not** started.
+Status: **implemented**. Phase 09 is complete; see [PHASE_09.md](PHASE_09.md). Phase 10 has **not** started.
 
 Exact printings accumulate immutable market observations. Shared provider facts are platform-global. Fixture providers only. No real TCG Card Central, TCGplayer, or eBay network calls. No YouTube/Reddit, creator authority, market indices, alpha, or opportunity scoring.
 

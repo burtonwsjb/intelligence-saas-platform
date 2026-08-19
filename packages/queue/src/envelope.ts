@@ -23,6 +23,12 @@ export const jobEnvelopeSchema = z.discriminatedUnion("job_type", [
     market_ingest_id: z.string().min(8).max(128),
     organization_id: z.string().min(1).max(128).optional(),
   }),
+  z.object({
+    ...baseEnvelope,
+    job_type: z.literal("source.intelligence.normalize.v1"),
+    source_ingest_id: z.string().min(8).max(128),
+    organization_id: z.string().min(1).max(128).optional(),
+  }),
 ]);
 
 export type JobEnvelope = z.infer<typeof jobEnvelopeSchema>;
@@ -62,6 +68,21 @@ export function createMarketNormalizeEnvelope(input: {
     job_type: "tcg.market.normalize.v1",
     job_id: input.jobId,
     market_ingest_id: input.marketIngestId,
+    created_at: new Date().toISOString(),
+    request_id: input.requestId,
+  };
+}
+
+export function createSourceNormalizeEnvelope(input: {
+  jobId: string;
+  sourceIngestId: string;
+  requestId?: string;
+}): JobEnvelope {
+  return {
+    job_version: JOB_ENVELOPE_VERSION,
+    job_type: "source.intelligence.normalize.v1",
+    job_id: input.jobId,
+    source_ingest_id: input.sourceIngestId,
     created_at: new Date().toISOString(),
     request_id: input.requestId,
   };

@@ -58,6 +58,10 @@ Change only with an explicit new decision.
 | D52 | Spread formula | `spread.v1` = `lowest_ask_minus_latest_sold` | Explicit units; do not treat listing as sold |
 | D53 | Outlier handling | Flag with `outlier.v1`; never delete raw history | Later analytics may filter |
 | D54 | Phase 08 providers | In-memory fixture TCC/TCGplayer/eBay only | No network, no credentials |
+| D55 | Source intelligence data | Platform-global accounts/content/mentions; no tenant RLS | Public source personalities are shared reference data |
+| D56 | Source ingest jobs | `source.intelligence.normalize.v1` on `source_ingest` | Not tenant `outbox_job`; not generic `/v1/events` |
+| D57 | Copyright retention | Bounded excerpts (500 chars) + hashes + URL references | No full transcript archive in Phase 09 |
+| D58 | Phase 09 providers | In-memory YouTube/Reddit fixtures only | No scrape, no live API |
 
 ## Void
 

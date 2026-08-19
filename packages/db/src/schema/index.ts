@@ -10,3 +10,4 @@ export * from "./ingest.js";
 export * from "./kernel.js";
 export * from "./tcg.js";
 export * from "./tcg-market.js";
+export * from "./source.js";

@@ -55,6 +55,8 @@ import {
   tcgGame,
   tcgMarketSnapshot,
   ingestTcgMarketRecord,
+  ingestSourceContentRecord,
+  sourceContent,
   withPlatformContext,
 } from "./index.js";
 
@@ -1008,6 +1010,64 @@ describe("PostgreSQL RLS isolation", () => {
             condition: "nm",
             sourceRecordId: "tenant_hack",
             fingerprint: "fp_tenant_hack",
+          }),
+        ),
+      ).rejects.toThrow();
+    } finally {
+      await adminConn.end();
+    }
+  });
+
+  it("prevents tenants from mutating global source intelligence facts", async () => {
+    const adminConn = createDbConnection(adminUrl);
+    try {
+      const ingested = await withPlatformContext(adminConn.db, (db) =>
+        ingestSourceContentRecord(db, {
+          provider: "youtube",
+          provider_record_id: `iso_yt_${crypto.randomUUID()}`,
+          event_type: "source.content.ingested",
+          account: { external_account_id: "yt_iso", handle: "iso" },
+          content: {
+            external_content_id: `iso_vid_${crypto.randomUUID()}`,
+            content_type: "video",
+            published_at: "2026-01-01T00:00:00.000Z",
+            canonical_url: "https://youtube.com/watch?v=iso",
+            language: "en",
+            excerpt: "Greninja 214",
+          },
+        }),
+      );
+      expect(ingested.status).toBe("processed");
+      const raw = postgres(replaceConnectionRole(adminUrl, DB_ROLES.user, passwords.user), {
+        max: 1,
+        prepare: false,
+      });
+      try {
+        const rows = await raw`select id from source_content where id = ${ingested.contentId}`;
+        expect(rows).toHaveLength(1);
+        await expect(
+          raw`insert into source_content (
+            id, source_type, external_content_id, account_id, published_at, canonical_url, content_type, fingerprint
+          ) values ('sct_hack', 'youtube', 'hack', 'missing', now(), 'https://example.com', 'video', 'fp')`,
+        ).rejects.toThrow();
+        await expect(
+          raw`update source_content set title = 'Hacked' where id = ${ingested.contentId}`,
+        ).rejects.toThrow();
+        await expect(raw`delete from source_content where id = ${ingested.contentId}`).rejects.toThrow();
+      } finally {
+        await raw.end({ timeout: 5 });
+      }
+      await expect(
+        asUser(ids.userA, ids.orgA, (db) =>
+          db.insert(sourceContent).values({
+            id: "sct_tenant_hack",
+            sourceType: "youtube",
+            externalContentId: "tenant_hack",
+            accountId: "missing",
+            publishedAt: new Date(),
+            canonicalUrl: "https://example.com",
+            contentType: "video",
+            fingerprint: "fp",
           }),
         ),
       ).rejects.toThrow();

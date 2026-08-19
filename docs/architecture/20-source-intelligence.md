@@ -78,6 +78,8 @@ Always cross-check social activity against completed sales, velocity, and liquid
 - Retention shorter for raw social text than for derived signals
 - Robots / API ToS / copyright reviewed before Phase 09 implementation
 
+Phase 09 implemented fixture ingestion only ([PHASE_09.md](../PHASE_09.md)). Mentions are stored unresolved. Live YouTube/Reddit APIs and HTML scraping are not used.
+
 ## Quality
 
 Each source document has `data_quality` and `manipulation_risk` hints (bot-like, deleted, edited, embed-only). Low quality reduces weight in creator and social features; it does not delete the document.

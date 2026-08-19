@@ -1,6 +1,10 @@
 import { queueEnvironmentName } from "./env.js";
 
-export const JOB_TYPES = ["source_event.normalize", "tcg.market.normalize.v1"] as const;
+export const JOB_TYPES = [
+  "source_event.normalize",
+  "tcg.market.normalize.v1",
+  "source.intelligence.normalize.v1",
+] as const;
 export type JobType = (typeof JOB_TYPES)[number];
 
 export const DEFAULT_JOB_ATTEMPTS = 5;

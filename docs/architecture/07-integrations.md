@@ -18,8 +18,8 @@ Contracts only. Nothing is connected. TCG Card Central is not modified.
 |---|---|---|
 | `generic_http` | Reusable capability. Phase 05 ingest + Phase 06 kernel normalization | 05 / 06 |
 | `market_feed` | Licensed/TCC/other price & sales (Phase 08: fixture ingest only) | 08 |
-| `youtube` | Permitted metadata + derived extracts | 09 |
-| `reddit` | Permitted posts + derived social signals | 09 |
+| `youtube` | Permitted metadata + derived extracts (Phase 09: fixture provider only) | 09 |
+| `reddit` | Permitted posts + derived social signals (Phase 09: fixture provider only) | 09 |
 | `tcg_card_central` | Sandbox 07; production 23 only with go-ahead | 07 / 23 |
 
 ## TCG Card Central
@@ -49,7 +49,7 @@ Phase 07 uses **in-memory fixtures only** (`SandboxTcgCardCentralProvider`). Pha
 
 ## YouTube and Reddit
 
-See [20-source-intelligence.md](./20-source-intelligence.md). ToS and copyright reviewed before Phase 09. Prefer URL + structured extracts over raw transcripts.
+See [20-source-intelligence.md](./20-source-intelligence.md) and [PHASE_09.md](../PHASE_09.md). Phase 09 uses in-memory fixtures only. Prefer URL + structured extracts over raw transcripts.
 
 ## Stripe and Resend
 

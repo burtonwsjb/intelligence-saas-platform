@@ -102,7 +102,7 @@ Exit: exact printing keys exist; sandbox mapping tests pass.
 
 ## Phase 08 — TCG market-history ingestion
 
-Status: **complete** (see [PHASE_08.md](../PHASE_08.md)). Phase 09 has **not** started.
+Status: **complete** (see [PHASE_08.md](../PHASE_08.md)).
 
 - Immutable snapshots keyed by exact printing
 - Source registry; sold vs listing vs reference kept distinct
@@ -114,8 +114,12 @@ Exit: a printing has a durable multi-source history.
 
 ## Phase 09 — YouTube / Reddit / source ingestion
 
-- Source documents, lawful extracts
-- Mentions without silent printing binds
+Status: **complete** (see [PHASE_09.md](../PHASE_09.md)). Phase 10 has **not** started.
+
+- Source accounts, immutable content, segments, mentions, engagement snapshots
+- YouTube and Reddit **fixture** providers only
+- Bounded excerpt retention; no transcript archive; no HTML scrape
+- Mentions remain unresolved
 
 Exit: sources land as documents + mention spans.
 

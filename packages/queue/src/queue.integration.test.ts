@@ -15,6 +15,7 @@ import {
   member,
   organization,
   receiveTcgMarketRecord,
+  receiveSourceContentRecord,
   replaceConnectionRole,
   requireDatabaseAdminUrl,
   seedTcgIdentityFixtures,
@@ -25,7 +26,7 @@ import {
   withSystemContext,
   type Database,
 } from "@isp/db";
-import { createMarketNormalizeEnvelope, createNormalizeEnvelope } from "./envelope.js";
+import { createMarketNormalizeEnvelope, createNormalizeEnvelope, createSourceNormalizeEnvelope } from "./envelope.js";
 import { UnrecoverableJobError } from "./errors.js";
 import { requireRedisUrl } from "./env.js";
 import { DEFAULT_JOB_ATTEMPTS } from "./names.js";
@@ -374,6 +375,33 @@ describe("Redis + Postgres ingest queue", () => {
     const envelope = createMarketNormalizeEnvelope({
       jobId: `job_${crypto.randomUUID().slice(0, 8)}`,
       marketIngestId: received.ingestId,
+    });
+    const first = await processNormalizeJob(adminConn.db, envelope);
+    const replay = await processNormalizeJob(adminConn.db, envelope);
+    expect(first.status).toBe("processed");
+    expect(replay.status).toBe("duplicate");
+  });
+
+  it("replays source intelligence normalize jobs without duplicating content", async () => {
+    const received = await withPlatformContext(adminConn.db, (scoped) =>
+      receiveSourceContentRecord(scoped, {
+        provider: "youtube",
+        provider_record_id: `queue_yt_${crypto.randomUUID()}`,
+        event_type: "source.content.ingested",
+        account: { external_account_id: "yt_queue", handle: "queue" },
+        content: {
+          external_content_id: `queue_vid_${crypto.randomUUID()}`,
+          content_type: "video",
+          published_at: "2026-01-01T00:00:00.000Z",
+          canonical_url: "https://youtube.com/watch?v=queue",
+          language: "en",
+          excerpt: "Greninja 214",
+        },
+      }),
+    );
+    const envelope = createSourceNormalizeEnvelope({
+      jobId: `job_${crypto.randomUUID().slice(0, 8)}`,
+      sourceIngestId: received.ingestId,
     });
     const first = await processNormalizeJob(adminConn.db, envelope);
     const replay = await processNormalizeJob(adminConn.db, envelope);
