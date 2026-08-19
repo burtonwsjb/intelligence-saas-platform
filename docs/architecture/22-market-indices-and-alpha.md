@@ -1,5 +1,7 @@
 # Market indices and alpha
 
+Phase 13 implements the TCG index pack as `tcg_index_definition`, point-in-time `tcg_index_membership`, and `tcg_index_level`, plus `creator_call_alpha`. See [PHASE_13.md](../PHASE_13.md). Names below remain **examples**, not a closed list.
+
 ## Generalized index framework
 
 Indices are kernel objects. TCG supplies the first membership rules. Names below are **examples**, not a closed list:
@@ -72,7 +74,7 @@ Pick the tightest **qualified** cohort:
 
 Price-tier and sealed-vs-singles cuts apply when the call is in that class. Grade-specific calls use grade indices when they exist.
 
-Benchmark id, rule version, and level-at-call / level-at-horizon are stored on the outcome row.
+Benchmark id, rule version, and level-at-call / level-at-horizon are stored on `creator_call_alpha` (not by rewriting `creator_call_outcome`).
 
 ## Use in the product
 

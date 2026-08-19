@@ -117,6 +117,11 @@ export async function bootstrapRoles(
       "creator_call_outcome",
       "creator_authority_slice",
       "creator_trust_event",
+      "tcg_market_feature_snapshot",
+      "tcg_index_definition",
+      "tcg_index_membership",
+      "tcg_index_level",
+      "creator_call_alpha",
     ];
     for (const table of tables) {
       await sql.unsafe(`ALTER TABLE "${table}" OWNER TO ${DB_ROLES.migrate}`);
@@ -142,6 +147,9 @@ export async function bootstrapRoles(
       ALTER FUNCTION app.forbid_tcg_canonical_mutate() OWNER TO ${DB_ROLES.migrate};
       ALTER FUNCTION app.forbid_tcg_market_mutate() OWNER TO ${DB_ROLES.migrate};
       ALTER FUNCTION app.require_system_tcg_market_write() OWNER TO ${DB_ROLES.migrate};
+      ALTER FUNCTION app.forbid_analytics_mutate() OWNER TO ${DB_ROLES.migrate};
+      ALTER FUNCTION app.require_system_analytics_write() OWNER TO ${DB_ROLES.migrate};
+      ALTER FUNCTION app.close_index_membership() OWNER TO ${DB_ROLES.migrate};
       ALTER FUNCTION app.forbid_source_mutate() OWNER TO ${DB_ROLES.migrate};
       ALTER FUNCTION app.require_system_source_write() OWNER TO ${DB_ROLES.migrate};
       ALTER FUNCTION app.forbid_resolution_mutate() OWNER TO ${DB_ROLES.migrate};
@@ -173,7 +181,9 @@ export async function bootstrapRoles(
         "tcg_card_name_alias", "entity_resolution_attempt", "entity_resolution_candidate",
         "entity_resolution_correction",
         "creator", "creator_source_account", "creator_call", "creator_call_outcome",
-        "creator_authority_slice", "creator_trust_event"
+        "creator_authority_slice", "creator_trust_event",
+        "tcg_market_feature_snapshot", "tcg_index_definition", "tcg_index_membership",
+        "tcg_index_level", "creator_call_alpha"
       TO ${DB_ROLES.user}, ${DB_ROLES.worker};
       REVOKE INSERT, UPDATE, DELETE ON TABLE
         "tcg_game", "tcg_language", "tcg_set", "tcg_card_concept",
@@ -197,7 +207,9 @@ export async function bootstrapRoles(
         "tcg_card_name_alias", "entity_resolution_attempt", "entity_resolution_candidate",
         "entity_resolution_correction",
         "creator", "creator_source_account", "creator_call", "creator_call_outcome",
-        "creator_authority_slice", "creator_trust_event"
+        "creator_authority_slice", "creator_trust_event",
+        "tcg_market_feature_snapshot", "tcg_index_definition", "tcg_index_membership",
+        "tcg_index_level", "creator_call_alpha"
       FROM ${DB_ROLES.user};
       REVOKE UPDATE, DELETE ON TABLE
         "source_content", "source_content_segment", "source_mention", "source_engagement_snapshot",
@@ -208,16 +220,22 @@ export async function bootstrapRoles(
       REVOKE DELETE ON TABLE "creator", "creator_call_outcome" FROM ${DB_ROLES.worker};
       REVOKE DELETE ON TABLE "source_account", "source_ingest" FROM ${DB_ROLES.worker};
       GRANT SELECT, INSERT ON TABLE
-        "tcg_market_snapshot", "tcg_market_quarantine", "tcg_market_revision"
+        "tcg_market_snapshot", "tcg_market_quarantine", "tcg_market_revision",
+        "tcg_market_feature_snapshot", "tcg_index_definition", "tcg_index_membership",
+        "tcg_index_level", "creator_call_alpha"
       TO ${DB_ROLES.worker};
+      GRANT UPDATE ON TABLE "tcg_index_membership" TO ${DB_ROLES.worker};
       GRANT SELECT, INSERT, UPDATE ON TABLE "tcg_market_ingest" TO ${DB_ROLES.worker};
       REVOKE INSERT, UPDATE, DELETE ON TABLE
-        "tcg_market_ingest", "tcg_market_snapshot", "tcg_market_quarantine", "tcg_market_revision"
+        "tcg_market_ingest", "tcg_market_snapshot", "tcg_market_quarantine", "tcg_market_revision",
+        "tcg_market_feature_snapshot", "tcg_index_definition", "tcg_index_membership",
+        "tcg_index_level", "creator_call_alpha"
       FROM ${DB_ROLES.user};
       REVOKE UPDATE, DELETE ON TABLE
-        "tcg_market_snapshot", "tcg_market_quarantine", "tcg_market_revision"
+        "tcg_market_snapshot", "tcg_market_quarantine", "tcg_market_revision",
+        "tcg_market_feature_snapshot", "tcg_index_definition", "tcg_index_level", "creator_call_alpha"
       FROM ${DB_ROLES.worker};
-      REVOKE DELETE ON TABLE "tcg_market_ingest" FROM ${DB_ROLES.worker};
+      REVOKE DELETE ON TABLE "tcg_market_ingest", "tcg_index_membership" FROM ${DB_ROLES.worker};
       GRANT SELECT, INSERT ON TABLE "audit_event" TO ${DB_ROLES.user}, ${DB_ROLES.worker};
       REVOKE UPDATE, DELETE ON TABLE "audit_event" FROM ${DB_ROLES.user}, ${DB_ROLES.worker};
       REVOKE SELECT, INSERT, UPDATE, DELETE ON TABLE "stripe_event" FROM ${DB_ROLES.user}, ${DB_ROLES.worker};

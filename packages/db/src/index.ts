@@ -302,4 +302,37 @@ export {
   AUTHORITY_VERSION,
 } from "./creator/authority.js";
 export { authorityScore, bayesMean, wilsonInterval } from "./creator/stats.js";
+export {
+  ALPHA_METHOD_VERSION,
+  BENCHMARK_RESOLVER_VERSION,
+  DEFAULT_INDEX_WEIGHTING,
+  DEFAULT_OUTLIER_POLICY,
+  INDEX_BASE_VALUE,
+  INDEX_METHOD_VERSION,
+  MARKET_FEATURE_SET_KEY,
+  MARKET_FEATURE_SET_VERSION,
+  MARKET_RETURN_PERIODS,
+} from "./analytics/catalog.js";
+export {
+  computeMarketFeatures,
+  computeMarketFeaturesWithBenchmark,
+  computeFeaturesFromSeries,
+  getMarketFeatureSnapshot,
+  persistMarketFeatureSnapshot,
+} from "./analytics/features.js";
+export {
+  computeIndexLevel,
+  getIndexDefinition,
+  getIndexLevelAsOf,
+  indexReturn,
+  listIndexDefinitions,
+  listIndexLevels,
+  listMembershipAsOf,
+  persistIndexLevel,
+  qualifyIndexMembers,
+  rebalanceIndex,
+  upsertIndexDefinition,
+} from "./analytics/index-engine.js";
+export { printingBenchmarkContext, resolveBenchmark } from "./analytics/benchmark.js";
+export { computeCreatorAlpha, getCreatorCallAlpha } from "./analytics/alpha.js";
 export * from "./schema/index.js";

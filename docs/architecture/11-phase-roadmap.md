@@ -146,7 +146,7 @@ Exit: a fixture video/post becomes a call row.
 
 ## Phase 12 — Creator authority and outcome tracking
 
-Status: **complete** (see [PHASE_12.md](../PHASE_12.md)). Phase 13 has **not** started.
+Status: **complete** (see [PHASE_12.md](../PHASE_12.md)).
 
 - Contextual slices
 - Bayesian / Wilson sample-size handling
@@ -156,6 +156,8 @@ Status: **complete** (see [PHASE_12.md](../PHASE_12.md)). Phase 13 has **not** s
 Exit: 4/4 does not outrank 730/1000 on raw rate.
 
 ## Phase 13 — Market analytics and indices
+
+Status: **complete** (see [PHASE_13.md](../PHASE_13.md)). Phase 14 has **not** started.
 
 - Collectible-adapted analytics
 - Generalized index spec, survivorship-safe history

@@ -7,6 +7,7 @@ import {
   creatorCallOutcome,
   creatorTrustEvent,
 } from "../schema/creator.js";
+import { creatorCallAlpha } from "../schema/analytics.js";
 import {
   assignTrustState,
   authorityScore,
@@ -19,6 +20,7 @@ import {
   wilsonInterval,
 } from "./stats.js";
 import { earlyCallScore, printingContext } from "./outcomes.js";
+import { ALPHA_METHOD_VERSION } from "../analytics/catalog.js";
 
 export const AUTHORITY_VERSION = "authority.v1";
 export const BENCHMARK_REQUIREMENT = "phase_13_language_era_set_tier_index";
@@ -70,6 +72,12 @@ export async function recomputeCreatorAuthority(db: Database, creatorId: string,
       row.call.printingId &&
       (row.call.resolutionStatus === "exact" || row.call.resolutionStatus === "high_confidence"),
   );
+  const alphaRows = await db.select().from(creatorCallAlpha);
+  const alphaByCall = new Map(
+    alphaRows
+      .filter((row) => row.methodVersion === ALPHA_METHOD_VERSION)
+      .map((row) => [row.callId, row]),
+  );
   const buckets = new Map<string, typeof usable>();
   const allKey = keyId({
     gameKey: null,
@@ -106,6 +114,9 @@ export async function recomputeCreatorAuthority(db: Database, creatorId: string,
     const wilson = wilsonInterval(successes, n);
     const bayes = bayesMean(successes, n);
     const returns = members.map((row) => Number(row.outcome.returnPct)).filter((value) => Number.isFinite(value));
+    const relative = members
+      .map((row) => Number(alphaByCall.get(row.call.id)?.relativeReturn))
+      .filter((value) => Number.isFinite(value));
     const recency = directional.map((row) => {
       const age = (asOf.getTime() - row.call.publishedAt.getTime()) / 86400000;
       const w = recencyWeight(age);
@@ -163,7 +174,7 @@ export async function recomputeCreatorAuthority(db: Database, creatorId: string,
       bayesMean: n ? bayes.toFixed(6) : null,
       avgReturn: mean(returns) == null ? null : mean(returns)!.toFixed(6),
       medianReturn: median(returns) == null ? null : median(returns)!.toFixed(6),
-      avgRelativeReturn: null,
+      avgRelativeReturn: mean(relative) == null ? null : mean(relative)!.toFixed(6),
       avgMfe: mean(members.map((row) => Number(row.outcome.maxFavorableExcursion)).filter(Number.isFinite))?.toFixed(6) ?? null,
       avgMae: mean(members.map((row) => Number(row.outcome.maxAdverseExcursion)).filter(Number.isFinite))?.toFixed(6) ?? null,
       earlyCallScore: early == null ? null : early.toFixed(6),

@@ -65,6 +65,9 @@ import {
   creatorCallSourceFixtures,
   creatorCall,
   creatorAuthoritySlice,
+  tcgMarketFeatureSnapshot,
+  computeMarketFeatures,
+  persistMarketFeatureSnapshot,
 } from "./index.js";
 
 const passwords = {
@@ -1195,6 +1198,78 @@ describe("PostgreSQL RLS isolation", () => {
             formulaVersion: "authority.v1",
             benchmarkRequirement: "phase_13_language_era_set_tier_index",
             components: {},
+          }),
+        ),
+      ).rejects.toThrow();
+    } finally {
+      await adminConn.end();
+    }
+  });
+
+  it("prevents tenants from mutating global analytics, indices, and alpha", async () => {
+    const adminConn = createDbConnection(adminUrl);
+    try {
+      const snapshotId = await withPlatformContext(adminConn.db, async (db) => {
+        const seeded = await seedTcgIdentityFixtures(db);
+        await ingestTcgMarketRecord(db, {
+          provider: "fixture",
+          provider_record_id: `iso_feat_${crypto.randomUUID()}`,
+          event_type: "tcg.market.sold",
+          market_type: "marketplace_sold",
+          price_type: "sold",
+          observed_at: "2026-01-01T00:00:00.000Z",
+          currency: "USD",
+          condition: "nm",
+          price: 40,
+          printing: {
+            game: "pokemon",
+            set: "twm",
+            collector_number: "214/167",
+            language: "en",
+            variant: "normal",
+          },
+        });
+        const computed = await computeMarketFeatures(db, {
+          printingId: seeded.printings.greninjaEnNormal.id,
+          asOf: new Date("2026-01-01T00:00:00.000Z"),
+        });
+        const persisted = await persistMarketFeatureSnapshot(db, computed);
+        return persisted.id;
+      });
+      const raw = postgres(replaceConnectionRole(adminUrl, DB_ROLES.user, passwords.user), {
+        max: 1,
+        prepare: false,
+      });
+      try {
+        const rows = await raw`select id from tcg_market_feature_snapshot where id = ${snapshotId}`;
+        expect(rows).toHaveLength(1);
+        await expect(
+          raw`insert into tcg_market_feature_snapshot (
+            id, printing_id, as_of, feature_set_key, feature_set_version, language_code, currency, outlier_policy, features, data_quality, sample_size
+          ) values ('feat_hack', 'missing', now(), 'tcg.market.features', 'features.v1', 'en', 'USD', 'exclude_flagged.v1', '{}'::jsonb, 'partial', 0)`,
+        ).rejects.toThrow();
+        await expect(
+          raw`update tcg_market_feature_snapshot set data_quality = 'stale' where id = ${snapshotId}`,
+        ).rejects.toThrow();
+        await expect(raw`delete from tcg_market_feature_snapshot where id = ${snapshotId}`).rejects.toThrow();
+      } finally {
+        await raw.end({ timeout: 5 });
+      }
+      await expect(
+        asUser(ids.userA, ids.orgA, (db) =>
+          db.insert(tcgMarketFeatureSnapshot).values({
+            id: "feat_tenant_hack",
+            printingId: "missing",
+            asOf: new Date(),
+            featureSetKey: "tcg.market.features",
+            featureSetVersion: "features.v1",
+            languageCode: "en",
+            currency: "USD",
+            outlierPolicy: "exclude_flagged.v1",
+            features: {},
+            dataQuality: "partial",
+            sampleSize: 0,
+            sourceComposition: {},
           }),
         ),
       ).rejects.toThrow();

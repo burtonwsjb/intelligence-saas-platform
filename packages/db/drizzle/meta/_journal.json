@@ -85,6 +85,13 @@
       "when": 11,
       "tag": "0012_phase12_authority",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 12,
+      "tag": "0013_phase13_analytics",
+      "breakpoints": true
     }
   ]
 }

@@ -35,11 +35,12 @@ v1 recommendation:
 1. Append-only `observations` and `observation_metric` (kernel; Phase 06 repositories)
 2. Platform-global `tcg_market_snapshot` (Phase 08 exact-printing facts; sold/listing/reference/volume)
 3. `market_bars_daily` (and later hourly where density exists) — not started
-4. `index_levels` as-of — not started
-5. `score_snapshots` daily — not started
-6. `prediction_records` + `prediction_outcomes` — not started
-7. Partition bars by month
-8. Keep raw source payloads only as long as license and cost allow; derived bars live longer
+4. `tcg_index_level` as-of — Phase 13
+5. `tcg_market_feature_snapshot` — Phase 13 (versioned features; not a daily bar substitute)
+6. `score_snapshots` daily — not started
+7. `prediction_records` + `prediction_outcomes` — not started
+8. Partition bars by month
+9. Keep raw source payloads only as long as license and cost allow; derived bars live longer
 
 Do not store one giant JSON blob per day as the only history.
 

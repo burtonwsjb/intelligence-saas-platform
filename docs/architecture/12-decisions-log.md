@@ -74,6 +74,9 @@ Change only with an explicit new decision.
 | D68 | Authority ranking | Wilson lower bound + `n/(n+20)` + Beta(8,8) mean | 4/4 cannot outrank 730/1000 |
 | D69 | Authority context | Slices by game/language/set/tier/horizon | No universal creator percentage |
 | D70 | Phase 12 alpha | Store Phase 13 benchmark requirement; relative return null | Do not fabricate indices |
+| D71 | Feature as-of | `features.v1` uses only `observed_at <= as_of`; nearest sold in a slack window | No interpolated daily closes |
+| D72 | Index v1 | Language required unless mixed is explicit; equal-weight default; PIT membership | Never auto-merge EN/JA/zh-Hans |
+| D73 | Creator alpha | `alpha.v1` = card return − benchmark return on a new immutable row | Do not rewrite `outcome.v1` fields |
 
 ## Void
 

@@ -13,3 +13,4 @@ export * from "./tcg-market.js";
 export * from "./source.js";
 export * from "./resolution.js";
 export * from "./creator.js";
+export * from "./analytics.js";

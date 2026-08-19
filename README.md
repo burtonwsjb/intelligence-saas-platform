@@ -9,9 +9,9 @@ TCG Card Central is only a future external integration (optional reference-data 
 
 ## Current phase
 
-**Phase 12 complete locally.** Creator authority and outcome tracking (Wilson/Bayes shrinkage, contextual slices, trust states). Cloud Redis and Neon are not provisioned. Stripe live mode is forbidden. See [docs/PHASE_12.md](docs/PHASE_12.md).
+**Phase 13 complete locally.** Versioned market features, generalized language-separated indices, benchmark resolver, and creator alpha. Cloud Redis and Neon are not provisioned. Stripe live mode is forbidden. See [docs/PHASE_13.md](docs/PHASE_13.md).
 
-Do not begin Phase 13 until explicitly instructed.
+Do not begin Phase 14 until explicitly instructed.
 
 ## Local commands
 
@@ -47,6 +47,7 @@ TypeScript, pnpm/Turborepo, Next.js, Hono, PostgreSQL/Neon, Drizzle, Better Auth
 - [Phase 10](docs/PHASE_10.md)
 - [Phase 11](docs/PHASE_11.md)
 - [Phase 12](docs/PHASE_12.md)
+- [Phase 13](docs/PHASE_13.md)
 - [CI](docs/CI.md)
 - [Overview](docs/architecture/00-overview.md)
 - [Roadmap (phases 00–23)](docs/architecture/11-phase-roadmap.md)
@@ -72,5 +73,6 @@ TypeScript, pnpm/Turborepo, Next.js, Hono, PostgreSQL/Neon, Drizzle, Better Auth
 | Entity resolution | Phase 10 complete locally; language/variant-safe; no silent binds |
 | Creator call extraction | Phase 11 complete locally; fixture extractor only; no authority score |
 | Creator authority | Phase 12 complete locally; Wilson/Bayes shrinkage; no buy/sell |
+| Market analytics / indices | Phase 13 complete locally; language-separated; no recommendations |
 | Cloud / Stripe live / TCC production | Not created, not connected, not modified |
-| Phase 13 market indices | Not started |
+| Phase 14 opportunity scoring | Not started |

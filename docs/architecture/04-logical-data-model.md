@@ -350,6 +350,8 @@ Phase 11 implements platform-global `creator`, `creator_source_account`, `creato
 
 - point-in-time membership for survivorship-safe history
 
+Phase 13 implements platform-global `tcg_index_definition`, `tcg_index_membership`, `tcg_index_level`, `tcg_market_feature_snapshot`, and `creator_call_alpha`. See [PHASE_13.md](../PHASE_13.md).
+
 ### `predictions` / `prediction_outcomes`
 
 - horizons, ranges, versions; outcomes include alpha and calibration

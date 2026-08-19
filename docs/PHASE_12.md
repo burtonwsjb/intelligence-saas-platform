@@ -1,6 +1,6 @@
 # Phase 12 — Creator authority and outcome tracking
 
-Status: **implemented**. Phase 13 has **not** started.
+Status: **implemented**. Phase 13 is complete; see [PHASE_13.md](PHASE_13.md). Phase 14 has **not** started.
 
 Mature creator calls are evaluated at their horizons and turned into **contextual**, sample-size-aware authority profiles. Authority is not a naive hit rate. It does not emit buy/sell recommendations.
 
@@ -50,4 +50,4 @@ Platform-global. Tenants cannot insert or rewrite slices or trust events. Outcom
 
 ## Phase 13 boundary
 
-Do not implement market indices, alpha vs index, or opportunity scoring.
+Phase 12 stored the benchmark requirement and left `avg_relative_return` null. Phase 13 now computes versioned `creator_call_alpha` rows without rewriting these raw outcome fields.
