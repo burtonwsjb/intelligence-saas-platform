@@ -126,6 +126,8 @@ export async function bootstrapRoles(
       "tcg_prediction",
       "tcg_prediction_outcome",
       "tcg_backtest_run",
+      "webhook_endpoint",
+      "webhook_delivery",
     ];
     for (const table of tables) {
       await sql.unsafe(`ALTER TABLE "${table}" OWNER TO ${DB_ROLES.migrate}`);
@@ -166,7 +168,8 @@ export async function bootstrapRoles(
       GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
         "user", "session", "account", "verification", "organization", "member", "invitation",
         "tenant", "tenant_resource", "tenant_billing", "tenant_entitlement_override",
-        "api_key", "usage_event", "usage_month", "source_event", "outbox_job", "entity"
+        "api_key", "usage_event", "usage_month", "source_event", "outbox_job", "entity",
+        "webhook_endpoint", "webhook_delivery"
       TO ${DB_ROLES.user}, ${DB_ROLES.worker};
       GRANT SELECT, INSERT ON TABLE
         "entity_identifier", "observation", "observation_metric", "evidence_reference",

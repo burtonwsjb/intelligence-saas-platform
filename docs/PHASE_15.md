@@ -1,6 +1,6 @@
 # Phase 15 — Prediction engine, calibration, backtesting, and accountability
 
-Status: **implemented**. Phase 16 has **not** started.
+Status: **implemented**. Phase 16 is complete; see [PHASE_16.md](PHASE_16.md). Phase 17 has **not** started.
 
 Versioned probabilistic forecasts are issued from frozen market features, then scored when the horizon elapses. The v1 model is a deterministic statistical baseline. Default visibility is **shadow**. No customer-facing prediction product. No external AI model.
 
@@ -58,4 +58,4 @@ Default `visibility=shadow`. Phase 15 does not publish customer predictions. Int
 
 ## Phase 16 boundary
 
-Do not implement the commercial API, webhooks, usage meters, or OpenAPI in this phase.
+Commercial API, webhooks, usage meters, and OpenAPI are implemented in [PHASE_16.md](PHASE_16.md). Customer prediction reads stay disabled while visibility is shadow.

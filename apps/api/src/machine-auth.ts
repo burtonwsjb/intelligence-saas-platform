@@ -36,6 +36,9 @@ export function createMachineAuth(options?: {
   env?: NodeJS.ProcessEnv;
 }): MiddlewareHandler {
   return async (c: Context, next: Next) => {
+    if (c.req.path === "/v1/openapi.json") {
+      return next();
+    }
     const token = bearerToken(c.req.header("authorization"));
     if (!token) {
       return jsonError("unauthorized", "Authentication required.", 401);

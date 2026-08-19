@@ -46,7 +46,11 @@ describe("API key format and scopes", () => {
       "ingest:write",
       "decisions:read",
     ]);
-    expect(() => parseScopes(["cards:read"])).toThrow(UnknownScopeError);
+    expect(parseScopes(["cards:read", "opportunities:read"])).toEqual([
+      "cards:read",
+      "opportunities:read",
+    ]);
+    expect(() => parseScopes(["content:read"])).toThrow(UnknownScopeError);
     expect(() => parseScopes(["not:a-scope"])).toThrow(UnknownScopeError);
     expect(hasScope(["ingest:write"], "decisions:read")).toBe(false);
     expect(hasScope(["ingest:write"], "not:a-scope")).toBe(false);

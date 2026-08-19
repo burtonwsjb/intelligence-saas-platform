@@ -177,7 +177,7 @@ Exit: a printing emits an explained recommendation or `insufficient_data`.
 
 ## Phase 15 — Prediction engine and accountability
 
-Status: **complete** (see [PHASE_15.md](../PHASE_15.md)). Phase 16 has **not** started.
+Status: **complete** (see [PHASE_15.md](../PHASE_15.md)).
 
 - Horizons 7/30/90/180/365
 - Ranges, not false precision
@@ -188,9 +188,11 @@ Exit: a prediction can be scored after a fixture horizon.
 
 ## Phase 16 — Customer API / webhooks / usage metering
 
+Status: **complete** (see [PHASE_16.md](../PHASE_16.md)). Phase 17 has **not** started.
+
 - Commercial domains (cards, printings, creators, indices, …)
-- Signed webhooks, delivery logs
-- Stripe meters wired to real usage
+- Signed webhooks, delivery logs, SSRF defense
+- Usage meters on commercial reads; Stripe not on the request path
 
 Exit: a test key reads an opportunity and receives a signed webhook.
 

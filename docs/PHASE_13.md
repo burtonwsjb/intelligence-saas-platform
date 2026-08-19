@@ -1,6 +1,6 @@
 # Phase 13 — Market analytics, indices, benchmarks, and alpha
 
-Status: **implemented**. Phase 14 is complete; see [PHASE_14.md](PHASE_14.md). Phase 15 is complete; see [PHASE_15.md](PHASE_15.md). Phase 16 has **not** started.
+Status: **implemented**. Phase 14 is complete; see [PHASE_14.md](PHASE_14.md). Phase 15 is complete; see [PHASE_15.md](PHASE_15.md). Phase 16 is complete; see [PHASE_16.md](PHASE_16.md). Phase 17 has **not** started.
 
 Phase 08 sold/listing history is turned into versioned, collectible-aware analytical features and a generalized market-index framework. No buy/sell recommendations. No interpolated fake daily closes. Languages stay first-class.
 

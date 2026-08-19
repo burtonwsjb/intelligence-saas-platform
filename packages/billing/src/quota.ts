@@ -6,6 +6,11 @@ export const METER_TO_ENTITLEMENT = {
   "api.reads": "api_requests_per_month",
   "ingest.events": "api_requests_per_month",
   "decisions.generated": "predictions",
+  "prices.read": "api_requests_per_month",
+  "market_history.read": "api_requests_per_month",
+  "prediction.read": "predictions",
+  "opportunity.read": "api_requests_per_month",
+  "creator.read": "api_requests_per_month",
 } as const;
 
 export type MeterKey = keyof typeof METER_TO_ENTITLEMENT;

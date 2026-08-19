@@ -70,7 +70,7 @@ See [03-multi-tenancy.md](./03-multi-tenancy.md).
 | API key leak | hash, prefix, rotate, last-used |
 | Mass assignment | Zod allowlists |
 | Queue poison | isolated BullMQ jobs, bounded retries |
-| SSRF | no tenant-supplied fetch URLs in v1; allowlisted outbound bases |
+| SSRF | tenant webhook URLs validated (no loopback/RFC1918/link-local/metadata/non-http); delivery tests use fixtures |
 | Prompt injection | no free-form model execution in v1 policy engine |
 
 ## v1 policy engine constraint

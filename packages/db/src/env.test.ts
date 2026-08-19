@@ -142,6 +142,10 @@ describe("migrations", () => {
     expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "tcg_prediction_outcome"/);
     expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "tcg_backtest_run"/);
     expect(sql).not.toMatch(/ALTER TABLE "tcg_prediction" ENABLE ROW LEVEL SECURITY/);
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "webhook_endpoint"/);
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "webhook_delivery"/);
+    expect(sql).toMatch(/ALTER TABLE "webhook_endpoint" ENABLE ROW LEVEL SECURITY/);
+    expect(sql).toMatch(/ALTER TABLE "webhook_delivery" ENABLE ROW LEVEL SECURITY/);
   });
 
   it("does not add TCG identity columns to generic kernel tables", async () => {

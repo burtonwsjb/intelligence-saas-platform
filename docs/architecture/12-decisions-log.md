@@ -83,6 +83,9 @@ Change only with an explicit new decision.
 | D77 | Prediction freeze | `data_cutoff_at <= issued_at`; unique `(printing, issued_at, horizon, model_version)` | No look-ahead; new model versions insert new rows |
 | D78 | Prediction shadow | Default `visibility=shadow` for `stats.baseline.v1` | No customer-facing forecasts in Phase 15 |
 | D79 | Prediction outcomes | Immutable; Brier `calibration.v1`; walk-forward only | Bad forecasts are retained |
+| D80 | Commercial API | Tenant API keys + scopes + entitlements on `/v1` contracts | Do not expose raw DB models |
+| D81 | Webhook SSRF | Reject loopback, RFC1918, link-local, metadata, non-http(s) | Tenant URLs are untrusted |
+| D82 | Webhook secrets | AES-GCM at rest; HMAC-SHA256 over timestamp+body | Shown once; replay window 5 minutes |
 
 ## Void
 

@@ -1,6 +1,6 @@
 # Phase 12 — Creator authority and outcome tracking
 
-Status: **implemented**. Phase 13 is complete; see [PHASE_13.md](PHASE_13.md). Phase 14 is complete; see [PHASE_14.md](PHASE_14.md). Phase 15 is complete; see [PHASE_15.md](PHASE_15.md). Phase 16 has **not** started.
+Status: **implemented**. Phase 13 is complete; see [PHASE_13.md](PHASE_13.md). Phase 14 is complete; see [PHASE_14.md](PHASE_14.md). Phase 15 is complete; see [PHASE_15.md](PHASE_15.md). Phase 16 is complete; see [PHASE_16.md](PHASE_16.md). Phase 17 has **not** started.
 
 Mature creator calls are evaluated at their horizons and turned into **contextual**, sample-size-aware authority profiles. Authority is not a naive hit rate. It does not emit buy/sell recommendations.
 

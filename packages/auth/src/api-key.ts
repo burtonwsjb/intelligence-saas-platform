@@ -10,7 +10,18 @@ import {
 } from "@isp/db";
 import { requirePermission } from "./rbac.js";
 
-export const ISSUABLE_SCOPES = ["ingest:write", "decisions:read"] as const;
+export const ISSUABLE_SCOPES = [
+  "ingest:write",
+  "decisions:read",
+  "cards:read",
+  "prices:read",
+  "markets:read",
+  "signals:read",
+  "creators:read",
+  "predictions:read",
+  "opportunities:read",
+  "webhooks:manage",
+] as const;
 export const KNOWN_SCOPES = [
   ...ISSUABLE_SCOPES,
   "receipts:write",

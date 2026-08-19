@@ -6,6 +6,8 @@ import {
   recordUsage,
   withMachineContext,
   type Database,
+  type DnsLookup,
+  type WebhookFetch,
 } from "@isp/db";
 import {
   EntitlementDeniedError,
@@ -27,11 +29,15 @@ import {
   parseIngestBody,
 } from "./ingest.js";
 import { resolveRequestId } from "./request-id.js";
+import { commercialOpenApi } from "./openapi.js";
+import { registerCommercialRoutes } from "./commercial.js";
 
 export function createApiApp(options?: {
   db?: import("@isp/db").Database;
   env?: NodeJS.ProcessEnv;
   queue?: IngestQueue;
+  webhookFetch?: WebhookFetch;
+  dnsLookup?: DnsLookup;
 }) {
   const app = new Hono<{
     Variables: { db: Database; machine: MachinePrincipal };
@@ -70,6 +76,8 @@ export function createApiApp(options?: {
       throw error;
     }
   });
+
+  app.get("/v1/openapi.json", (c) => c.json(commercialOpenApi()));
 
   app.use("/v1/events", async (c, next) => {
     const headerLen = Number(c.req.header("content-length") ?? Number.NaN);
@@ -186,6 +194,12 @@ export function createApiApp(options?: {
       api_key_id: machine.apiKeyId,
       scopes: machine.scopes,
     });
+  });
+
+  registerCommercialRoutes(app, {
+    env: options?.env,
+    webhookFetch: options?.webhookFetch,
+    dnsLookup: options?.dnsLookup,
   });
 
   return app;

@@ -1,8 +1,6 @@
 # Commercial API products and webhooks
 
-Internal ingest (`/v1/events`) and generic decision records remain useful. They are **not** the customer-facing intelligence product.
-
-URLs are conceptual. Do not treat them as final routes. Versioning stays `/v1`. Auth stays hashed API keys, scopes, metering, and quotas.
+Phase 16 implements tenant-authenticated `/v1` commercial routes, signed webhooks, SSRF defense, usage metering, and `/v1/openapi.json`. See [PHASE_16.md](../PHASE_16.md). URLs below are the v1 contract; additional aliases may be added later. Versioning stays `/v1`. Auth stays hashed API keys, scopes, metering, and quotas.
 
 ## Commercial domains
 
@@ -24,17 +22,20 @@ URLs are conceptual. Do not treat them as final routes. Versioning stays `/v1`. 
 
 Generic `/v1/events`, `/v1/decisions`, `/v1/entities` remain for kernel/integration use and may stay scoped separately (`ingest:write`, `decisions:read`).
 
-Phase 07 does **not** open commercial `cards` / `printings` / `prices` / `markets` endpoints. Customer API expansion is Phase 16.
+Phase 07 does **not** open commercial `cards` / `printings` / `prices` / `markets` endpoints. Phase 16 does.
 
-Commercial scopes (planned, not final):
+Commercial scopes (implemented):
 
-- `market:read`
+- `cards:read`
+- `prices:read`
+- `markets:read`
+- `signals:read`
 - `creators:read`
-- `predictions:read`
+- `predictions:read` (route exists; customer payload stays unpublished while shadow)
 - `opportunities:read`
-- `content:read`
-- `webhooks:write`
-- `holdings:read` (tenant-private)
+- `webhooks:manage`
+
+`content:read` and `holdings:read` remain reserved.
 
 ## Entitlements that gate the API
 
@@ -70,6 +71,8 @@ Event names (eventual):
 
 Webhook delivery is a BullMQ job. Payloads cite the same evidence ids as the API.
 
+Webhook delivery uses HMAC signatures, bounded retries, and SSRF URL validation. Delivery tests inject a fetch fixture and must not contact arbitrary external hosts.
+
 ## What Phase 00 does not do
 
-No routes implemented. No public OpenAPI file in a running service. Contracts here plus [10-api-contracts.md](./10-api-contracts.md) are planning only.
+Historical planning note: Phase 00 did not implement routes. Phase 16 does.

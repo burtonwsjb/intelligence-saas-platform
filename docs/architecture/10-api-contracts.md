@@ -1,13 +1,6 @@
 # API contracts
 
-Phase 05 implements generic `POST /v1/events`. Phase 06 adds shared kernel contracts in `@isp/contracts` (`entity`, observation, metric, signal, feature snapshot, decision record) and a v1 generic event registry. Commercial intelligence routes are not implemented.
-
-Served by `apps/api` (Hono).  
-Base path: `/v1`  
-Auth: `Authorization: Bearer <api_key>` unless noted  
-OpenAPI 3.1 will be published at `/v1/openapi.json` when the API is implemented.
-
-Kernel ingest routes below remain. Historical kernel queries are repository-only (no public `/v1/entities` yet). Entity resolution in Phase 10 is a worker/library API (`resolver.v1`), not a public route. **Customer-facing intelligence products** are specified conceptually in [27-commercial-api-and-webhooks.md](./27-commercial-api-and-webhooks.md) (`cards`, `printings`, `sets`, `prices`, `market-history`, `signals`, `creators`, `creator-calls`, `indices`, `predictions`, `opportunities`, `content`). URLs are not finalized.
+Phase 05 implements generic `POST /v1/events`. Phase 16 implements commercial intelligence routes and publishes OpenAPI 3.1 at `/v1/openapi.json`. See [PHASE_16.md](../PHASE_16.md) and [27-commercial-api-and-webhooks.md](./27-commercial-api-and-webhooks.md).
 
 ## Common error shape
 
@@ -15,7 +8,8 @@ Kernel ingest routes below remain. Historical kernel queries are repository-only
 {
   "error": {
     "code": "tenant_suspended",
-    "message": "Tenant is suspended."
+    "message": "Tenant is suspended.",
+    "request_id": "req_..."
   }
 }
 ```

@@ -70,6 +70,7 @@ import {
   persistMarketFeatureSnapshot,
   tcgScoreSnapshot,
   tcgPrediction,
+  webhookEndpoint,
 } from "./index.js";
 
 const passwords = {
@@ -1318,5 +1319,32 @@ describe("PostgreSQL RLS isolation", () => {
     } finally {
       await adminConn.end();
     }
+  });
+
+  it("prevents tenants from hopping webhook endpoints", async () => {
+    await asUser(ids.userA, ids.orgA, (db) =>
+      db.insert(webhookEndpoint).values({
+        id: "wh_a",
+        organizationId: ids.orgA,
+        url: "https://example.com/a",
+        secretCiphertext: "cipher",
+        secretHash: "hash",
+        eventTypes: ["usage.warning"],
+      }),
+    );
+    const visible = await asUser(ids.userB, ids.orgB, (db) => db.select().from(webhookEndpoint));
+    expect(visible).toEqual([]);
+    await expect(
+      asUser(ids.userB, ids.orgB, (db) =>
+        db.insert(webhookEndpoint).values({
+          id: "wh_hop",
+          organizationId: ids.orgA,
+          url: "https://example.com/hop",
+          secretCiphertext: "cipher",
+          secretHash: "hash",
+          eventTypes: ["usage.warning"],
+        }),
+      ),
+    ).rejects.toThrow();
   });
 });

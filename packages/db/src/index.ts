@@ -383,4 +383,34 @@ export {
   rootMeanSquare,
 } from "./prediction/metrics.js";
 export { walkForwardBacktest } from "./prediction/backtest.js";
+export {
+  WEBHOOK_EVENT_TYPES,
+  WEBHOOK_RETRY_VERSION,
+  WEBHOOK_SIGNING_VERSION,
+  MAX_WEBHOOK_ATTEMPTS,
+} from "./webhooks/catalog.js";
+export { attemptWebhookDelivery, processDueWebhookDeliveries, type WebhookFetch } from "./webhooks/deliver.js";
+export {
+  WebhookUrlRejectedError,
+  assertPublicWebhookUrl,
+  assertResolvedAddressesPublic,
+  assertWebhookDestinationSafe,
+  type DnsLookup,
+} from "./webhooks/ssrf.js";
+export {
+  decryptWebhookSecret,
+  encryptWebhookSecret,
+  generateWebhookSecret,
+  hashWebhookSecret,
+  signWebhookPayload,
+  webhookSignatureValid,
+} from "./webhooks/secret.js";
+export {
+  disableWebhookEndpoint,
+  enqueueWebhookDelivery,
+  getWebhookEndpoint,
+  insertWebhookEndpoint,
+  listWebhookDeliveries,
+  listWebhookEndpoints,
+} from "./webhooks/persist.js";
 export * from "./schema/index.js";
