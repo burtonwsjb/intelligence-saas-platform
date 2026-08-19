@@ -349,4 +349,38 @@ export {
   scoreAndPersist,
   scorePrinting,
 } from "./scoring/persist.js";
+export {
+  BACKTEST_VERSION,
+  CALIBRATION_VERSION,
+  DEFAULT_PREDICTION_VISIBILITY,
+  PREDICTION_HORIZON_DAYS,
+  PREDICTION_HORIZONS,
+  PREDICTION_MODEL_KEY,
+  PREDICTION_MODEL_VERSION,
+} from "./prediction/catalog.js";
+export {
+  getModel,
+  momentumBaseline,
+  noChangeBaseline,
+  statsBaselineV1,
+  type FrozenFeatures,
+  type ForecastOutput,
+  type PredictionModel,
+} from "./prediction/model.js";
+export { freezeFeatures, issuePrediction } from "./prediction/issue.js";
+export {
+  evaluatePrediction,
+  isPendingPredictionEvaluation,
+  type PendingPredictionEvaluation,
+} from "./prediction/evaluate.js";
+export {
+  brierScore,
+  calibrationBuckets,
+  directionAccuracy,
+  meanAbsError,
+  meanAbsPercentError,
+  rangeCoverage,
+  rootMeanSquare,
+} from "./prediction/metrics.js";
+export { walkForwardBacktest } from "./prediction/backtest.js";
 export * from "./schema/index.js";

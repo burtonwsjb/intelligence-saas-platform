@@ -14,7 +14,7 @@ Never hide the product in one number. Persist and expose:
 | **Liquidity** | Ability to transact |
 | **Recommendation** | Discrete action label plus rationale |
 
-Weights are **provisional** until calibrated from evidence (backtests, prediction accountability). Architecture stores `score_version` and component contributions.
+Weights are **provisional** until calibrated from evidence (backtests, prediction accountability). Architecture stores `score_version` and component contributions. Phase 15 prediction confidence is a separate field and is not copied into Opportunity Score.
 
 ## Candidate components (TCG)
 

@@ -201,3 +201,12 @@ export {
   SCORE_POLICY_VERSION,
   type RecommendationLabel,
 } from "./scoring.js";
+export {
+  DEFAULT_PREDICTION_VISIBILITY,
+  PREDICTION_HORIZONS,
+  PREDICTION_MODEL_KEY,
+  PREDICTION_MODEL_VERSION,
+  PREDICTION_VISIBILITY,
+  type PredictionHorizon,
+  type PredictionVisibility,
+} from "./prediction.js";

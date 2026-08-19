@@ -1,6 +1,6 @@
 # Phase 14 — Opportunity, risk, confidence, liquidity, and recommendations
 
-Status: **implemented**. Phase 15 has **not** started.
+Status: **implemented**. Phase 15 is complete; see [PHASE_15.md](PHASE_15.md). Phase 16 has **not** started.
 
 This is the first phase that may issue a structured recommendation. Four scores remain separate. Weights are centralized, versioned, and marked **uncalibrated**. Hype cannot create `strong_buy`. Weak evidence is `insufficient_data`.
 
@@ -46,4 +46,4 @@ Calls are weighted by Phase 12 `authority_weight` in the matching language slice
 
 ## Phase 15 boundary
 
-Do not implement the prediction engine, calibration, or backtesting.
+Prediction engine, calibration, and walk-forward backtesting are implemented in [PHASE_15.md](PHASE_15.md). Opportunity Score is not reused as prediction confidence.

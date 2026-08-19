@@ -1,6 +1,6 @@
 # Phase 11 — Creator call extraction
 
-Status: **implemented**. Phase 12 is complete; see [PHASE_12.md](PHASE_12.md). Phase 13 is complete; see [PHASE_13.md](PHASE_13.md). Phase 14 is complete; see [PHASE_14.md](PHASE_14.md). Phase 15 has **not** started.
+Status: **implemented**. Phase 12 is complete; see [PHASE_12.md](PHASE_12.md). Phase 13 is complete; see [PHASE_13.md](PHASE_13.md). Phase 14 is complete; see [PHASE_14.md](PHASE_14.md). Phase 15 is complete; see [PHASE_15.md](PHASE_15.md). Phase 16 has **not** started.
 
 Source content becomes structured, auditable market calls. This is not creator authority ranking. Fixture extractors only. No production OpenAI/Anthropic/Grok calls.
 

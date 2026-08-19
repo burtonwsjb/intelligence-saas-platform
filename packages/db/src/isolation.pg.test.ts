@@ -69,6 +69,7 @@ import {
   computeMarketFeatures,
   persistMarketFeatureSnapshot,
   tcgScoreSnapshot,
+  tcgPrediction,
 } from "./index.js";
 
 const passwords = {
@@ -1293,6 +1294,24 @@ describe("PostgreSQL RLS isolation", () => {
             languageCode: "en",
             components: {},
             explanations: [],
+          }),
+        ),
+      ).rejects.toThrow();
+      await expect(
+        asUser(ids.userA, ids.orgA, (db) =>
+          db.insert(tcgPrediction).values({
+            id: "pred_tenant_hack",
+            printingId: "missing",
+            issuedAt: new Date(),
+            dataCutoffAt: new Date(),
+            horizon: "7d",
+            modelKey: "stats.baseline",
+            modelVersion: "stats.baseline.v1",
+            visibility: "shadow",
+            status: "issued",
+            languageCode: "en",
+            dataQuality: "partial",
+            components: {},
           }),
         ),
       ).rejects.toThrow();

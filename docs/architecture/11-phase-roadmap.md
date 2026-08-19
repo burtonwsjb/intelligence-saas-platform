@@ -167,7 +167,7 @@ Exit: an index reconstructs historically.
 
 ## Phase 14 — Opportunity scoring
 
-Status: **complete** (see [PHASE_14.md](../PHASE_14.md)). Phase 15 has **not** started.
+Status: **complete** (see [PHASE_14.md](../PHASE_14.md)).
 
 - Separate opportunity / risk / confidence / liquidity / recommendation
 - Explainability payloads
@@ -177,9 +177,12 @@ Exit: a printing emits an explained recommendation or `insufficient_data`.
 
 ## Phase 15 — Prediction engine and accountability
 
+Status: **complete** (see [PHASE_15.md](../PHASE_15.md)). Phase 16 has **not** started.
+
 - Horizons 7/30/90/180/365
 - Ranges, not false precision
 - Immutable issues + later outcomes
+- Shadow-mode statistical baseline, walk-forward backtests, Brier calibration
 
 Exit: a prediction can be scored after a fixture horizon.
 

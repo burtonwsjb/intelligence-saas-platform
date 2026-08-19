@@ -356,6 +356,8 @@ Phase 13 implements platform-global `tcg_index_definition`, `tcg_index_membershi
 
 - horizons, ranges, versions; outcomes include alpha and calibration
 
+Phase 15 implements platform-global `tcg_prediction`, `tcg_prediction_outcome`, and `tcg_backtest_run`. See [PHASE_15.md](../PHASE_15.md). Customer exposure remains Phase 16 and stays disabled while visibility is shadow.
+
 ### `content_candidates` / `evidence_packages`
 
 - no generation without evidence

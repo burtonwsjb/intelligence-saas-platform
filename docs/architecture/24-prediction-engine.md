@@ -1,5 +1,7 @@
 # Prediction engine and accountability
 
+Phase 15 implements immutable `tcg_prediction` / `tcg_prediction_outcome` plus `walk_forward.v1` backtests. See [PHASE_15.md](../PHASE_15.md). Default visibility is **shadow**. The v1 model is `stats.baseline.v1`; future learned models share the same `PredictionModel` interface and must not rewrite historical rows.
+
 ## Horizons
 
 Supported forecast horizons:

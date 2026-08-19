@@ -80,6 +80,9 @@ Change only with an explicit new decision.
 | D74 | Score separation | Opportunity, risk, confidence, and liquidity are stored separately | Never collapse into one product number |
 | D75 | Uncalibrated v1 | Central `score.v1` weights; missing inputs skipped and renormalized | Do not fabricate search/prediction features |
 | D76 | Hype gate | Unconfirmed social activity cannot emit buy/strong_buy | Market confirmation requires completed sales |
+| D77 | Prediction freeze | `data_cutoff_at <= issued_at`; unique `(printing, issued_at, horizon, model_version)` | No look-ahead; new model versions insert new rows |
+| D78 | Prediction shadow | Default `visibility=shadow` for `stats.baseline.v1` | No customer-facing forecasts in Phase 15 |
+| D79 | Prediction outcomes | Immutable; Brier `calibration.v1`; walk-forward only | Bad forecasts are retained |
 
 ## Void
 

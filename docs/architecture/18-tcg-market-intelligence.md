@@ -4,7 +4,7 @@ First commercial vertical. Built on the kernel in [16-core-intelligence-kernel.m
 
 ## Phase 08 implementation
 
-Phase 08 implemented exact-printing market history ([PHASE_08.md](../PHASE_08.md)). Shared provider snapshots are platform-global. Fixture providers only — no live eBay, TCGplayer, or TCC market HTTP. Phase 13 implements versioned feature snapshots, language-separated indices, and creator alpha ([PHASE_13.md](../PHASE_13.md)). Phase 14 implements explainable opportunity scoring ([PHASE_14.md](../PHASE_14.md)). Prediction engine remains Phase 15.
+Phase 08 implemented exact-printing market history ([PHASE_08.md](../PHASE_08.md)). Shared provider snapshots are platform-global. Fixture providers only — no live eBay, TCGplayer, or TCC market HTTP. Phase 13 implements versioned feature snapshots, language-separated indices, and creator alpha ([PHASE_13.md](../PHASE_13.md)). Phase 14 implements explainable opportunity scoring ([PHASE_14.md](../PHASE_14.md)). Phase 15 implements shadow-mode predictions and accountability ([PHASE_15.md](../PHASE_15.md)).
 
 Condition (`nm`/`lp`/…) and grade (`grading_company` + `grade_label`) are snapshot dimensions, not new printing identities. Raw NM is not merged with PSA 10.
 

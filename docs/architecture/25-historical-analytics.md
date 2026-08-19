@@ -38,7 +38,7 @@ v1 recommendation:
 4. `tcg_index_level` as-of — Phase 13
 5. `tcg_market_feature_snapshot` — Phase 13 (versioned features; not a daily bar substitute)
 6. `tcg_score_snapshot` — Phase 14 (opportunity/risk/confidence/liquidity + recommendation)
-7. `prediction_records` + `prediction_outcomes` — not started
+7. `tcg_prediction` + `tcg_prediction_outcome` — Phase 15 (shadow by default; walk-forward backtests in `tcg_backtest_run`)
 8. Partition bars by month
 9. Keep raw source payloads only as long as license and cost allow; derived bars live longer
 
