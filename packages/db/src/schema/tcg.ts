@@ -139,3 +139,27 @@ export const tcgIdentifierConflict = pgTable("tcg_identifier_conflict", {
   attemptedPrintingId: text("attempted_printing_id").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+export const tcgCardNameAlias = pgTable(
+  "tcg_card_name_alias",
+  {
+    id: text("id").primaryKey(),
+    cardId: text("card_id")
+      .notNull()
+      .references(() => tcgCardConcept.id),
+    languageCode: text("language_code")
+      .notNull()
+      .references(() => tcgLanguage.languageCode),
+    name: text("name").notNull(),
+    normalizedName: text("normalized_name").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    aliasUidx: uniqueIndex("tcg_card_name_alias_uidx").on(
+      table.cardId,
+      table.languageCode,
+      table.normalizedName,
+    ),
+    nameIdx: index("tcg_card_name_alias_name_idx").on(table.normalizedName),
+  }),
+);

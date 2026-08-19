@@ -78,7 +78,7 @@ Always cross-check social activity against completed sales, velocity, and liquid
 - Retention shorter for raw social text than for derived signals
 - Robots / API ToS / copyright reviewed before Phase 09 implementation
 
-Phase 09 implemented fixture ingestion only ([PHASE_09.md](../PHASE_09.md)). Mentions are stored unresolved. Live YouTube/Reddit APIs and HTML scraping are not used.
+Phase 09 implemented fixture ingestion only ([PHASE_09.md](../PHASE_09.md)). Mentions are stored unresolved. Live YouTube/Reddit APIs and HTML scraping are not used. Phase 10 resolves mentions into immutable candidate attempts without rewriting mention rows ([PHASE_10.md](../PHASE_10.md)).
 
 ## Quality
 

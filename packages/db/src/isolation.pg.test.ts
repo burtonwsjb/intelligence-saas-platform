@@ -58,6 +58,9 @@ import {
   ingestSourceContentRecord,
   sourceContent,
   withPlatformContext,
+  seedTcgIdentityFixtures,
+  resolveEntity,
+  entityResolutionAttempt,
 } from "./index.js";
 
 const passwords = {
@@ -1068,6 +1071,63 @@ describe("PostgreSQL RLS isolation", () => {
             canonicalUrl: "https://example.com",
             contentType: "video",
             fingerprint: "fp",
+          }),
+        ),
+      ).rejects.toThrow();
+    } finally {
+      await adminConn.end();
+    }
+  });
+
+  it("prevents tenants from mutating global entity resolution history", async () => {
+    const adminConn = createDbConnection(adminUrl);
+    try {
+      const resolved = await withPlatformContext(adminConn.db, async (db) => {
+        await seedTcgIdentityFixtures(db);
+        return resolveEntity(db, {
+          subjectType: "manual",
+          subjectId: `iso_res_${crypto.randomUUID()}`,
+          signals: {
+            game: "pokemon",
+            set: "twm",
+            collector_number: "214/167",
+            language: "en",
+            variant: "normal",
+          },
+        });
+      });
+      expect(resolved.attempt.status).toBe("exact");
+      const raw = postgres(replaceConnectionRole(adminUrl, DB_ROLES.user, passwords.user), {
+        max: 1,
+        prepare: false,
+      });
+      try {
+        const rows = await raw`select id from entity_resolution_attempt where id = ${resolved.attempt.id}`;
+        expect(rows).toHaveLength(1);
+        await expect(
+          raw`insert into entity_resolution_attempt (
+            id, subject_type, subject_id, target_layer, status, resolver_version, input_signals
+          ) values ('era_hack', 'manual', 'hack', 'printing', 'unresolved', 'resolver.v1', '{}'::jsonb)`,
+        ).rejects.toThrow();
+        await expect(
+          raw`update entity_resolution_attempt set status = 'exact' where id = ${resolved.attempt.id}`,
+        ).rejects.toThrow();
+        await expect(
+          raw`delete from entity_resolution_attempt where id = ${resolved.attempt.id}`,
+        ).rejects.toThrow();
+      } finally {
+        await raw.end({ timeout: 5 });
+      }
+      await expect(
+        asUser(ids.userA, ids.orgA, (db) =>
+          db.insert(entityResolutionAttempt).values({
+            id: "era_tenant_hack",
+            subjectType: "manual",
+            subjectId: "tenant_hack",
+            targetLayer: "printing",
+            status: "unresolved",
+            resolverVersion: "resolver.v1",
+            inputSignals: {},
           }),
         ),
       ).rejects.toThrow();

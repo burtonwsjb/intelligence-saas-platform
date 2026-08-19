@@ -111,3 +111,5 @@ TCC ids are aliases, not the only identity. Phase 07 implements a fixture sandbo
 - Treating “Greninja” as 214/167
 - Mixing JP and EN history into one series by default
 - Using inventory item ids as market series keys
+
+Phase 10 mention resolution ([PHASE_10.md](../PHASE_10.md)) may land on the concept when language or variant is missing. That is not a silent English or `normal` default.

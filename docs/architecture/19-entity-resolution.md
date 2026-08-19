@@ -22,7 +22,23 @@ Inputs: `game` + `set` + `collector_number` + **required** `language` + optional
 - No match → `not_found`
 - External id already bound to a different printing → write conflict, original mapping kept
 
-No image/OCR, no fuzzy name matching, no guessed language or variant. Phase 10 still owns mention-span resolution (“Greninja 214” vs “Japanese Greninja”).
+No image/OCR, no fuzzy name matching, no guessed language or variant. Phase 10 owns mention-span resolution (“Greninja 214” vs “Japanese Greninja”).
+
+## Phase 10 advanced resolution
+
+Implemented in [PHASE_10.md](../PHASE_10.md). Plugin lives in `@isp/db` `resolution/` and persists:
+
+- `entity_resolution_attempt` (immutable history, `resolver.v1`)
+- `entity_resolution_candidate` (ranked evidence)
+- `entity_resolution_correction` (manual review audit)
+
+Statuses: `exact`, `high_confidence`, `probable`, `ambiguous`, `unresolved`, `conflict`.
+
+**Resolution confidence is not market-prediction confidence, creator authority, or sentiment confidence.**
+
+Deterministic external-id and structured printing identity run first. Controlled fuzzy matching cannot produce `exact` by itself and does not transliterate Japanese into English. Missing language or variant cannot silently pick a printing when alternatives remain. Source `content_language` is a hint only.
+
+Re-resolution inserts a new attempt. Mentions are not rewritten. Manual review accepts/rejects/corrects by writing a new audited attempt.
 
 ## Problem
 

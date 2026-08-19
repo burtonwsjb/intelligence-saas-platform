@@ -62,6 +62,10 @@ Change only with an explicit new decision.
 | D56 | Source ingest jobs | `source.intelligence.normalize.v1` on `source_ingest` | Not tenant `outbox_job`; not generic `/v1/events` |
 | D57 | Copyright retention | Bounded excerpts (500 chars) + hashes + URL references | No full transcript archive in Phase 09 |
 | D58 | Phase 09 providers | In-memory YouTube/Reddit fixtures only | No scrape, no live API |
+| D59 | Entity resolution history | Append-only `entity_resolution_attempt` + candidates | Never rewrite earlier decisions |
+| D60 | Resolution bind policy | Only `exact` / `high_confidence` bind a printing | Ambiguous/probable/unresolved/conflict stay unbound |
+| D61 | Resolution confidence | Independent 0..1 on `resolver.v1` | Not market, creator-authority, or sentiment confidence |
+| D62 | Name matching | NFKC + edit/token similarity; no JA→EN transliteration | Language aliases are evidence, not identity |
 
 ## Void
 

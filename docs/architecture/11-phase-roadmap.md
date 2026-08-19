@@ -114,7 +114,7 @@ Exit: a printing has a durable multi-source history.
 
 ## Phase 09 — YouTube / Reddit / source ingestion
 
-Status: **complete** (see [PHASE_09.md](../PHASE_09.md)). Phase 10 has **not** started.
+Status: **complete** (see [PHASE_09.md](../PHASE_09.md)).
 
 - Source accounts, immutable content, segments, mentions, engagement snapshots
 - YouTube and Reddit **fixture** providers only
@@ -125,9 +125,12 @@ Exit: sources land as documents + mention spans.
 
 ## Phase 10 — Entity resolution
 
+Status: **complete** (see [PHASE_10.md](../PHASE_10.md)). Phase 11 has **not** started.
+
 - TCG resolver plugin
-- exact / high_confidence / probable / ambiguous / unresolved
-- Persist evidence
+- exact / high_confidence / probable / ambiguous / unresolved / conflict
+- Persist candidates, evidence, resolver version, and immutable history
+- Language and variant safety; deterministic mapping first; controlled fuzzy after
 
 Exit: “Greninja 214” vs “Japanese Greninja” do not collapse.
 

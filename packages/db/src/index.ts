@@ -163,6 +163,7 @@ export {
   getTcgPrintingByKey,
   getTcgSet,
   insertTcgCardConcept,
+  insertTcgCardNameAlias,
   insertTcgPrinting,
   insertTcgPrintingIdentifier,
   insertTcgSet,
@@ -250,4 +251,17 @@ export {
   type RedditSourceProvider,
   type YoutubeSourceProvider,
 } from "./source/provider.js";
+export {
+  RESOLVER_VERSION,
+  EntityResolutionError,
+  nameSimilarity,
+} from "./resolution/identity.js";
+export {
+  applyResolutionReview,
+  getLatestResolution,
+  getResolutionAttempt,
+  listResolutionCorrections,
+  listResolutionHistory,
+} from "./resolution/persist.js";
+export { resolveEntity, resolveSourceMention } from "./resolution/resolve.js";
 export * from "./schema/index.js";

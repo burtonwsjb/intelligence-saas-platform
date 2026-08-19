@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import {
   tcgCardConcept,
+  tcgCardNameAlias,
   tcgGame,
   tcgIdentifierConflict,
   tcgLanguage,
@@ -87,6 +88,37 @@ export async function insertTcgCardConcept(
     .from(tcgCardConcept)
     .where(
       and(eq(tcgCardConcept.gameKey, input.gameKey), eq(tcgCardConcept.conceptKey, input.conceptKey)),
+    )
+    .limit(1);
+  return row!;
+}
+
+export async function insertTcgCardNameAlias(
+  db: Database,
+  input: { cardId: string; language: string; name: string },
+) {
+  const language = parseTcgLanguage(input.language);
+  const normalizedName = normalizeTcgName(input.name);
+  const id = stableId("nal", [input.cardId, language, normalizedName]);
+  await db
+    .insert(tcgCardNameAlias)
+    .values({
+      id,
+      cardId: input.cardId,
+      languageCode: language,
+      name: input.name.trim(),
+      normalizedName,
+    })
+    .onConflictDoNothing();
+  const [row] = await db
+    .select()
+    .from(tcgCardNameAlias)
+    .where(
+      and(
+        eq(tcgCardNameAlias.cardId, input.cardId),
+        eq(tcgCardNameAlias.languageCode, language),
+        eq(tcgCardNameAlias.normalizedName, normalizedName),
+      ),
     )
     .limit(1);
   return row!;

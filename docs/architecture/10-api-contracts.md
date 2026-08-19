@@ -7,7 +7,7 @@ Base path: `/v1`
 Auth: `Authorization: Bearer <api_key>` unless noted  
 OpenAPI 3.1 will be published at `/v1/openapi.json` when the API is implemented.
 
-Kernel ingest routes below remain. Historical kernel queries are repository-only (no public `/v1/entities` yet). **Customer-facing intelligence products** are specified conceptually in [27-commercial-api-and-webhooks.md](./27-commercial-api-and-webhooks.md) (`cards`, `printings`, `sets`, `prices`, `market-history`, `signals`, `creators`, `creator-calls`, `indices`, `predictions`, `opportunities`, `content`). URLs are not finalized.
+Kernel ingest routes below remain. Historical kernel queries are repository-only (no public `/v1/entities` yet). Entity resolution in Phase 10 is a worker/library API (`resolver.v1`), not a public route. **Customer-facing intelligence products** are specified conceptually in [27-commercial-api-and-webhooks.md](./27-commercial-api-and-webhooks.md) (`cards`, `printings`, `sets`, `prices`, `market-history`, `signals`, `creators`, `creator-calls`, `indices`, `predictions`, `opportunities`, `content`). URLs are not finalized.
 
 ## Common error shape
 

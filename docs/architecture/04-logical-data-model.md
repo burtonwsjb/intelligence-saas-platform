@@ -332,7 +332,9 @@ Implemented in Phase 09 as platform-global tables (no tenant RLS). See [PHASE_09
 
 ### `mentions` + `entity_resolutions`
 
-- raw text, context, status (`exact`|`high_confidence`|`probable`|`ambiguous`|`unresolved`), confidence, evidence, versions
+- raw text, context, status (`exact`|`high_confidence`|`probable`|`ambiguous`|`unresolved`|`conflict`), confidence, evidence, versions
+
+Implemented in Phase 10 as platform-global `entity_resolution_attempt`, `entity_resolution_candidate`, `entity_resolution_correction`, and `tcg_card_name_alias`. See [PHASE_10.md](../PHASE_10.md). Attempts are append-only. Printings bind only for `exact` / `high_confidence`.
 
 ### `observations` / `signals` / `score_snapshots`
 

@@ -1,6 +1,6 @@
 # Phase 09 — Source intelligence ingestion
 
-Status: **implemented**. Phase 10 has **not** started.
+Status: **implemented**. Phase 10 is complete; see [PHASE_10.md](PHASE_10.md). Phase 11 has **not** started.
 
 YouTube, Reddit, and generic social/web sources ingest as platform-global documents, accounts, segments, mentions, and engagement snapshots. Fixture providers only. No HTML scraping. No real YouTube/Reddit network calls. Mentions remain unresolved. Creator authority and advanced entity resolution are not in this phase.
 

@@ -1,6 +1,7 @@
 import type { Database } from "../client.js";
 import {
   insertTcgCardConcept,
+  insertTcgCardNameAlias,
   insertTcgPrinting,
   insertTcgPrintingIdentifier,
   insertTcgSet,
@@ -61,6 +62,18 @@ export async function seedTcgIdentityFixtures(db: Database) {
     conceptKey: "monkey-d-luffy",
     canonicalName: "Monkey D. Luffy",
   });
+
+  await insertTcgCardNameAlias(db, { cardId: greninja.id, language: "en", name: "Greninja ex" });
+  await insertTcgCardNameAlias(db, { cardId: greninja.id, language: "en", name: "Greninja" });
+  await insertTcgCardNameAlias(db, { cardId: greninja.id, language: "ja", name: "ゲッコウガex" });
+  await insertTcgCardNameAlias(db, { cardId: greninja.id, language: "ja", name: "ゲッコウガ" });
+  await insertTcgCardNameAlias(db, { cardId: greninja.id, language: "zh-Hans", name: "甲贺忍蛙ex" });
+  await insertTcgCardNameAlias(db, { cardId: greninja.id, language: "zh-Hans", name: "甲贺忍蛙" });
+  await insertTcgCardNameAlias(db, { cardId: pikachu.id, language: "en", name: "Pikachu" });
+  await insertTcgCardNameAlias(db, { cardId: charizard.id, language: "en", name: "Charizard ex" });
+  await insertTcgCardNameAlias(db, { cardId: charizard.id, language: "en", name: "Charizard" });
+  await insertTcgCardNameAlias(db, { cardId: luffy.id, language: "en", name: "Monkey D. Luffy" });
+  await insertTcgCardNameAlias(db, { cardId: luffy.id, language: "ja", name: "モンキー・D・ルフィ" });
 
   const print = async (
     card: { id: string; conceptKey: string },
