@@ -20,7 +20,7 @@
 
 Postgres RLS is mandatory on every tenant-owned table. Application filters are not enough. The runtime role is `app_user` (no `BYPASSRLS`). Context is transaction-local (`app.current_organization_id` + `app.current_user_id`) and bound to the active tenant only.
 
-API keys cannot select a different tenant. Machine requests set transaction-local `app.current_principal_type=machine` and `app.current_api_key_id`. Prefix and Stripe-customer lookups use constrained `SECURITY DEFINER` functions plus `app_migrate`-only SELECT policies; they do not grant `app_user` a tenant bypass. Redis keys, BullMQ job names, and R2 paths include `tenant_id`. Platform admin access is audited.
+API keys cannot select a different tenant. Machine requests set transaction-local `app.current_principal_type=machine` and `app.current_api_key_id`. Prefix and Stripe-customer lookups use constrained `SECURITY DEFINER` functions plus `app_migrate`-only SELECT policies; they do not grant `app_user` a tenant bypass. `source_event` and `outbox_job` are tenant-owned with FORCE RLS. Worker jobs carry `organization_id` in a versioned envelope and must match the durable source event or fail permanently. Redis queue names are environment-prefixed (`isp-{env}-ingest`); they do not include secrets. BullMQ 5 forbids `:` in queue names. Caller `x-request-id` is correlation only. Platform admin access is audited.
 
 ## Secrets
 
@@ -33,7 +33,7 @@ API keys cannot select a different tenant. Machine requests set transaction-loca
 ## Input and payload safety
 
 - Zod-validate every external payload
-- Cap payload size on ingest
+- Cap payload size on ingest (Phase 05 default: 65536 bytes)
 - Store source payloads, but do not render them as HTML
 - Do not evaluate policy documents as code; rules are data interpreted by a fixed engine
 - Outbound HTTP only to allowlisted connector bases, never to tenant-supplied arbitrary URLs in v1

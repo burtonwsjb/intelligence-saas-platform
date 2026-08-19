@@ -24,6 +24,8 @@ import {
   apiKey,
   plan,
   usageEvent,
+  sourceEvent,
+  outboxJob,
 } from "./schema/index.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -69,6 +71,8 @@ describe("schema ownership", () => {
     expect(tenantBilling).toBeDefined();
     expect(apiKey).toBeDefined();
     expect(usageEvent).toBeDefined();
+    expect(sourceEvent).toBeDefined();
+    expect(outboxJob).toBeDefined();
   });
 });
 
@@ -85,6 +89,9 @@ describe("migrations", () => {
     expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "api_key"/);
     expect(sql).toMatch(/app.has_machine_principal\(\)/);
     expect(sql).toMatch(/app.claim_stripe_event/);
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "source_event"/);
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "outbox_job"/);
+    expect(sql).toMatch(/app.list_pending_outbox/);
     expect(sql).not.toMatch(/ALTER TABLE "user" ENABLE ROW LEVEL SECURITY/);
     expect(sql).not.toMatch(/ALTER TABLE "session" ENABLE ROW LEVEL SECURITY/);
     expect(sql).not.toMatch(/ALTER TABLE "organization" ENABLE ROW LEVEL SECURITY/);
@@ -98,6 +105,8 @@ describe("committed env example", () => {
     expect(example).toMatch(/^BETTER_AUTH_SECRET=$/m);
     expect(example).toMatch(/^DATABASE_URL=$/m);
     expect(example).toMatch(/^DATABASE_ADMIN_URL=$/m);
+    expect(example).toMatch(/^REDIS_URL=$/m);
+    expect(example).toMatch(/^QUEUE_PREFIX=$/m);
     expect(example).not.toMatch(/postgresql:\/\/[^:]+:[^@]+@/);
   });
 });

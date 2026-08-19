@@ -15,6 +15,7 @@
     "lint": "turbo lint",
     "test": "turbo test",
     "test:isolation": "pnpm --filter @isp/db test:isolation",
+    "test:integration": "pnpm --filter @isp/db build && pnpm --filter @isp/queue build && pnpm --filter @isp/queue test:integration && pnpm --filter @isp/api test:integration && pnpm --filter @isp/worker test:integration",
     "start:web": "pnpm --filter @isp/web start",
     "start:api": "pnpm --filter @isp/api start",
     "start:worker": "pnpm --filter @isp/worker start",

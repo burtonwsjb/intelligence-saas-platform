@@ -24,8 +24,19 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       DATABASE_ADMIN_URL: postgresql://isp_admin:isp_ci_only@localhost:5432/isp_ci
+      REDIS_URL: redis://localhost:6379
+      QUEUE_PREFIX: ci
     steps:
       - name: Check out
         uses: actions/checkout@v4
@@ -55,6 +66,9 @@ jobs:
 
       - name: Isolation tests
         run: pnpm test:isolation
+
+      - name: Queue and ingest integration
+        run: pnpm test:integration
 
       - name: Build
         run: pnpm build

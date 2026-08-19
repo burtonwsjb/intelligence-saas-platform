@@ -1,5 +1,6 @@
-# Disposable local Postgres for Phase 02–03 development.
-# Cloud database provider remains Neon. Do not use this compose file in production.
+# Disposable local Postgres and Redis for Phase 02–05 development.
+# Cloud database provider remains Neon. Do not provision cloud Redis from this file.
+# Do not use this compose file in production.
 
 services:
   postgres:
@@ -14,6 +15,16 @@ services:
       - ./docker-data/postgres:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U isp -d isp"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
       retries: 10

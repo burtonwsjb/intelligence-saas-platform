@@ -9,7 +9,8 @@
     "start": "node dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.0",
@@ -17,12 +18,15 @@
     "@isp/billing": "workspace:*",
     "@isp/contracts": "workspace:*",
     "@isp/db": "workspace:*",
+    "@isp/queue": "workspace:*",
     "@isp/shared": "workspace:*",
     "drizzle-orm": "^0.45.2",
-    "hono": "^4.13.2"
+    "hono": "^4.13.2",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@isp/config": "workspace:*",
+    "@electric-sql/pglite": "^0.5.5",
     "@types/node": "^24.3.0",
     "eslint": "^9.32.0",
     "tsx": "^4.20.3",

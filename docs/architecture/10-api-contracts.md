@@ -1,6 +1,6 @@
 # API contracts
 
-These are planned HTTP contracts. Phase 04 added machine auth and a test `/v1/me` probe. Commercial intelligence routes are not implemented.
+Phase 05 implements generic `POST /v1/events`. Phase 04 added machine auth and a test `/v1/me` probe. Commercial intelligence routes are not implemented.
 
 Served by `apps/api` (Hono).  
 Base path: `/v1`  
@@ -33,7 +33,7 @@ Kernel ingest routes below remain. **Customer-facing intelligence products** are
 
 ## `POST /v1/events`
 
-Scope: `ingest:write`
+Implemented in Phase 05. Scope: `ingest:write`. Tenant is the API key organization. Max body **65536** bytes (`413 payload_too_large`). Requires `idempotency_key`. Same key + same body returns the original `202`. Same key + different body returns `409 idempotency_conflict`. Optional `x-request-id` is echoed when well-formed; it is not an idempotency key.
 
 ```json
 {

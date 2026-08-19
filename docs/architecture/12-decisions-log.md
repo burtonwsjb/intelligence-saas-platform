@@ -36,6 +36,10 @@ Change only with an explicit new decision.
 | D30 | Machine RLS | `principal_type=machine` + validated key row | Does not weaken browser membership isolation |
 | D31 | Quota | Database monthly aggregates; 402 entitlement / 429 quota | Stripe meters deferred |
 | D32 | Local billing simulation | Default non-production billing mode; no Stripe network or IDs | Hosted Checkout/Portal deferred; entitlements use normalized `tenant_billing` |
+| D33 | Queue package | `@isp/queue` owns Redis factory, names, envelopes, retries | Do not scatter raw BullMQ names across apps |
+| D34 | Ingest durability | `source_event` + `outbox_job` in one transaction before Redis | Lost-work is forbidden; Redis down still returns 202 |
+| D35 | Job identity | BullMQ `jobId` = outbox id; envelope is Zod-validated | Publisher retry is safe; unknown types fail closed |
+| D36 | Ingest usage | Meter `ingest.events` once per tenant idempotency key | Duplicate replay and publish retry must not double-charge |
 
 ## Void
 

@@ -75,6 +75,8 @@ export async function bootstrapRoles(
       "api_key",
       "usage_event",
       "usage_month",
+      "source_event",
+      "outbox_job",
     ];
     for (const table of tables) {
       await sql.unsafe(`ALTER TABLE "${table}" OWNER TO ${DB_ROLES.migrate}`);
@@ -92,13 +94,14 @@ export async function bootstrapRoles(
       ALTER FUNCTION app.lookup_api_key_by_prefix(text) OWNER TO ${DB_ROLES.migrate};
       ALTER FUNCTION app.claim_stripe_event(text, text, text, text) OWNER TO ${DB_ROLES.migrate};
       ALTER FUNCTION app.lookup_organization_by_stripe_customer(text) OWNER TO ${DB_ROLES.migrate};
+      ALTER FUNCTION app.list_pending_outbox(integer) OWNER TO ${DB_ROLES.migrate};
     `);
 
     await sql.unsafe(`
       GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
         "user", "session", "account", "verification", "organization", "member", "invitation",
         "tenant", "tenant_resource", "tenant_billing", "tenant_entitlement_override",
-        "api_key", "usage_event", "usage_month"
+        "api_key", "usage_event", "usage_month", "source_event", "outbox_job"
       TO ${DB_ROLES.user}, ${DB_ROLES.worker};
       GRANT SELECT ON TABLE "plan", "plan_entitlement" TO ${DB_ROLES.user}, ${DB_ROLES.worker};
       GRANT SELECT, INSERT ON TABLE "audit_event" TO ${DB_ROLES.user}, ${DB_ROLES.worker};
@@ -117,6 +120,7 @@ export async function bootstrapRoles(
       GRANT EXECUTE ON FUNCTION app.lookup_api_key_by_prefix(text) TO ${DB_ROLES.user}, ${DB_ROLES.worker};
       GRANT EXECUTE ON FUNCTION app.claim_stripe_event(text, text, text, text) TO ${DB_ROLES.user}, ${DB_ROLES.worker};
       GRANT EXECUTE ON FUNCTION app.lookup_organization_by_stripe_customer(text) TO ${DB_ROLES.user}, ${DB_ROLES.worker};
+      GRANT EXECUTE ON FUNCTION app.list_pending_outbox(integer) TO ${DB_ROLES.user}, ${DB_ROLES.worker};
     `);
   } finally {
     await sql.end({ timeout: 5 });

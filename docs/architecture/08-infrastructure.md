@@ -19,7 +19,7 @@ Data plane (independent):
    Stripe test / live
 ```
 
-Local development does not require Vercel or Railway.
+Local development does not require Vercel or Railway. Phase 05 uses disposable Docker Redis (`redis:7-alpine` on `6379`) and does **not** provision Upstash, Railway Redis, or any cloud Redis account.
 
 ## Planned services (later)
 
@@ -35,7 +35,8 @@ Local development does not require Vercel or Railway.
 ## Planned variable names only
 
 - `DATABASE_URL`
-- `REDIS_URL`
+- `REDIS_URL` (server-side; local `redis://localhost:6379`)
+- `QUEUE_PREFIX` (optional `isp-{prefix}-ingest` segment; not a secret)
 - `BETTER_AUTH_SECRET`
 - `BETTER_AUTH_URL`
 - `API_KEY_PEPPER`
@@ -59,13 +60,11 @@ Production hostname is TBD. Docs use `https://app.example.invalid` and `https://
 
 ## CI
 
-When added:
+GitHub Actions `validate` job (see [docs/CI.md](../CI.md)):
 
-- install, typecheck, unit tests
+- disposable Postgres + Redis
+- install, typecheck, lint, unit tests, isolation tests, queue/ingest integration tests, build
 - no production deploy from pull requests
-- GitHub Actions preferred
-
-Not created in Phase 00.
 
 ## Secrets
 

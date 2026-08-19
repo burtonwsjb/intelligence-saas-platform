@@ -16,7 +16,10 @@ describe("CI workflow", () => {
     expect(workflow).toMatch(/pnpm lint/);
     expect(workflow).toMatch(/pnpm test/);
     expect(workflow).toMatch(/pnpm test:isolation/);
+    expect(workflow).toMatch(/pnpm test:integration/);
     expect(workflow).toMatch(/postgres:16-alpine/);
+    expect(workflow).toMatch(/redis:7-alpine/);
+    expect(workflow).toMatch(/REDIS_URL: redis:\/\/localhost:6379/);
     expect(workflow).toMatch(/node-version: 22/);
     expect(workflow).toMatch(/pnpm build/);
     expect(workflow).not.toMatch(/vercel/i);

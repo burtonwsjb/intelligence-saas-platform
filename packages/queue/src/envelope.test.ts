@@ -1,0 +1,32 @@
+import { describe, expect, it } from "vitest";
+import { UnrecoverableJobError } from "./errors.js";
+import { createNormalizeEnvelope, parseJobEnvelope } from "./envelope.js";
+import { DEFAULT_BACKOFF_MS, DEFAULT_JOB_ATTEMPTS, ingestQueueName } from "./names.js";
+import { queueEnvironmentName, requireRedisUrl, MissingRedisUrlError } from "./env.js";
+
+describe("job envelope", () => {
+  it("accepts a versioned normalize envelope and rejects unknown types", () => {
+    const envelope = createNormalizeEnvelope({
+      jobId: "outbox_12345678",
+      organizationId: "org_a",
+      sourceEventId: "event_12345678",
+      requestId: "req_12345678",
+    });
+    expect(parseJobEnvelope(envelope).job_type).toBe("source_event.normalize");
+    expect(() =>
+      parseJobEnvelope({ ...envelope, job_type: "observations.create" }),
+    ).toThrow(UnrecoverableJobError);
+    expect(() => parseJobEnvelope({ hello: "world" })).toThrow(UnrecoverableJobError);
+  });
+});
+
+describe("queue naming and redis env", () => {
+  it("namespaces queues by environment and fails closed without REDIS_URL", () => {
+    expect(queueEnvironmentName({ NODE_ENV: "test" })).toBe("test");
+    expect(queueEnvironmentName({ NODE_ENV: "production" })).toBe("production");
+    expect(ingestQueueName({ NODE_ENV: "test" })).toBe("isp-test-ingest");
+    expect(DEFAULT_JOB_ATTEMPTS).toBe(5);
+    expect(DEFAULT_BACKOFF_MS).toBe(2_000);
+    expect(() => requireRedisUrl({})).toThrow(MissingRedisUrlError);
+  });
+});

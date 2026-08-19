@@ -55,7 +55,7 @@ Exit: tenant hop tests fail closed.
 
 ## Phase 04 — Stripe / entitlements / API key foundations
 
-Status: **complete** (see [PHASE_04.md](../PHASE_04.md)). Phase 05 has **not** started.
+Status: **complete** (see [PHASE_04.md](../PHASE_04.md)).
 
 - Stripe **test** mode only; hosted Checkout/Portal **deferred**
 - Local billing simulation for disposable databases (no Stripe network)
@@ -67,14 +67,14 @@ Exit: entitlements + key issue work locally. Hosted Stripe Checkout remains defe
 
 ## Phase 05 — Queue, worker, and ingestion foundations
 
-Status: **not started**
+Status: **complete** (see [PHASE_05.md](../PHASE_05.md)). Phase 06 has **not** started.
 
-- Redis + BullMQ
-- Generic `/v1/events` ingest
-- `source_documents` / jobs
-- Generic HTTP remains available here as a capability
+- Redis + BullMQ via `@isp/queue`
+- Generic `/v1/events` ingest with `ingest:write`
+- Durable `source_event` + transactional outbox
+- Worker normalize stub (no observations/signals)
 
-Exit: an event becomes a stored observation job.
+Exit: an accepted event is durable, tenant-bound, retried safely, and visible when it fails.
 
 ## Phase 06 — Core observation / signal / entity model
 

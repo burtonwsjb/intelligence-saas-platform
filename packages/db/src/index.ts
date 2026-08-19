@@ -33,6 +33,7 @@ export {
   type SystemContext,
 } from "./rls.js";
 export { insertAuditEvent, listAuditEvents } from "./repos/audit.js";
+export { getTenant } from "./repos/tenant.js";
 export {
   deleteTenantResource,
   insertTenantResource,
@@ -59,4 +60,24 @@ export {
   type ApiKeyLookup,
 } from "./repos/api-key.js";
 export { getMonthUsage, monthStartUtc, recordUsage } from "./repos/usage.js";
+export {
+  IllegalSourceEventTransitionError,
+  findSourceEventByIdempotency,
+  getSourceEvent,
+  insertSourceEvent,
+  listSourceEvents,
+  updateSourceEventStatus,
+} from "./repos/source-event.js";
+export {
+  getOutboxJob,
+  insertOutboxJob,
+  listOutboxJobs,
+  listPendingOutboxRefs,
+  markOutboxPublishFailed,
+  markOutboxPublished,
+} from "./repos/outbox.js";
+export {
+  canTransitionSourceEvent,
+  isSourceEventStatus,
+} from "./ingest-status.js";
 export * from "./schema/index.js";

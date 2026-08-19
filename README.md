@@ -9,11 +9,9 @@ TCG Card Central is only a future external integration (optional reference-data 
 
 ## Current phase
 
-**Phase 04 complete locally.** Billing simulation (no Stripe network), data-driven entitlements, hashed tenant-bound API keys, and usage/quota stubs. Hosted Stripe Checkout/Portal is deferred.
+**Phase 05 complete locally.** Redis/BullMQ via `@isp/queue`, generic `POST /v1/events`, durable `source_event` + outbox, and a real worker normalize stub. Cloud Redis and Neon are not provisioned. Stripe live mode is forbidden. See [docs/PHASE_05.md](docs/PHASE_05.md).
 
-Do not begin Phase 05 until explicitly instructed.
-
-Cloud Neon is not provisioned. Stripe live mode is forbidden. See [docs/PHASE_04.md](docs/PHASE_04.md).
+Do not begin Phase 06 until explicitly instructed.
 
 ## Local commands
 
@@ -25,13 +23,14 @@ pnpm typecheck
 pnpm lint
 pnpm test
 pnpm test:isolation
+pnpm test:integration
 pnpm build
 pnpm dev:web
 pnpm dev:api
 pnpm dev:worker
 ```
 
-TypeScript, pnpm/Turborepo, Next.js, Hono, PostgreSQL/Neon, Drizzle, Better Auth. Later: BullMQ, Redis, R2, Resend, Stripe, Vercel, Railway.
+TypeScript, pnpm/Turborepo, Next.js, Hono, PostgreSQL/Neon, Drizzle, Better Auth, BullMQ, local Docker Redis. Later: R2, Resend, Stripe, Vercel, Railway.
 
 ## Documentation
 
@@ -40,6 +39,7 @@ TypeScript, pnpm/Turborepo, Next.js, Hono, PostgreSQL/Neon, Drizzle, Better Auth
 - [Phase 02](docs/PHASE_02.md)
 - [Phase 03](docs/PHASE_03.md)
 - [Phase 04](docs/PHASE_04.md)
+- [Phase 05](docs/PHASE_05.md)
 - [CI](docs/CI.md)
 - [Overview](docs/architecture/00-overview.md)
 - [Roadmap (phases 00–23)](docs/architecture/11-phase-roadmap.md)
@@ -57,5 +57,6 @@ TypeScript, pnpm/Turborepo, Next.js, Hono, PostgreSQL/Neon, Drizzle, Better Auth
 | Database / auth / tenant | Phase 02 complete locally; Neon cloud not provisioned |
 | RLS / RBAC / isolation | Phase 03 complete locally; proven in CI Postgres |
 | Billing / API keys | Phase 04 complete locally; local simulation default; Stripe Checkout deferred |
+| Queue / ingest | Phase 05 complete locally; Docker Redis + Postgres; no cloud Redis |
 | Cloud / Stripe live / TCC | Not created, not connected, not modified |
-| Phase 05 queue / ingest | Not started |
+| Phase 06 observations / signals | Not started |

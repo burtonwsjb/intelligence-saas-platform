@@ -11,8 +11,12 @@ import {
   deleteTenantResource,
   getTenantBilling,
   insertAuditEvent,
+  insertOutboxJob,
+  insertSourceEvent,
   insertTenantResource,
   listApiKeys,
+  listOutboxJobs,
+  listSourceEvents,
   listAuditEvents,
   listTenantResources,
   recordUsage,
@@ -373,6 +377,55 @@ describe("PostgreSQL RLS isolation", () => {
       ),
     ).rejects.toThrow();
     await admin`update tenant set status = 'active' where organization_id = ${ids.orgA}`;
+  });
+
+  it("keeps source events and outbox jobs inside the active tenant", async () => {
+    const eventA = `src_${crypto.randomUUID()}`;
+    const eventB = `src_${crypto.randomUUID()}`;
+    await asUser(ids.userA, ids.orgA, (db) =>
+      insertSourceEvent(db, {
+        id: eventA,
+        organizationId: ids.orgA,
+        eventType: "pricing.snapshot",
+        occurredAt: new Date(),
+        idempotencyKey: `idem_${crypto.randomUUID()}`,
+        fingerprint: "fp_a",
+        entity: { type: "sku", external_id: "a" },
+        metrics: [],
+        payload: {},
+      }),
+    );
+    await asUser(ids.userB, ids.orgB, (db) =>
+      insertSourceEvent(db, {
+        id: eventB,
+        organizationId: ids.orgB,
+        eventType: "pricing.snapshot",
+        occurredAt: new Date(),
+        idempotencyKey: `idem_${crypto.randomUUID()}`,
+        fingerprint: "fp_b",
+        entity: { type: "sku", external_id: "b" },
+        metrics: [],
+        payload: {},
+      }),
+    );
+    const own = await asUser(ids.userA, ids.orgA, (db) => listSourceEvents(db, ids.orgA));
+    expect(own.map((row) => row.id)).toContain(eventA);
+    const hop = await asUser(ids.userA, ids.orgA, (db) => listSourceEvents(db, ids.orgB));
+    expect(hop).toEqual([]);
+
+    await asUser(ids.userA, ids.orgA, (db) =>
+      insertOutboxJob(db, {
+        id: `out_${crypto.randomUUID()}`,
+        organizationId: ids.orgA,
+        sourceEventId: eventA,
+        jobType: "source_event.normalize",
+        payload: { job_id: "job" },
+      }),
+    );
+    const outbox = await asUser(ids.userA, ids.orgA, (db) => listOutboxJobs(db, ids.orgA));
+    expect(outbox.every((row) => row.organizationId === ids.orgA)).toBe(true);
+    const outboxHop = await asUser(ids.userA, ids.orgA, (db) => listOutboxJobs(db, ids.orgB));
+    expect(outboxHop).toEqual([]);
   });
 
   it("claims Stripe events once", async () => {
