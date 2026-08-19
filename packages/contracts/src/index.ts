@@ -194,3 +194,10 @@ export {
   type MarketOutlierPolicy,
   type MarketReturnPeriod,
 } from "./analytics.js";
+export {
+  RECOMMENDATION_LABELS,
+  RECOMMENDATION_VERSION,
+  SCORE_POLICY_KEY,
+  SCORE_POLICY_VERSION,
+  type RecommendationLabel,
+} from "./scoring.js";

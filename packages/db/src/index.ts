@@ -335,4 +335,18 @@ export {
 } from "./analytics/index-engine.js";
 export { printingBenchmarkContext, resolveBenchmark } from "./analytics/benchmark.js";
 export { computeCreatorAlpha, getCreatorCallAlpha } from "./analytics/alpha.js";
+export {
+  SCORE_POLICY_KEY,
+  SCORE_POLICY_VERSION,
+  SCORE_UNCALIBRATED,
+} from "./scoring/weights.js";
+export { creatorConsensus, recommend, scoreFromInputs } from "./scoring/model.js";
+export { gatherScoreInputs } from "./scoring/gather.js";
+export {
+  getLatestScoreSnapshot,
+  persistScoreSnapshot,
+  projectScoreToDecision,
+  scoreAndPersist,
+  scorePrinting,
+} from "./scoring/persist.js";
 export * from "./schema/index.js";

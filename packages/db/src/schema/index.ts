@@ -14,3 +14,4 @@ export * from "./source.js";
 export * from "./resolution.js";
 export * from "./creator.js";
 export * from "./analytics.js";
+export * from "./scoring.js";

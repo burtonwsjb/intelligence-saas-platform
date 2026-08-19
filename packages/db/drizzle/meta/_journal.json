@@ -92,6 +92,13 @@
       "when": 12,
       "tag": "0013_phase13_analytics",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 13,
+      "tag": "0014_phase14_scoring",
+      "breakpoints": true
     }
   ]
 }

@@ -157,7 +157,7 @@ Exit: 4/4 does not outrank 730/1000 on raw rate.
 
 ## Phase 13 — Market analytics and indices
 
-Status: **complete** (see [PHASE_13.md](../PHASE_13.md)). Phase 14 has **not** started.
+Status: **complete** (see [PHASE_13.md](../PHASE_13.md)).
 
 - Collectible-adapted analytics
 - Generalized index spec, survivorship-safe history
@@ -166,6 +166,8 @@ Status: **complete** (see [PHASE_13.md](../PHASE_13.md)). Phase 14 has **not** s
 Exit: an index reconstructs historically.
 
 ## Phase 14 — Opportunity scoring
+
+Status: **complete** (see [PHASE_14.md](../PHASE_14.md)). Phase 15 has **not** started.
 
 - Separate opportunity / risk / confidence / liquidity / recommendation
 - Explainability payloads

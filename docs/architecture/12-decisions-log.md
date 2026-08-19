@@ -77,6 +77,9 @@ Change only with an explicit new decision.
 | D71 | Feature as-of | `features.v1` uses only `observed_at <= as_of`; nearest sold in a slack window | No interpolated daily closes |
 | D72 | Index v1 | Language required unless mixed is explicit; equal-weight default; PIT membership | Never auto-merge EN/JA/zh-Hans |
 | D73 | Creator alpha | `alpha.v1` = card return − benchmark return on a new immutable row | Do not rewrite `outcome.v1` fields |
+| D74 | Score separation | Opportunity, risk, confidence, and liquidity are stored separately | Never collapse into one product number |
+| D75 | Uncalibrated v1 | Central `score.v1` weights; missing inputs skipped and renormalized | Do not fabricate search/prediction features |
+| D76 | Hype gate | Unconfirmed social activity cannot emit buy/strong_buy | Market confirmation requires completed sales |
 
 ## Void
 

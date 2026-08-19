@@ -1,5 +1,7 @@
 # Opportunity scoring and recommendations
 
+Phase 14 implements `score.v1` / `recommendation.v1` as immutable `tcg_score_snapshot` rows plus a tenant `decision_record` projection. See [PHASE_14.md](../PHASE_14.md). Weights are uncalibrated.
+
 ## Separate outputs
 
 Never hide the product in one number. Persist and expose:
