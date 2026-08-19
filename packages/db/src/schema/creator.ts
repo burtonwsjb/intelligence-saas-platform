@@ -104,3 +104,61 @@ export const creatorCallOutcome = pgTable(
     callUidx: uniqueIndex("creator_call_outcome_call_uidx").on(table.callId),
   }),
 );
+
+export const creatorAuthoritySlice = pgTable(
+  "creator_authority_slice",
+  {
+    id: text("id").primaryKey(),
+    creatorId: text("creator_id")
+      .notNull()
+      .references(() => creator.id),
+    gameKey: text("game_key"),
+    languageCode: text("language_code"),
+    era: text("era").notNull().default("unspecified"),
+    setKey: text("set_key"),
+    priceTier: text("price_tier").notNull().default("unknown"),
+    horizonCode: text("horizon_code"),
+    rawGraded: text("raw_graded").notNull().default("raw"),
+    sampleSize: numeric("sample_size", { precision: 12, scale: 0, mode: "string" }).notNull(),
+    successes: numeric("successes", { precision: 12, scale: 0, mode: "string" }).notNull(),
+    rawAccuracy: numeric("raw_accuracy", { precision: 8, scale: 6, mode: "string" }),
+    recencyWeightedAccuracy: numeric("recency_weighted_accuracy", { precision: 8, scale: 6, mode: "string" }),
+    wilsonLow: numeric("wilson_low", { precision: 8, scale: 6, mode: "string" }),
+    wilsonCenter: numeric("wilson_center", { precision: 8, scale: 6, mode: "string" }),
+    wilsonHigh: numeric("wilson_high", { precision: 8, scale: 6, mode: "string" }),
+    bayesMean: numeric("bayes_mean", { precision: 8, scale: 6, mode: "string" }),
+    avgReturn: numeric("avg_return", { precision: 12, scale: 6, mode: "string" }),
+    medianReturn: numeric("median_return", { precision: 12, scale: 6, mode: "string" }),
+    avgRelativeReturn: numeric("avg_relative_return", { precision: 12, scale: 6, mode: "string" }),
+    avgMfe: numeric("avg_mfe", { precision: 12, scale: 6, mode: "string" }),
+    avgMae: numeric("avg_mae", { precision: 12, scale: 6, mode: "string" }),
+    earlyCallScore: numeric("early_call_score", { precision: 8, scale: 6, mode: "string" }),
+    calibrationError: numeric("calibration_error", { precision: 8, scale: 6, mode: "string" }),
+    authorityScore: numeric("authority_score", { precision: 8, scale: 4, mode: "string" }),
+    authorityWeight: numeric("authority_weight", { precision: 8, scale: 6, mode: "string" }),
+    trustState: text("trust_state").notNull(),
+    formulaVersion: text("formula_version").notNull(),
+    benchmarkRequirement: text("benchmark_requirement").notNull(),
+    components: jsonb("components").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    creatorIdx: index("creator_authority_slice_creator_idx").on(table.creatorId, table.createdAt),
+  }),
+);
+
+export const creatorTrustEvent = pgTable(
+  "creator_trust_event",
+  {
+    id: text("id").primaryKey(),
+    creatorId: text("creator_id")
+      .notNull()
+      .references(() => creator.id),
+    trustState: text("trust_state").notNull(),
+    reason: text("reason"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    creatorIdx: index("creator_trust_event_creator_idx").on(table.creatorId, table.createdAt),
+  }),
+);

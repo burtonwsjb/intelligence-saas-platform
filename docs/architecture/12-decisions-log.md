@@ -70,6 +70,10 @@ Change only with an explicit new decision.
 | D64 | Call detection | Recommendation/prediction language required | Mentions are not automatically calls |
 | D65 | Price at call | `price_at_call.v1` latest sold/reference at or before `published_at` | No look-ahead; listings are not sold |
 | D66 | Call immutability | Finalized calls append-only; corrections are new rows | Fingerprint prevents duplicate re-ingest |
+| D67 | Outcome evaluation | `outcome.v1` uses sold history inside the horizon only | Missing data is insufficient, not a win/loss |
+| D68 | Authority ranking | Wilson lower bound + `n/(n+20)` + Beta(8,8) mean | 4/4 cannot outrank 730/1000 |
+| D69 | Authority context | Slices by game/language/set/tier/horizon | No universal creator percentage |
+| D70 | Phase 12 alpha | Store Phase 13 benchmark requirement; relative return null | Do not fabricate indices |
 
 ## Void
 

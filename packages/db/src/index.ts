@@ -293,4 +293,13 @@ export {
   listUnresolvedCalls,
 } from "./creator/query.js";
 export { creatorCallSourceFixtures } from "./creator/fixtures.js";
+export { evaluateCreatorCallOutcome, earlyCallScore } from "./creator/outcomes.js";
+export {
+  getCreatorAuthorityProfile,
+  latestTrustState,
+  recomputeCreatorAuthority,
+  recordCreatorTrust,
+  AUTHORITY_VERSION,
+} from "./creator/authority.js";
+export { authorityScore, bayesMean, wilsonInterval } from "./creator/stats.js";
 export * from "./schema/index.js";

@@ -64,6 +64,7 @@ import {
   extractCreatorCallsFromContent,
   creatorCallSourceFixtures,
   creatorCall,
+  creatorAuthoritySlice,
 } from "./index.js";
 
 const passwords = {
@@ -1180,6 +1181,20 @@ describe("PostgreSQL RLS isolation", () => {
             extractionConfidence: "0.1",
             extractionVersion: "v",
             fingerprint: "tenant_hack",
+          }),
+        ),
+      ).rejects.toThrow();
+      await expect(
+        asUser(ids.userA, ids.orgA, (db) =>
+          db.insert(creatorAuthoritySlice).values({
+            id: "cas_tenant_hack",
+            creatorId: "missing",
+            sampleSize: "0",
+            successes: "0",
+            trustState: "low_confidence",
+            formulaVersion: "authority.v1",
+            benchmarkRequirement: "phase_13_language_era_set_tier_index",
+            components: {},
           }),
         ),
       ).rejects.toThrow();

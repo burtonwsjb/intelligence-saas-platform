@@ -136,7 +136,7 @@ Exit: “Greninja 214” vs “Japanese Greninja” do not collapse.
 
 ## Phase 11 — Creator call extraction
 
-Status: **complete** (see [PHASE_11.md](../PHASE_11.md)). Phase 12 has **not** started.
+Status: **complete** (see [PHASE_11.md](../PHASE_11.md)).
 
 - Immutable calls
 - Extraction + resolution confidence
@@ -146,10 +146,12 @@ Exit: a fixture video/post becomes a call row.
 
 ## Phase 12 — Creator authority and outcome tracking
 
+Status: **complete** (see [PHASE_12.md](../PHASE_12.md)). Phase 13 has **not** started.
+
 - Contextual slices
 - Bayesian / Wilson sample-size handling
 - Trust states
-- Horizon outcomes + alpha
+- Horizon outcomes; alpha deferred to Phase 13 indices
 
 Exit: 4/4 does not outrank 730/1000 on raw rate.
 

@@ -127,6 +127,7 @@ describe("migrations", () => {
     expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "tcg_card_name_alias"/);
     expect(sql).not.toMatch(/ALTER TABLE "entity_resolution_attempt" ENABLE ROW LEVEL SECURITY/);
     expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "creator_call"/);
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "creator_authority_slice"/);
     expect(sql).not.toMatch(/ALTER TABLE "creator_call" ENABLE ROW LEVEL SECURITY/);
   });
 

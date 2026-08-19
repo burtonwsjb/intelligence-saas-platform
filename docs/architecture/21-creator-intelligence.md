@@ -137,4 +137,4 @@ Opportunity and prediction features may include:
 
 Consensus of excluded or low-quality extractors is ignored. Social reach is not substituted for authority.
 
-Phase 11 implements creator identity, immutable calls, price-at-call, and pending outcome slots ([PHASE_11.md](../PHASE_11.md)). Authority scoring is Phase 12.
+Phase 11 implements creator identity, immutable calls, price-at-call, and pending outcome slots ([PHASE_11.md](../PHASE_11.md)). Phase 12 adds horizon evaluation, Wilson/Bayes shrinkage, contextual slices, and trust states ([PHASE_12.md](../PHASE_12.md)). Alpha versus market indices is deferred to Phase 13.

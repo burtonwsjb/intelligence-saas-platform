@@ -163,3 +163,11 @@ export {
   type CreatorCallOutcomeState,
   type CreatorCallStatus,
 } from "./creator.js";
+export {
+  CREATOR_AUTHORITY_VERSION,
+  CREATOR_BENCHMARK_REQUIREMENT,
+  CREATOR_EARLY_CALL_VERSION,
+  CREATOR_OUTCOME_VERSION,
+  CREATOR_TRUST_STATES,
+  type CreatorTrustState,
+} from "./authority.js";

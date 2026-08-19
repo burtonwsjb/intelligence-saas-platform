@@ -78,6 +78,13 @@
       "when": 10,
       "tag": "0011_phase11_creator",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 11,
+      "tag": "0012_phase12_authority",
+      "breakpoints": true
     }
   ]
 }
