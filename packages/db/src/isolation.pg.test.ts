@@ -61,6 +61,9 @@ import {
   seedTcgIdentityFixtures,
   resolveEntity,
   entityResolutionAttempt,
+  extractCreatorCallsFromContent,
+  creatorCallSourceFixtures,
+  creatorCall,
 } from "./index.js";
 
 const passwords = {
@@ -1128,6 +1131,55 @@ describe("PostgreSQL RLS isolation", () => {
             status: "unresolved",
             resolverVersion: "resolver.v1",
             inputSignals: {},
+          }),
+        ),
+      ).rejects.toThrow();
+    } finally {
+      await adminConn.end();
+    }
+  });
+
+  it("prevents tenants from mutating global creator calls", async () => {
+    const adminConn = createDbConnection(adminUrl);
+    try {
+      const extracted = await withPlatformContext(adminConn.db, async (db) => {
+        await seedTcgIdentityFixtures(db);
+        const ingested = await ingestSourceContentRecord(db, creatorCallSourceFixtures()[0]!);
+        return extractCreatorCallsFromContent(db, ingested.contentId!);
+      });
+      const callId = extracted[0]?.call?.id;
+      expect(callId).toBeTruthy();
+      const raw = postgres(replaceConnectionRole(adminUrl, DB_ROLES.user, passwords.user), {
+        max: 1,
+        prepare: false,
+      });
+      try {
+        const rows = await raw`select id from creator_call where id = ${callId}`;
+        expect(rows).toHaveLength(1);
+        await expect(
+          raw`insert into creator_call (
+            id, creator_id, source_account_id, content_id, published_at, resolution_status,
+            direction, extraction_confidence, extraction_version, fingerprint
+          ) values ('cc_hack', 'missing', 'missing', 'missing', now(), 'unresolved', 'bullish', 0.1, 'v', 'fp')`,
+        ).rejects.toThrow();
+        await expect(raw`update creator_call set direction = 'bearish' where id = ${callId}`).rejects.toThrow();
+        await expect(raw`delete from creator_call where id = ${callId}`).rejects.toThrow();
+      } finally {
+        await raw.end({ timeout: 5 });
+      }
+      await expect(
+        asUser(ids.userA, ids.orgA, (db) =>
+          db.insert(creatorCall).values({
+            id: "cc_tenant_hack",
+            creatorId: "missing",
+            sourceAccountId: "missing",
+            contentId: "missing",
+            publishedAt: new Date(),
+            resolutionStatus: "unresolved",
+            direction: "bullish",
+            extractionConfidence: "0.1",
+            extractionVersion: "v",
+            fingerprint: "tenant_hack",
           }),
         ),
       ).rejects.toThrow();

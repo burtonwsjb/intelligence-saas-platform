@@ -111,6 +111,10 @@ export async function bootstrapRoles(
       "entity_resolution_attempt",
       "entity_resolution_candidate",
       "entity_resolution_correction",
+      "creator",
+      "creator_source_account",
+      "creator_call",
+      "creator_call_outcome",
     ];
     for (const table of tables) {
       await sql.unsafe(`ALTER TABLE "${table}" OWNER TO ${DB_ROLES.migrate}`);
@@ -140,6 +144,8 @@ export async function bootstrapRoles(
       ALTER FUNCTION app.require_system_source_write() OWNER TO ${DB_ROLES.migrate};
       ALTER FUNCTION app.forbid_resolution_mutate() OWNER TO ${DB_ROLES.migrate};
       ALTER FUNCTION app.require_system_resolution_write() OWNER TO ${DB_ROLES.migrate};
+      ALTER FUNCTION app.forbid_creator_call_mutate() OWNER TO ${DB_ROLES.migrate};
+      ALTER FUNCTION app.require_system_creator_write() OWNER TO ${DB_ROLES.migrate};
     `);
 
     await sql.unsafe(`
@@ -163,7 +169,8 @@ export async function bootstrapRoles(
         "source_platform", "source_account", "source_ingest", "source_content",
         "source_content_segment", "source_mention", "source_engagement_snapshot",
         "tcg_card_name_alias", "entity_resolution_attempt", "entity_resolution_candidate",
-        "entity_resolution_correction"
+        "entity_resolution_correction",
+        "creator", "creator_source_account", "creator_call", "creator_call_outcome"
       TO ${DB_ROLES.user}, ${DB_ROLES.worker};
       REVOKE INSERT, UPDATE, DELETE ON TABLE
         "tcg_game", "tcg_language", "tcg_set", "tcg_card_concept",
@@ -176,18 +183,23 @@ export async function bootstrapRoles(
       GRANT SELECT, INSERT, UPDATE ON TABLE "source_account", "source_ingest" TO ${DB_ROLES.worker};
       GRANT SELECT, INSERT ON TABLE
         "source_content", "source_content_segment", "source_mention", "source_engagement_snapshot",
-        "entity_resolution_attempt", "entity_resolution_candidate", "entity_resolution_correction"
+        "entity_resolution_attempt", "entity_resolution_candidate", "entity_resolution_correction",
+        "creator", "creator_source_account", "creator_call", "creator_call_outcome"
       TO ${DB_ROLES.worker};
+      GRANT SELECT, INSERT, UPDATE ON TABLE "creator" TO ${DB_ROLES.worker};
       REVOKE INSERT, UPDATE, DELETE ON TABLE
         "source_account", "source_ingest", "source_content", "source_content_segment",
         "source_mention", "source_engagement_snapshot",
         "tcg_card_name_alias", "entity_resolution_attempt", "entity_resolution_candidate",
-        "entity_resolution_correction"
+        "entity_resolution_correction",
+        "creator", "creator_source_account", "creator_call", "creator_call_outcome"
       FROM ${DB_ROLES.user};
       REVOKE UPDATE, DELETE ON TABLE
         "source_content", "source_content_segment", "source_mention", "source_engagement_snapshot",
-        "entity_resolution_attempt", "entity_resolution_candidate", "entity_resolution_correction"
+        "entity_resolution_attempt", "entity_resolution_candidate", "entity_resolution_correction",
+        "creator_source_account", "creator_call", "creator_call_outcome"
       FROM ${DB_ROLES.worker};
+      REVOKE DELETE ON TABLE "creator" FROM ${DB_ROLES.worker};
       REVOKE DELETE ON TABLE "source_account", "source_ingest" FROM ${DB_ROLES.worker};
       GRANT SELECT, INSERT ON TABLE
         "tcg_market_snapshot", "tcg_market_quarantine", "tcg_market_revision"

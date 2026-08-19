@@ -125,7 +125,7 @@ Exit: sources land as documents + mention spans.
 
 ## Phase 10 — Entity resolution
 
-Status: **complete** (see [PHASE_10.md](../PHASE_10.md)). Phase 11 has **not** started.
+Status: **complete** (see [PHASE_10.md](../PHASE_10.md)).
 
 - TCG resolver plugin
 - exact / high_confidence / probable / ambiguous / unresolved / conflict
@@ -136,9 +136,11 @@ Exit: “Greninja 214” vs “Japanese Greninja” do not collapse.
 
 ## Phase 11 — Creator call extraction
 
+Status: **complete** (see [PHASE_11.md](../PHASE_11.md)). Phase 12 has **not** started.
+
 - Immutable calls
 - Extraction + resolution confidence
-- Price and market snapshot at call
+- Price and market snapshot at call (no look-ahead)
 
 Exit: a fixture video/post becomes a call row.
 

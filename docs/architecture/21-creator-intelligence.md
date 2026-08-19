@@ -136,3 +136,5 @@ Opportunity and prediction features may include:
 - disagreement
 
 Consensus of excluded or low-quality extractors is ignored. Social reach is not substituted for authority.
+
+Phase 11 implements creator identity, immutable calls, price-at-call, and pending outcome slots ([PHASE_11.md](../PHASE_11.md)). Authority scoring is Phase 12.

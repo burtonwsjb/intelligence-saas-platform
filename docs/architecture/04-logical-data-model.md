@@ -344,6 +344,8 @@ Phase 06 implements tenant-scoped `observation`, `observation_metric`, `signal`,
 
 - calls immutable; outcomes and slices versioned; trust audited
 
+Phase 11 implements platform-global `creator`, `creator_source_account`, `creator_call`, and pending `creator_call_outcome` slots. See [PHASE_11.md](../PHASE_11.md). Authority slices are Phase 12.
+
 ### `index_specs` / `index_constituents` / `index_levels`
 
 - point-in-time membership for survivorship-safe history

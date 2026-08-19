@@ -66,6 +66,10 @@ Change only with an explicit new decision.
 | D60 | Resolution bind policy | Only `exact` / `high_confidence` bind a printing | Ambiguous/probable/unresolved/conflict stay unbound |
 | D61 | Resolution confidence | Independent 0..1 on `resolver.v1` | Not market, creator-authority, or sentiment confidence |
 | D62 | Name matching | NFKC + edit/token similarity; no JA→EN transliteration | Language aliases are evidence, not identity |
+| D63 | Creator identity | Platform-global creator linked to source accounts | One account is not assumed to be one person |
+| D64 | Call detection | Recommendation/prediction language required | Mentions are not automatically calls |
+| D65 | Price at call | `price_at_call.v1` latest sold/reference at or before `published_at` | No look-ahead; listings are not sold |
+| D66 | Call immutability | Finalized calls append-only; corrections are new rows | Fingerprint prevents duplicate re-ingest |
 
 ## Void
 

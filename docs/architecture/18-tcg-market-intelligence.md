@@ -4,7 +4,7 @@ First commercial vertical. Built on the kernel in [16-core-intelligence-kernel.m
 
 ## Phase 08 implementation
 
-Phase 08 implemented exact-printing market history ([PHASE_08.md](../PHASE_08.md)). Shared provider snapshots are platform-global. Fixture providers only — no live eBay, TCGplayer, or TCC market HTTP. Final liquidity scores, indices, alpha, and opportunity scoring remain later.
+Phase 08 implemented exact-printing market history ([PHASE_08.md](../PHASE_08.md)). Shared provider snapshots are platform-global. Fixture providers only — no live eBay, TCGplayer, or TCC market HTTP. Final liquidity scores, indices, alpha, and opportunity scoring remain later. Phase 11 price-at-call reads this history at or before call time only.
 
 Condition (`nm`/`lp`/…) and grade (`grading_company` + `grade_label`) are snapshot dimensions, not new printing identities. Raw NM is not merged with PSA 10.
 

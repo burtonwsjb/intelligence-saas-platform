@@ -264,4 +264,33 @@ export {
   listResolutionHistory,
 } from "./resolution/persist.js";
 export { resolveEntity, resolveSourceMention } from "./resolution/resolve.js";
+export {
+  CREATOR_EXTRACTOR_VERSION,
+  CREATOR_PRICE_AT_CALL_VERSION,
+  CreatorValidationError,
+} from "./creator/identity.js";
+export {
+  DeterministicCreatorCallExtractor,
+  FixtureLlmCreatorCallExtractor,
+  extractCallDeterministic,
+} from "./creator/extract.js";
+export { priceAtCall } from "./creator/price-at-call.js";
+export {
+  ensureCreatorForSourceAccount,
+  extractCreatorCallsFromContent,
+  linkCreatorAccount,
+  reviseCreatorCall,
+} from "./creator/ingest.js";
+export {
+  getCreatorCall,
+  listCallsAwaitingOutcome,
+  listCallsByCreator,
+  listCallsByDate,
+  listCallsByDirection,
+  listCallsByPrinting,
+  listCreatorAccounts,
+  listCreators,
+  listUnresolvedCalls,
+} from "./creator/query.js";
+export { creatorCallSourceFixtures } from "./creator/fixtures.js";
 export * from "./schema/index.js";

@@ -39,6 +39,7 @@ API keys cannot select a different tenant. Machine requests set transaction-loca
 - Outbound HTTP only to allowlisted connector bases, never to tenant-supplied arbitrary URLs in v1
 - Source intelligence text is untrusted; excerpts are bounded and never executed as HTML or prompts
 - Entity resolution history is platform-global and append-only; tenants cannot insert or rewrite attempts
+- Creator calls are platform-global and immutable; tenants cannot insert or rewrite calls
 
 ## Decision integrity
 
