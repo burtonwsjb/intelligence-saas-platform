@@ -80,4 +80,64 @@ export {
   canTransitionSourceEvent,
   isSourceEventStatus,
 } from "./ingest-status.js";
+export {
+  IdentifierCollisionError,
+  IllegalDecisionTransitionError,
+  ImmutableHistoryError,
+  InvalidConfidenceError,
+  InvalidMetricError,
+  KernelValidationError,
+  MissingSignalEvidenceError,
+  UnknownEventTypeError,
+} from "./kernel-errors.js";
+export {
+  ALGORITHM_KEY,
+  ALGORITHM_VERSION,
+  SOURCE_NAMESPACE,
+  normalizeSourceEvent,
+  requireSignalEvidence,
+} from "./normalize.js";
+export { parseConfidence } from "./kernel-registry.js";
+export {
+  findEntityByCanonical,
+  findEntityIdentifier,
+  getEntity,
+  insertEntity,
+  insertEntityIdentifier,
+  listEntities,
+  listEntityIdentifiers,
+} from "./repos/entity.js";
+export {
+  getObservation,
+  getObservationBySourceEvent,
+  insertObservation,
+  insertObservationMetric,
+  listObservationMetrics,
+  listObservationMetricsInRange,
+  listObservationsInRange,
+} from "./repos/observation.js";
+export {
+  getEvidenceReference,
+  insertEvidenceReference,
+  listEvidenceReferences,
+} from "./repos/evidence.js";
+export {
+  getFeatureSnapshot,
+  getSignal,
+  insertFeatureSnapshot,
+  insertSignal,
+  insertSignalEvidence,
+  listFeatureSnapshotsInRange,
+  listSignalEvidence,
+  listSignalsInRange,
+} from "./repos/signal.js";
+export {
+  finalizeDecisionRecord,
+  getDecisionRecord,
+  insertDecisionEvidence,
+  insertDecisionRecord,
+  listDecisionEvidence,
+  listDecisionRecords,
+} from "./repos/decision.js";
+export { getSourceDefinition, listSourceDefinitions } from "./repos/source-definition.js";
 export * from "./schema/index.js";

@@ -1,13 +1,13 @@
 # API contracts
 
-Phase 05 implements generic `POST /v1/events`. Phase 04 added machine auth and a test `/v1/me` probe. Commercial intelligence routes are not implemented.
+Phase 05 implements generic `POST /v1/events`. Phase 06 adds shared kernel contracts in `@isp/contracts` (`entity`, observation, metric, signal, feature snapshot, decision record) and a v1 generic event registry. Commercial intelligence routes are not implemented.
 
 Served by `apps/api` (Hono).  
 Base path: `/v1`  
 Auth: `Authorization: Bearer <api_key>` unless noted  
 OpenAPI 3.1 will be published at `/v1/openapi.json` when the API is implemented.
 
-Kernel ingest routes below remain. **Customer-facing intelligence products** are specified conceptually in [27-commercial-api-and-webhooks.md](./27-commercial-api-and-webhooks.md) (`cards`, `printings`, `sets`, `prices`, `market-history`, `signals`, `creators`, `creator-calls`, `indices`, `predictions`, `opportunities`, `content`). URLs are not finalized.
+Kernel ingest routes below remain. Historical kernel queries are repository-only (no public `/v1/entities` yet). **Customer-facing intelligence products** are specified conceptually in [27-commercial-api-and-webhooks.md](./27-commercial-api-and-webhooks.md) (`cards`, `printings`, `sets`, `prices`, `market-history`, `signals`, `creators`, `creator-calls`, `indices`, `predictions`, `opportunities`, `content`). URLs are not finalized.
 
 ## Common error shape
 
@@ -34,6 +34,8 @@ Kernel ingest routes below remain. **Customer-facing intelligence products** are
 ## `POST /v1/events`
 
 Implemented in Phase 05. Scope: `ingest:write`. Tenant is the API key organization. Max body **65536** bytes (`413 payload_too_large`). Requires `idempotency_key`. Same key + same body returns the original `202`. Same key + different body returns `409 idempotency_conflict`. Optional `x-request-id` is echoed when well-formed; it is not an idempotency key.
+
+v1 generic `event_type` registry (unknown types return `400`): `metric.snapshot`, `pricing.snapshot`, `transaction.summary`, `inventory.snapshot`, `sentiment.snapshot`, `ranking.snapshot`. `pricing.snapshot` is preserved as a generic metric event and normalizes to observation type `metric.snapshot`. TCG-specific event types are not accepted.
 
 ```json
 {

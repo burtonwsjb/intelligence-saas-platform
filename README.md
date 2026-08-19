@@ -9,9 +9,9 @@ TCG Card Central is only a future external integration (optional reference-data 
 
 ## Current phase
 
-**Phase 05 complete locally.** Redis/BullMQ via `@isp/queue`, generic `POST /v1/events`, durable `source_event` + outbox, and a real worker normalize stub. Cloud Redis and Neon are not provisioned. Stripe live mode is forbidden. See [docs/PHASE_05.md](docs/PHASE_05.md).
+**Phase 06 complete locally.** Generic intelligence kernel (`entity`, identifiers, observations, metrics, signals, evidence, feature snapshots, decision-record foundation) and real worker normalization from `source_event`. Cloud Redis and Neon are not provisioned. Stripe live mode is forbidden. See [docs/PHASE_06.md](docs/PHASE_06.md).
 
-Do not begin Phase 06 until explicitly instructed.
+Do not begin Phase 07 until explicitly instructed.
 
 ## Local commands
 
@@ -40,6 +40,7 @@ TypeScript, pnpm/Turborepo, Next.js, Hono, PostgreSQL/Neon, Drizzle, Better Auth
 - [Phase 03](docs/PHASE_03.md)
 - [Phase 04](docs/PHASE_04.md)
 - [Phase 05](docs/PHASE_05.md)
+- [Phase 06](docs/PHASE_06.md)
 - [CI](docs/CI.md)
 - [Overview](docs/architecture/00-overview.md)
 - [Roadmap (phases 00–23)](docs/architecture/11-phase-roadmap.md)
@@ -58,5 +59,6 @@ TypeScript, pnpm/Turborepo, Next.js, Hono, PostgreSQL/Neon, Drizzle, Better Auth
 | RLS / RBAC / isolation | Phase 03 complete locally; proven in CI Postgres |
 | Billing / API keys | Phase 04 complete locally; local simulation default; Stripe Checkout deferred |
 | Queue / ingest | Phase 05 complete locally; Docker Redis + Postgres; no cloud Redis |
+| Intelligence kernel | Phase 06 complete locally; generic entities/observations/signals; no TCG identity |
 | Cloud / Stripe live / TCC | Not created, not connected, not modified |
-| Phase 06 observations / signals | Not started |
+| Phase 07 TCG identity / TCC sandbox | Not started |

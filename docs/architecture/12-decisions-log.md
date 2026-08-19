@@ -40,6 +40,12 @@ Change only with an explicit new decision.
 | D34 | Ingest durability | `source_event` + `outbox_job` in one transaction before Redis | Lost-work is forbidden; Redis down still returns 202 |
 | D35 | Job identity | BullMQ `jobId` = outbox id; envelope is Zod-validated | Publisher retry is safe; unknown types fail closed |
 | D36 | Ingest usage | Meter `ingest.events` once per tenant idempotency key | Duplicate replay and publish retry must not double-charge |
+| D37 | Kernel module | `@isp/db` `normalizeSourceEvent` plus `@isp/contracts` types own deterministic `source_event` → observation/entity mapping | Keep TCG identity and scoring out of generic tables; no extra lockfile package |
+| D38 | Entity matching (Phase 06) | Exact identifier lookup or create; no fuzzy merge | Phase 10 owns multi-source / mention resolution |
+| D39 | Observation identity | `observation.id` = `source_event.id`; unique per tenant event | Idempotent normalize; one fact set per accepted event |
+| D40 | Source catalog | Platform `source_definition` with reliability prior; no credentials | Connector instances and secret_ref stay later |
+| D41 | Confidence | Normalized 0..1 numeric; observations nullable; signals required | Do not invent confidence or conflate with quality flags |
+| D42 | Analytical immutability | Triggers + revoked UPDATE/DELETE on fact tables | History is append-only; corrections are new rows |
 
 ## Void
 

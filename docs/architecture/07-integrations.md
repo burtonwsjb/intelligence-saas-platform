@@ -16,7 +16,7 @@ Contracts only. Nothing is connected. TCG Card Central is not modified.
 
 | Type | Role | Phase |
 |---|---|---|
-| `generic_http` | Reusable capability. Phase 05: `POST /v1/events` + outbox + BullMQ normalize stub | 05 |
+| `generic_http` | Reusable capability. Phase 05 ingest + Phase 06 kernel normalization | 05 / 06 |
 | `market_feed` | Licensed/TCC/other price & sales | 08 |
 | `youtube` | Permitted metadata + derived extracts | 09 |
 | `reddit` | Permitted posts + derived social signals | 09 |

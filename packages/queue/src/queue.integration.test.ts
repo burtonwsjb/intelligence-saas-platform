@@ -7,8 +7,11 @@ import {
   DB_ROLES,
   getOutboxJob,
   getSourceEvent,
+  getObservationBySourceEvent,
   insertOutboxJob,
   insertSourceEvent,
+  listObservationMetrics,
+  listEntities,
   member,
   organization,
   replaceConnectionRole,
@@ -110,7 +113,7 @@ describe("Redis + Postgres ingest queue", () => {
         idempotencyKey: `idem_${crypto.randomUUID()}`,
         fingerprint: `fp_${crypto.randomUUID()}`,
         entity: { type: "sku", external_id: "sku_123" },
-        metrics: [],
+        metrics: [{ key: "price.usd", value: 12.5, unit: "usd" }],
         payload: { source: "generic_http" },
       });
       await insertOutboxJob(scoped, {
@@ -197,6 +200,30 @@ describe("Redis + Postgres ingest queue", () => {
         return row?.processingStatus === "processed" ? row : null;
       });
       expect(processed.processingStatus).toBe("processed");
+      const observation = await withSystemContext(db, { organizationId: orgA }, (scoped) =>
+        getObservationBySourceEvent(scoped, { organizationId: orgA, sourceEventId: eventId }),
+      );
+      expect(observation?.sourceEventId).toBe(eventId);
+      expect(observation?.observedAt.toISOString()).toBe("2026-08-16T00:00:00.000Z");
+      const metrics = await withSystemContext(db, { organizationId: orgA }, (scoped) =>
+        listObservationMetrics(scoped, { organizationId: orgA, observationId: observation!.id }),
+      );
+      expect(metrics).toHaveLength(1);
+      expect(Number(metrics[0]?.numericValue)).toBe(12.5);
+      const replay = await processNormalizeJob(
+        db,
+        createNormalizeEnvelope({
+          jobId: crypto.randomUUID(),
+          organizationId: orgA,
+          sourceEventId: eventId,
+          requestId: "req_phase06_replay",
+        }),
+      );
+      expect(replay.status).toBe("duplicate");
+      const entities = await withSystemContext(db, { organizationId: orgA }, (scoped) =>
+        listEntities(scoped, orgA),
+      );
+      expect(entities.filter((row) => row.canonicalKey.includes("sku_123"))).toHaveLength(1);
       const status = await getIngestJobStatus(db, { organizationId: orgA, sourceEventId: eventId });
       expect(status.outbox.some((job) => job.id === outboxId && job.status === "published")).toBe(
         true,
@@ -239,6 +266,34 @@ describe("Redis + Postgres ingest queue", () => {
     expect(failed?.processingStatus).toBe("failed");
     expect(failed?.failureCategory).toBe("permanent");
     expect(failed?.failureMessage).not.toMatch(/isp_test_/);
+  });
+
+  it("fails unknown event types permanently without creating observations", async () => {
+    const eventId = crypto.randomUUID();
+    await withOrganizationContext(db, { organizationId: orgA, userId: userA }, async (scoped) => {
+      await insertSourceEvent(scoped, {
+        id: eventId,
+        organizationId: orgA,
+        eventType: "unknown.event",
+        occurredAt: new Date("2026-08-16T00:00:00.000Z"),
+        idempotencyKey: `idem_${crypto.randomUUID()}`,
+        fingerprint: `fp_${crypto.randomUUID()}`,
+        entity: { type: "sku", external_id: "sku_unknown" },
+        metrics: [],
+        payload: {},
+      });
+    });
+    const envelope = createNormalizeEnvelope({
+      jobId: crypto.randomUUID(),
+      organizationId: orgA,
+      sourceEventId: eventId,
+      requestId: "req_phase06_unknown",
+    });
+    await expect(processNormalizeJob(db, envelope)).rejects.toBeInstanceOf(UnrecoverableJobError);
+    const missing = await withSystemContext(db, { organizationId: orgA }, (scoped) =>
+      getObservationBySourceEvent(scoped, { organizationId: orgA, sourceEventId: eventId }),
+    );
+    expect(missing).toBeNull();
   });
 
   it("does not infinitely retry permanent invalid jobs and bounds transient retries", async () => {

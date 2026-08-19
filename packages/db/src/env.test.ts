@@ -26,6 +26,11 @@ import {
   usageEvent,
   sourceEvent,
   outboxJob,
+  entity,
+  observation,
+  signal,
+  featureSnapshot,
+  decisionRecord,
 } from "./schema/index.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -73,6 +78,11 @@ describe("schema ownership", () => {
     expect(usageEvent).toBeDefined();
     expect(sourceEvent).toBeDefined();
     expect(outboxJob).toBeDefined();
+    expect(entity).toBeDefined();
+    expect(observation).toBeDefined();
+    expect(signal).toBeDefined();
+    expect(featureSnapshot).toBeDefined();
+    expect(decisionRecord).toBeDefined();
   });
 });
 
@@ -91,7 +101,13 @@ describe("migrations", () => {
     expect(sql).toMatch(/app.claim_stripe_event/);
     expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "source_event"/);
     expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "outbox_job"/);
-    expect(sql).toMatch(/app.list_pending_outbox/);
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "entity"/);
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "observation"/);
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "signal"/);
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "feature_snapshot"/);
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "decision_record"/);
+    expect(sql).toMatch(/app.install_kernel_rls\('entity'/);
+    expect(sql).toMatch(/Analytical history is immutable/);
     expect(sql).not.toMatch(/ALTER TABLE "user" ENABLE ROW LEVEL SECURITY/);
     expect(sql).not.toMatch(/ALTER TABLE "session" ENABLE ROW LEVEL SECURITY/);
     expect(sql).not.toMatch(/ALTER TABLE "organization" ENABLE ROW LEVEL SECURITY/);

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import postgres from "postgres";
 import {
   applyMigrations,
@@ -25,7 +25,31 @@ import {
   updateTenantResource,
   withMachineContext,
   withOrganizationContext,
+  withSystemContext,
   type Database,
+  IdentifierCollisionError,
+  insertEntity,
+  insertEntityIdentifier,
+  insertObservation,
+  insertObservationMetric,
+  insertEvidenceReference,
+  insertFeatureSnapshot,
+  insertSignal,
+  insertSignalEvidence,
+  insertDecisionRecord,
+  insertDecisionEvidence,
+  listEntities,
+  listEntityIdentifiers,
+  listObservationsInRange,
+  listObservationMetrics,
+  listSignalsInRange,
+  listFeatureSnapshotsInRange,
+  listDecisionRecords,
+  listSignalEvidence,
+  entity,
+  observation,
+  featureSnapshot,
+  signal,
 } from "./index.js";
 
 const passwords = {
@@ -446,5 +470,402 @@ describe("PostgreSQL RLS isolation", () => {
         stripeCustomerId: "cus_test_a",
       }),
     ).resolves.toBe(false);
+  });
+
+  it("isolates kernel rows, rejects cross-tenant evidence, and preserves historical order", async () => {
+    const eventA1 = crypto.randomUUID();
+    const eventA2 = crypto.randomUUID();
+    const eventB = crypto.randomUUID();
+    const entityA = `ent_a_${crypto.randomUUID()}`;
+    const entityB = `ent_b_${crypto.randomUUID()}`;
+    const evidenceA = `evr_a_${crypto.randomUUID()}`;
+    const evidenceB = `evr_b_${crypto.randomUUID()}`;
+    const snapshotA = `fs_a_${crypto.randomUUID()}`;
+    const snapshotB = `fs_b_${crypto.randomUUID()}`;
+    const signalA = `sig_a_${crypto.randomUUID()}`;
+    const signalB = `sig_b_${crypto.randomUUID()}`;
+    const decisionA = `dec_a_${crypto.randomUUID()}`;
+    const decisionB = `dec_b_${crypto.randomUUID()}`;
+
+    await asUser(ids.userA, ids.orgA, async (db) => {
+      await insertSourceEvent(db, {
+        id: eventA1,
+        organizationId: ids.orgA,
+        eventType: "pricing.snapshot",
+        occurredAt: new Date("2026-01-01T00:00:00.000Z"),
+        idempotencyKey: `idem_${eventA1}`,
+        fingerprint: `fp_${eventA1}`,
+        entity: { type: "sku", external_id: "sku-a" },
+        metrics: [{ key: "price.usd", value: 1 }],
+        payload: {},
+      });
+      await insertSourceEvent(db, {
+        id: eventA2,
+        organizationId: ids.orgA,
+        eventType: "pricing.snapshot",
+        occurredAt: new Date("2026-03-01T00:00:00.000Z"),
+        idempotencyKey: `idem_${eventA2}`,
+        fingerprint: `fp_${eventA2}`,
+        entity: { type: "sku", external_id: "sku-a" },
+        metrics: [{ key: "price.usd", value: 2 }],
+        payload: {},
+      });
+      await insertEntity(db, {
+        id: entityA,
+        organizationId: ids.orgA,
+        entityType: "sku",
+        canonicalKey: "sku:ingest:sku:sku-a",
+      });
+      await insertEntityIdentifier(db, {
+        id: `eid_a_${crypto.randomUUID()}`,
+        organizationId: ids.orgA,
+        entityId: entityA,
+        sourceNamespace: "ingest",
+        identifierType: "sku",
+        identifierValue: "SKU-A",
+        normalizedValue: "sku-a",
+      });
+      await insertObservation(db, {
+        id: eventA1,
+        organizationId: ids.orgA,
+        entityId: entityA,
+        sourceEventId: eventA1,
+        sourceNamespace: "ingest",
+        observationType: "metric.snapshot",
+        observedAt: new Date("2026-01-01T00:00:00.000Z"),
+        receivedAt: new Date("2026-01-02T00:00:00.000Z"),
+        qualityFlag: "complete",
+      });
+      await insertObservation(db, {
+        id: eventA2,
+        organizationId: ids.orgA,
+        entityId: entityA,
+        sourceEventId: eventA2,
+        sourceNamespace: "ingest",
+        observationType: "metric.snapshot",
+        observedAt: new Date("2026-03-01T00:00:00.000Z"),
+        receivedAt: new Date("2026-03-02T00:00:00.000Z"),
+        qualityFlag: "complete",
+      });
+      await insertObservationMetric(db, {
+        id: `met_a_${crypto.randomUUID()}`,
+        organizationId: ids.orgA,
+        observationId: eventA1,
+        metricKey: "price.usd",
+        numericValue: "1.00000000",
+        unit: "usd",
+      });
+      await insertEvidenceReference(db, {
+        id: evidenceA,
+        organizationId: ids.orgA,
+        evidenceType: "observation",
+        sourceEventId: eventA1,
+        observationId: eventA1,
+        capturedAt: new Date("2026-01-02T00:00:00.000Z"),
+      });
+      await insertFeatureSnapshot(db, {
+        id: snapshotA,
+        organizationId: ids.orgA,
+        entityId: entityA,
+        featureSetKey: "ingest.v1",
+        featureSetVersion: "1",
+        features: { price: 1 },
+        fingerprint: "fingerprint_a_value",
+        asOf: new Date("2026-01-01T00:00:00.000Z"),
+      });
+      await insertSignal(db, {
+        id: signalA,
+        organizationId: ids.orgA,
+        entityId: entityA,
+        signalType: "snapshot",
+        direction: "unknown",
+        confidence: "1.0000",
+        validFrom: new Date("2026-01-01T00:00:00.000Z"),
+        algorithmKey: "kernel.normalize",
+        algorithmVersion: "1",
+        featureSnapshotId: snapshotA,
+      });
+      await insertSignalEvidence(db, {
+        id: `se_a_${crypto.randomUUID()}`,
+        organizationId: ids.orgA,
+        signalId: signalA,
+        evidenceReferenceId: evidenceA,
+        observationId: eventA1,
+        role: "primary",
+      });
+    });
+
+    await asUser(ids.userB, ids.orgB, async (db) => {
+      await insertSourceEvent(db, {
+        id: eventB,
+        organizationId: ids.orgB,
+        eventType: "pricing.snapshot",
+        occurredAt: new Date("2026-02-01T00:00:00.000Z"),
+        idempotencyKey: `idem_${eventB}`,
+        fingerprint: `fp_${eventB}`,
+        entity: { type: "sku", external_id: "sku-b" },
+        metrics: [],
+        payload: {},
+      });
+      await insertEntity(db, {
+        id: entityB,
+        organizationId: ids.orgB,
+        entityType: "sku",
+        canonicalKey: "sku:ingest:sku:sku-b",
+      });
+      await insertObservation(db, {
+        id: eventB,
+        organizationId: ids.orgB,
+        entityId: entityB,
+        sourceEventId: eventB,
+        sourceNamespace: "ingest",
+        observationType: "metric.snapshot",
+        observedAt: new Date("2026-02-01T00:00:00.000Z"),
+        receivedAt: new Date("2026-02-01T00:00:00.000Z"),
+        qualityFlag: "partial",
+      });
+      await insertObservationMetric(db, {
+        id: `met_b_${crypto.randomUUID()}`,
+        organizationId: ids.orgB,
+        observationId: eventB,
+        metricKey: "price.usd",
+        numericValue: "9.00000000",
+        unit: "usd",
+      });
+      await insertEvidenceReference(db, {
+        id: evidenceB,
+        organizationId: ids.orgB,
+        evidenceType: "observation",
+        sourceEventId: eventB,
+        observationId: eventB,
+        capturedAt: new Date("2026-02-01T00:00:00.000Z"),
+      });
+      await insertFeatureSnapshot(db, {
+        id: snapshotB,
+        organizationId: ids.orgB,
+        entityId: entityB,
+        featureSetKey: "ingest.v1",
+        featureSetVersion: "1",
+        features: { price: 9 },
+        fingerprint: "fingerprint_b_value",
+        asOf: new Date("2026-02-01T00:00:00.000Z"),
+      });
+      await insertSignal(db, {
+        id: signalB,
+        organizationId: ids.orgB,
+        entityId: entityB,
+        signalType: "snapshot",
+        direction: "unknown",
+        confidence: "0.5000",
+        validFrom: new Date("2026-02-01T00:00:00.000Z"),
+        algorithmKey: "kernel.normalize",
+        algorithmVersion: "1",
+        featureSnapshotId: snapshotB,
+      });
+      await insertDecisionRecord(db, {
+        id: decisionB,
+        organizationId: ids.orgB,
+        entityId: entityB,
+        decisionType: "review.flag",
+        confidence: "0.5000",
+        policyKey: "kernel.placeholder",
+        policyVersion: "1",
+        featureSnapshotId: snapshotB,
+        result: { tenant: "b" },
+      });
+    });
+
+    await asUser(ids.userA, ids.orgA, async (db) => {
+      await insertDecisionRecord(db, {
+        id: decisionA,
+        organizationId: ids.orgA,
+        entityId: entityA,
+        decisionType: "review.flag",
+        confidence: "0.2500",
+        policyKey: "kernel.placeholder",
+        policyVersion: "1",
+        featureSnapshotId: snapshotA,
+        result: { tenant: "a" },
+      });
+      await insertDecisionEvidence(db, {
+        id: `de_a_${crypto.randomUUID()}`,
+        organizationId: ids.orgA,
+        decisionId: decisionA,
+        signalId: signalA,
+        role: "cited",
+      });
+    });
+
+    const ownEntities = await asUser(ids.userA, ids.orgA, (db) => listEntities(db, ids.orgA));
+    expect(ownEntities.map((row) => row.id)).toContain(entityA);
+    expect(await asUser(ids.userA, ids.orgA, (db) => listEntities(db, ids.orgB))).toEqual([]);
+
+    const ownObs = await asUser(ids.userA, ids.orgA, (db) =>
+      listObservationsInRange(db, {
+        organizationId: ids.orgA,
+        entityId: entityA,
+        from: new Date("2025-01-01T00:00:00.000Z"),
+        to: new Date("2026-12-01T00:00:00.000Z"),
+      }),
+    );
+    expect(ownObs.map((row) => row.id)).toEqual([eventA1, eventA2]);
+    expect(
+      await asUser(ids.userA, ids.orgA, (db) =>
+        listObservationsInRange(db, {
+          organizationId: ids.orgB,
+          from: new Date("2025-01-01T00:00:00.000Z"),
+          to: new Date("2026-12-01T00:00:00.000Z"),
+        }),
+      ),
+    ).toEqual([]);
+
+    expect(
+      await asUser(ids.userA, ids.orgA, (db) =>
+        listObservationMetrics(db, { organizationId: ids.orgB, observationId: eventB }),
+      ),
+    ).toEqual([]);
+    expect(
+      await asUser(ids.userA, ids.orgA, (db) =>
+        listSignalsInRange(db, {
+          organizationId: ids.orgB,
+          from: new Date("2025-01-01T00:00:00.000Z"),
+          to: new Date("2026-12-01T00:00:00.000Z"),
+        }),
+      ),
+    ).toEqual([]);
+    expect(
+      await asUser(ids.userA, ids.orgA, (db) =>
+        listFeatureSnapshotsInRange(db, {
+          organizationId: ids.orgB,
+          from: new Date("2025-01-01T00:00:00.000Z"),
+          to: new Date("2026-12-01T00:00:00.000Z"),
+        }),
+      ),
+    ).toEqual([]);
+    expect(await asUser(ids.userA, ids.orgA, (db) => listDecisionRecords(db, ids.orgB))).toEqual([]);
+
+    await expect(
+      asUser(ids.userA, ids.orgA, (db) =>
+        insertSignalEvidence(db, {
+          id: `se_hop_${crypto.randomUUID()}`,
+          organizationId: ids.orgA,
+          signalId: signalA,
+          evidenceReferenceId: evidenceB,
+          observationId: eventA1,
+        }),
+      ),
+    ).rejects.toThrow();
+
+    await expect(
+      asUser(ids.userA, ids.orgA, async (db) => {
+        const hopEvent = crypto.randomUUID();
+        await insertSourceEvent(db, {
+          id: hopEvent,
+          organizationId: ids.orgA,
+          eventType: "pricing.snapshot",
+          occurredAt: new Date("2026-04-01T00:00:00.000Z"),
+          idempotencyKey: `idem_${hopEvent}`,
+          fingerprint: `fp_${hopEvent}`,
+          entity: { type: "sku", external_id: "hop" },
+          metrics: [],
+          payload: {},
+        });
+        await insertObservation(db, {
+          id: hopEvent,
+          organizationId: ids.orgA,
+          entityId: entityB,
+          sourceEventId: hopEvent,
+          sourceNamespace: "ingest",
+          observationType: "metric.snapshot",
+          observedAt: new Date("2026-04-01T00:00:00.000Z"),
+          receivedAt: new Date("2026-04-01T00:00:00.000Z"),
+        });
+      }),
+    ).rejects.toThrow();
+
+    await expect(
+      withSystemContext(appDb, { organizationId: ids.orgA }, async (db) => {
+        const hopEvent = crypto.randomUUID();
+        await insertSourceEvent(db, {
+          id: hopEvent,
+          organizationId: ids.orgA,
+          eventType: "pricing.snapshot",
+          occurredAt: new Date("2026-04-02T00:00:00.000Z"),
+          idempotencyKey: `idem_${hopEvent}`,
+          fingerprint: `fp_${hopEvent}`,
+          entity: { type: "sku", external_id: "hop-system" },
+          metrics: [],
+          payload: {},
+        });
+        await insertObservation(db, {
+          id: hopEvent,
+          organizationId: ids.orgA,
+          entityId: entityB,
+          sourceEventId: hopEvent,
+          sourceNamespace: "ingest",
+          observationType: "metric.snapshot",
+          observedAt: new Date("2026-04-02T00:00:00.000Z"),
+          receivedAt: new Date("2026-04-02T00:00:00.000Z"),
+        });
+      }),
+    ).rejects.toThrow();
+
+    await expect(
+      asUser(ids.userA, ids.orgA, (db) =>
+        db.update(observation).set({ qualityFlag: "stale" }).where(eq(observation.id, eventA1)),
+      ),
+    ).rejects.toThrow();
+    await expect(
+      asUser(ids.userA, ids.orgA, (db) =>
+        db.delete(observation).where(eq(observation.id, eventA1)),
+      ),
+    ).rejects.toThrow();
+    await expect(
+      asUser(ids.userA, ids.orgA, (db) =>
+        db
+          .update(featureSnapshot)
+          .set({ fingerprint: "rewritten" })
+          .where(eq(featureSnapshot.id, snapshotA)),
+      ),
+    ).rejects.toThrow();
+    await expect(
+      asUser(ids.userA, ids.orgA, (db) =>
+        db.update(signal).set({ confidence: "0.1000" }).where(eq(signal.id, signalA)),
+      ),
+    ).rejects.toThrow();
+    await expect(
+      asUser(ids.userA, ids.orgA, (db) =>
+        db.update(entity).set({ canonicalKey: "hacked" }).where(eq(entity.id, entityA)),
+      ),
+    ).rejects.toThrow();
+
+    await expect(
+      asUser(ids.userA, ids.orgA, async (db) => {
+        const other = await insertEntity(db, {
+          id: `ent_a2_${crypto.randomUUID()}`,
+          organizationId: ids.orgA,
+          entityType: "sku",
+          canonicalKey: "sku:ingest:sku:other-a",
+        });
+        await insertEntityIdentifier(db, {
+          id: `eid_a2_${crypto.randomUUID()}`,
+          organizationId: ids.orgA,
+          entityId: other!.id,
+          sourceNamespace: "ingest",
+          identifierType: "sku",
+          identifierValue: "SKU-A",
+          normalizedValue: "sku-a",
+        });
+      }),
+    ).rejects.toBeInstanceOf(IdentifierCollisionError);
+
+    const identifiers = await asUser(ids.userA, ids.orgA, (db) =>
+      listEntityIdentifiers(db, ids.orgA),
+    );
+    expect(identifiers.every((row) => row.organizationId === ids.orgA)).toBe(true);
+    const evidence = await asUser(ids.userA, ids.orgA, (db) =>
+      listSignalEvidence(db, { organizationId: ids.orgA, signalId: signalA }),
+    );
+    expect(evidence).toHaveLength(1);
   });
 });

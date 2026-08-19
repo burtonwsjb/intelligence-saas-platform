@@ -328,7 +328,7 @@ These are not TCG tables. TCG printings bind to `entities` / pack tables.
 
 ### `observations` / `signals` / `score_snapshots`
 
-- dated facts, derived conditions, component scores (`opportunity`,`risk`,`confidence`,`liquidity`) plus `recommendation`
+Phase 06 implements tenant-scoped `observation`, `observation_metric`, `signal`, `feature_snapshot`, and a `decision_record` foundation. See [PHASE_06.md](../PHASE_06.md). Score snapshots, opportunity components, and TCG market bars remain later phases. Do not put TCG printing fields on kernel tables.
 
 ### `creators` / `creator_calls` / `creator_call_outcomes` / `creator_authority_slices` / `creator_trust_states`
 

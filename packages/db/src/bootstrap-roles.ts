@@ -77,6 +77,17 @@ export async function bootstrapRoles(
       "usage_month",
       "source_event",
       "outbox_job",
+      "source_definition",
+      "entity",
+      "entity_identifier",
+      "observation",
+      "observation_metric",
+      "evidence_reference",
+      "feature_snapshot",
+      "signal",
+      "signal_evidence",
+      "decision_record",
+      "decision_evidence",
     ];
     for (const table of tables) {
       await sql.unsafe(`ALTER TABLE "${table}" OWNER TO ${DB_ROLES.migrate}`);
@@ -95,15 +106,25 @@ export async function bootstrapRoles(
       ALTER FUNCTION app.claim_stripe_event(text, text, text, text) OWNER TO ${DB_ROLES.migrate};
       ALTER FUNCTION app.lookup_organization_by_stripe_customer(text) OWNER TO ${DB_ROLES.migrate};
       ALTER FUNCTION app.list_pending_outbox(integer) OWNER TO ${DB_ROLES.migrate};
+      ALTER FUNCTION app.forbid_analytical_mutate() OWNER TO ${DB_ROLES.migrate};
+      ALTER FUNCTION app.protect_entity() OWNER TO ${DB_ROLES.migrate};
+      ALTER FUNCTION app.protect_decision_record() OWNER TO ${DB_ROLES.migrate};
+      ALTER FUNCTION app.install_kernel_rls(text, boolean) OWNER TO ${DB_ROLES.migrate};
     `);
 
     await sql.unsafe(`
       GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
         "user", "session", "account", "verification", "organization", "member", "invitation",
         "tenant", "tenant_resource", "tenant_billing", "tenant_entitlement_override",
-        "api_key", "usage_event", "usage_month", "source_event", "outbox_job"
+        "api_key", "usage_event", "usage_month", "source_event", "outbox_job", "entity"
       TO ${DB_ROLES.user}, ${DB_ROLES.worker};
-      GRANT SELECT ON TABLE "plan", "plan_entitlement" TO ${DB_ROLES.user}, ${DB_ROLES.worker};
+      GRANT SELECT, INSERT ON TABLE
+        "entity_identifier", "observation", "observation_metric", "evidence_reference",
+        "feature_snapshot", "signal", "signal_evidence", "decision_record", "decision_evidence"
+      TO ${DB_ROLES.user}, ${DB_ROLES.worker};
+      GRANT UPDATE ON TABLE "decision_record" TO ${DB_ROLES.user}, ${DB_ROLES.worker};
+      REVOKE DELETE ON TABLE "entity" FROM ${DB_ROLES.user}, ${DB_ROLES.worker};
+      GRANT SELECT ON TABLE "plan", "plan_entitlement", "source_definition" TO ${DB_ROLES.user}, ${DB_ROLES.worker};
       GRANT SELECT, INSERT ON TABLE "audit_event" TO ${DB_ROLES.user}, ${DB_ROLES.worker};
       REVOKE UPDATE, DELETE ON TABLE "audit_event" FROM ${DB_ROLES.user}, ${DB_ROLES.worker};
       REVOKE SELECT, INSERT, UPDATE, DELETE ON TABLE "stripe_event" FROM ${DB_ROLES.user}, ${DB_ROLES.worker};

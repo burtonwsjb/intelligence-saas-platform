@@ -30,4 +30,4 @@ Required checks are those steps. The job name is `validate`.
 - Does not add production secrets to GitHub
 - Does not run against a production or shared database
 
-Auth unit tests use in-memory PGlite. Isolation tests use the CI Postgres service and a non-superuser `app_user` role. Queue/ingest integration tests use the CI Postgres and Redis services. The Next.js build is allowed to succeed without `DATABASE_URL` / `BETTER_AUTH_SECRET`; database-backed routes fail clearly at runtime until those values are configured locally.
+Auth unit tests use in-memory PGlite. Isolation tests use the CI Postgres service and a non-superuser `app_user` role. Queue/ingest integration tests use the CI Postgres and Redis services. Phase 06 kernel unit tests run in `pnpm test`; kernel RLS/immutability runs in `pnpm test:isolation`; worker normalization runs in `pnpm test:integration`. The Next.js build is allowed to succeed without `DATABASE_URL` / `BETTER_AUTH_SECRET`; database-backed routes fail clearly at runtime until those values are configured locally.

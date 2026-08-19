@@ -1,7 +1,14 @@
 import {
   getSourceEvent,
   getTenant,
+  IdentifierCollisionError,
+  InvalidConfidenceError,
+  InvalidMetricError,
+  KernelValidationError,
+  MissingSignalEvidenceError,
+  UnknownEventTypeError,
   insertAuditEvent,
+  normalizeSourceEvent,
   updateSourceEventStatus,
   withSystemContext,
   type Database,
@@ -12,6 +19,20 @@ import { logQueueEvent } from "./logger.js";
 
 function safeFailureMessage(message: string): string {
   return message.replace(/isp_test_[A-Za-z0-9_-]+/g, "[redacted]").slice(0, 300);
+}
+
+function toUnrecoverable(error: unknown): never {
+  if (
+    error instanceof UnknownEventTypeError ||
+    error instanceof InvalidMetricError ||
+    error instanceof InvalidConfidenceError ||
+    error instanceof KernelValidationError ||
+    error instanceof IdentifierCollisionError ||
+    error instanceof MissingSignalEvidenceError
+  ) {
+    throw new UnrecoverableJobError(error.message);
+  }
+  throw error;
 }
 
 export async function processNormalizeJob(
@@ -61,6 +82,11 @@ export async function processNormalizeJob(
       organizationId: envelope.organization_id,
       status: "processing",
     });
+    try {
+      await normalizeSourceEvent(scoped, event);
+    } catch (error) {
+      toUnrecoverable(error);
+    }
     await updateSourceEventStatus(scoped, {
       id: event.id,
       organizationId: envelope.organization_id,

@@ -7,3 +7,4 @@ export * from "./billing.js";
 export * from "./api-key.js";
 export * from "./usage.js";
 export * from "./ingest.js";
+export * from "./kernel.js";

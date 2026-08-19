@@ -9,6 +9,7 @@ import {
   type Database,
 } from "@isp/db";
 import { assertQuota, assertTenantFeature } from "@isp/billing";
+import { isGenericEventType, METRIC_KEY_PATTERN } from "@isp/contracts";
 import { createNormalizeEnvelope } from "@isp/queue";
 
 export const INGEST_MAX_BYTES = 65_536;
@@ -57,7 +58,7 @@ const ingestBodySchema = z.object({
   metrics: z
     .array(
       z.object({
-        key: z.string().min(1).max(64),
+        key: z.string().regex(METRIC_KEY_PATTERN).max(64),
         value: z.number(),
         unit: z.string().max(32).optional(),
       }),
@@ -110,6 +111,9 @@ export function parseIngestBody(raw: string): z.infer<typeof ingestBodySchema> {
   const body = ingestBodySchema.safeParse(parsed);
   if (!body.success) {
     throw new IngestValidationError("Ingest payload is invalid.");
+  }
+  if (!isGenericEventType(body.data.event_type)) {
+    throw new IngestValidationError("Unknown event type.");
   }
   const occurred = Date.parse(body.data.occurred_at);
   if (Number.isNaN(occurred) || occurred > Date.now() + 24 * 60 * 60 * 1000) {

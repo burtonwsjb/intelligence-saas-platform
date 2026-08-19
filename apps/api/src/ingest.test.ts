@@ -28,6 +28,14 @@ describe("ingest validation", () => {
     expect(() =>
       parseIngestBody(JSON.stringify({ ...valid, event_type: "NOT_VALID" })),
     ).toThrow(IngestValidationError);
+    expect(() =>
+      parseIngestBody(JSON.stringify({ ...valid, event_type: "unknown.event" })),
+    ).toThrow(IngestValidationError);
+    expect(() =>
+      parseIngestBody(
+        JSON.stringify({ ...valid, metrics: [{ key: "NOT_VALID", value: 1 }] }),
+      ),
+    ).toThrow(IngestValidationError);
     expect(() => parseIngestBody("x".repeat(INGEST_MAX_BYTES + 1))).toThrow(
       IngestPayloadTooLargeError,
     );

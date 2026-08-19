@@ -2,6 +2,14 @@
 
 Dedicated subsystem. The kernel resolves mentions to entities. The TCG pack resolves mentions to **exact printings** when evidence supports it.
 
+## Phase 06 boundary
+
+Phase 06 implements **deterministic identifier mapping only**:
+
+`source_namespace` + `identifier_type` + `normalized_value` → existing `entity`, else create a new canonical entity.
+
+There is no fuzzy matching, no mention span resolver, no multi-source merge, and no TCG printing keys. Those belong to Phase 10 (and TCG pack identity in Phase 07). Identifier collisions (same external id already bound to a different entity) fail closed.
+
 ## Problem
 
 Inputs are messy:

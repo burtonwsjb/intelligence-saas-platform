@@ -5,6 +5,7 @@ import {
   createDbConnection,
   DB_ROLES,
   getSourceEvent,
+  getObservationBySourceEvent,
   insertOutboxJob,
   insertSourceEvent,
   member,
@@ -106,7 +107,7 @@ describe("BullMQ worker", () => {
         idempotencyKey: `idem_${crypto.randomUUID()}`,
         fingerprint: `fp_${crypto.randomUUID()}`,
         entity: { type: "sku", external_id: "sku_123" },
-        metrics: [],
+        metrics: [{ key: "price.usd", value: 9.5, unit: "usd" }],
         payload: {},
       });
       await insertOutboxJob(scoped, {
@@ -129,5 +130,10 @@ describe("BullMQ worker", () => {
       return row?.processingStatus === "processed" ? row : null;
     });
     expect(processed.organizationId).toBe(orgId);
+    const observation = await withSystemContext(db, { organizationId: orgId }, (scoped) =>
+      getObservationBySourceEvent(scoped, { organizationId: orgId, sourceEventId: eventId }),
+    );
+    expect(observation?.sourceEventId).toBe(eventId);
+    expect(observation?.observationType).toBe("metric.snapshot");
   });
 });

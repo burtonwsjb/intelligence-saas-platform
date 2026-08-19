@@ -37,12 +37,14 @@ Every stage stores evidence, versions, and confidence. Later stages may not sile
 
 TCG printings, languages, and collectible-market metrics are **pack bindings** of these objects, not replacements for them.
 
+Phase 06 implements the generic substrate in PostgreSQL (`packages/db` migration `0006_phase06_kernel`) and `normalizeSourceEvent` in `@isp/db`. Typed contracts live in `@isp/contracts`. See [PHASE_06.md](../PHASE_06.md). Phase 07 TCG identity is not started.
+
 ## Observation rules
 
-- An observation has `observed_at`, `entity_id` (or unresolved mention id), `key`, `value`, `unit`, `source_id`, and quality flags
+- An observation has `observed_at`, `received_at`, `entity_id` (nullable if unresolved), `observation_type`, optional `confidence`, quality flags, and related `observation_metric` rows (`metric_key`, numeric/text value, `unit`)
 - Observations are append-only
-- Corrections are new observations or audited supersedes, not silent overwrites
-- Language, market, and quality dimensions travel with the observation when they affect meaning
+- Corrections are new observations or explicit `supersedes_observation_id`, not silent overwrites
+- Language, market, and quality dimensions travel with the observation when they affect meaning (industry packs later; not TCG columns in kernel tables)
 
 ## Signal rules
 

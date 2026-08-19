@@ -67,20 +67,23 @@ Exit: entitlements + key issue work locally. Hosted Stripe Checkout remains defe
 
 ## Phase 05 — Queue, worker, and ingestion foundations
 
-Status: **complete** (see [PHASE_05.md](../PHASE_05.md)). Phase 06 has **not** started.
+Status: **complete** (see [PHASE_05.md](../PHASE_05.md)).
 
 - Redis + BullMQ via `@isp/queue`
 - Generic `/v1/events` ingest with `ingest:write`
 - Durable `source_event` + transactional outbox
-- Worker normalize stub (no observations/signals)
+- Worker normalize job (Phase 06 performs real kernel normalization)
 
 Exit: an accepted event is durable, tenant-bound, retried safely, and visible when it fails.
 
 ## Phase 06 — Core observation / signal / entity model
 
-- Kernel entities, observations, signals
-- Resolution **framework** (statuses, evidence) without TCG printing keys yet
-- Score snapshot shape
+Status: **complete** (see [PHASE_06.md](../PHASE_06.md)). Phase 07 has **not** started.
+
+- Kernel entities, identifiers, observations, metrics, signals, evidence, feature snapshots
+- Decision-record **foundation** only
+- Deterministic identifier mapping only (no fuzzy resolution)
+- Worker normalizes v1 generic events into observations and snapshot signals
 
 Exit: fixture events produce observations and signals.
 

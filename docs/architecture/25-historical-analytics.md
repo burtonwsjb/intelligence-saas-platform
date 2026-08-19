@@ -32,11 +32,11 @@ Durable history, keyed by entity (TCG: exact printing + language, and grade when
 
 v1 recommendation:
 
-1. Append-only `observations` (kernel)
-2. `market_bars_daily` (and later hourly where density exists)
-3. `index_levels` as-of
-4. `score_snapshots` daily
-5. `prediction_records` + `prediction_outcomes`
+1. Append-only `observations` and `observation_metric` (kernel; Phase 06 repositories)
+2. `market_bars_daily` (and later hourly where density exists) — not started
+3. `index_levels` as-of — not started
+4. `score_snapshots` daily — not started
+5. `prediction_records` + `prediction_outcomes` — not started
 6. Partition bars by month
 7. Keep raw source payloads only as long as license and cost allow; derived bars live longer
 

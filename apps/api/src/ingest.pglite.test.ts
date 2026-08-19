@@ -200,6 +200,18 @@ describe("POST /v1/events", () => {
     });
     expect(huge.status).toBe(413);
 
+    const unknownType = await app.request("/v1/events", {
+      method: "POST",
+      headers: { authorization: `Bearer ${writeKey}` },
+      body: JSON.stringify(
+        eventBody({
+          event_type: "unknown.event",
+          idempotency_key: "src:price:unknown:2026-08-16T00:00:00Z",
+        }),
+      ),
+    });
+    expect(unknownType.status).toBe(400);
+
     await client.exec(`update tenant set status = 'suspended' where organization_id = 'org_ingest'`);
     const inactive = await app.request("/v1/events", {
       method: "POST",

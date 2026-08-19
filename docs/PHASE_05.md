@@ -1,6 +1,6 @@
 # Phase 05 — Queue, worker, generic ingest, job durability, and retries
 
-Status: **implemented**. Phase 06 has **not** started.
+Status: **implemented**. Phase 06 is complete; see [PHASE_06.md](PHASE_06.md). Phase 07 has **not** started.
 
 No cloud Redis, Neon production, Railway, Vercel, Stripe live Checkout, TCG identity, TCC, market data, YouTube/Reddit, creator intelligence, or prediction engine.
 
@@ -200,7 +200,6 @@ Phase 05 is not considered proven by mocks alone.
 
 ## Known limitations
 
-- Worker Phase 05 only marks a source event `processed`. It does not create observations or signals.
 - Outbox sweep is a 5s interval, not a separate publisher process.
 - No admin UI for dead letters.
 - No cloud Redis vendor is selected (still an open architecture question).
@@ -208,4 +207,4 @@ Phase 05 is not considered proven by mocks alone.
 
 ## Phase 06 handoff
 
-Phase 06 may introduce canonical observations, signals, and entity resolution **framework** objects. It must keep `source_event` as the ingest boundary, keep jobs tenant-bound, and must not start TCG printing identity or TCC unless a later phase is explicitly opened.
+Phase 06 introduced canonical observations, signals, identifiers, and entity **framework** objects while keeping `source_event` as the ingest boundary. Jobs remain tenant-bound. TCG printing identity and TCC are still not started.
