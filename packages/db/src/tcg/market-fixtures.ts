@@ -1,0 +1,101 @@
+import type { TcgMarketRecordInput } from "./market-identity.js";
+
+function printing(language: string, variant = "normal") {
+  return {
+    game: "pokemon",
+    set: "twm",
+    collector_number: "214/167",
+    language,
+    variant,
+  };
+}
+
+export function tcgMarketFixtureRecords(): TcgMarketRecordInput[] {
+  const sold = (
+    id: string,
+    language: string,
+    variant: string,
+    condition: string,
+    price: number,
+    observed_at: string,
+    extra?: Partial<TcgMarketRecordInput>,
+  ): TcgMarketRecordInput => ({
+    provider: extra?.provider ?? "tcg_card_central",
+    provider_record_id: id,
+    event_type: "tcg.market.sold",
+    market_type: "marketplace_sold",
+    price_type: "sold",
+    observed_at,
+    currency: extra?.currency ?? "USD",
+    condition,
+    price,
+    quantity: extra?.quantity ?? 1,
+    aggregation_kind: "event",
+    printing: printing(language, variant),
+    grading_company: extra?.grading_company,
+    grade_label: extra?.grade_label,
+    external_id: extra?.external_id,
+  });
+
+  return [
+    sold("sold_en_nm_1", "en", "normal", "nm", 40, "2026-01-01T00:00:00.000Z"),
+    sold("sold_en_nm_2", "en", "normal", "nm", 42, "2026-01-02T00:00:00.000Z"),
+    sold("sold_en_nm_3", "en", "normal", "nm", 41, "2026-01-03T00:00:00.000Z"),
+    sold("sold_ja_nm_1", "ja", "normal", "nm", 8000, "2026-01-02T00:00:00.000Z", { currency: "JPY" }),
+    sold("sold_zh_nm_1", "zh-Hans", "normal", "nm", 280, "2026-01-02T00:00:00.000Z", { currency: "CNY" }),
+    sold("sold_en_holo_nm_1", "en", "holofoil", "nm", 95, "2026-01-02T00:00:00.000Z"),
+    sold("sold_en_lp_1", "en", "normal", "lp", 28, "2026-01-02T00:00:00.000Z"),
+    {
+      ...sold("sold_en_psa10_1", "en", "normal", "nm", 250, "2026-01-04T00:00:00.000Z"),
+      grading_company: "psa",
+      grade_label: "10",
+      grade_numeric: 10,
+    },
+    {
+      provider: "tcgplayer",
+      provider_record_id: "list_en_nm_1",
+      event_type: "tcg.market.listing_snapshot",
+      market_type: "marketplace_listing",
+      price_type: "asking",
+      observed_at: "2026-01-04T00:00:00.000Z",
+      currency: "USD",
+      condition: "nm",
+      listing_count: 12,
+      low_price: 39,
+      median_price: 44,
+      high_price: 70,
+      seller_count: 8,
+      aggregation_kind: "window",
+      window_seconds: 86400,
+      printing: printing("en"),
+    },
+    {
+      provider: "ebay",
+      provider_record_id: "vol_en_nm_1",
+      event_type: "tcg.market.volume_snapshot",
+      market_type: "marketplace_sold",
+      price_type: "sold",
+      observed_at: "2026-01-04T12:00:00.000Z",
+      currency: "USD",
+      condition: "nm",
+      sales_count: 3,
+      volume_value: 123,
+      aggregation_kind: "window",
+      window_seconds: 86400,
+      printing: printing("en"),
+    },
+    {
+      provider: "fixture",
+      provider_record_id: "ref_en_nm_1",
+      event_type: "tcg.market.reference_price",
+      market_type: "market_price",
+      price_type: "reference",
+      observed_at: "2026-01-04T00:00:00.000Z",
+      currency: "USD",
+      condition: "nm",
+      price: 43,
+      printing: printing("en"),
+    },
+    sold("sold_en_nm_outlier", "en", "normal", "nm", 4000, "2026-01-05T00:00:00.000Z"),
+  ];
+}

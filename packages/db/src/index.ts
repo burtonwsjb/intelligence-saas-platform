@@ -26,6 +26,7 @@ export {
   parseOrganizationContext,
   withMachineContext,
   withOrganizationContext,
+  withPlatformContext,
   withSystemContext,
   withTenantScope,
   type MachineContext,
@@ -181,4 +182,43 @@ export {
   type TcgIdentityProvider,
 } from "./tcg/provider.js";
 export { ensureTcgPrintingEntity } from "./tcg/kernel-link.js";
+export {
+  TcgMarketRevisionError,
+  TcgMarketValidationError,
+  computeTcgAskSoldSpread,
+  parseTcgCondition,
+  parseTcgCurrency,
+  parseTcgMarketRecord,
+  resolveWindow,
+  rollingMedian,
+  type TcgMarketRecordInput,
+} from "./tcg/market-identity.js";
+export {
+  getTcgMarketSnapshot,
+  ingestTcgMarketRecord,
+  listTcgMarketQuarantine,
+  listTcgMarketRevisions,
+  markTcgMarketIngestFailed,
+  normalizeTcgMarketIngest,
+  receiveTcgMarketRecord,
+} from "./tcg/market-ingest.js";
+export {
+  computeDailyReturns,
+  getLatestTcgMarketSnapshot,
+  getTcgAskSoldSpread,
+  listTcgListingHistory,
+  listTcgMarketSnapshots,
+  listTcgSoldHistory,
+  listWindow,
+  summarizeTcgLiquidityInputs,
+} from "./tcg/market-query.js";
+export {
+  FixtureTcgMarketProvider,
+  fixtureEbayMarketProvider,
+  fixtureTcgCardCentralMarketProvider,
+  fixtureTcgplayerMarketProvider,
+  type TcgMarketProvider,
+} from "./tcg/market-provider.js";
+export { tcgMarketFixtureRecords } from "./tcg/market-fixtures.js";
+export { projectTcgMarketSnapshotToTenant } from "./tcg/market-project.js";
 export * from "./schema/index.js";

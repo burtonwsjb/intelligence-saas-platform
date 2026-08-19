@@ -14,15 +14,18 @@ import {
   listEntities,
   member,
   organization,
+  receiveTcgMarketRecord,
   replaceConnectionRole,
   requireDatabaseAdminUrl,
+  seedTcgIdentityFixtures,
   tenant,
   user,
   withOrganizationContext,
+  withPlatformContext,
   withSystemContext,
   type Database,
 } from "@isp/db";
-import { createNormalizeEnvelope } from "./envelope.js";
+import { createMarketNormalizeEnvelope, createNormalizeEnvelope } from "./envelope.js";
 import { UnrecoverableJobError } from "./errors.js";
 import { requireRedisUrl } from "./env.js";
 import { DEFAULT_JOB_ATTEMPTS } from "./names.js";
@@ -344,5 +347,37 @@ describe("Redis + Postgres ingest queue", () => {
       connection.disconnect();
       await queue.close();
     }
+  });
+
+  it("replays TCG market normalize jobs without duplicating snapshots", async () => {
+    await seedTcgIdentityFixtures(adminConn.db);
+    const received = await withPlatformContext(adminConn.db, (scoped) =>
+      receiveTcgMarketRecord(scoped, {
+        provider: "fixture",
+        provider_record_id: `queue_sold_${crypto.randomUUID()}`,
+        event_type: "tcg.market.sold",
+        market_type: "marketplace_sold",
+        price_type: "sold",
+        observed_at: "2026-01-01T00:00:00.000Z",
+        currency: "USD",
+        condition: "nm",
+        price: 41,
+        printing: {
+          game: "pokemon",
+          set: "twm",
+          collector_number: "214/167",
+          language: "en",
+          variant: "normal",
+        },
+      }),
+    );
+    const envelope = createMarketNormalizeEnvelope({
+      jobId: `job_${crypto.randomUUID().slice(0, 8)}`,
+      marketIngestId: received.ingestId,
+    });
+    const first = await processNormalizeJob(adminConn.db, envelope);
+    const replay = await processNormalizeJob(adminConn.db, envelope);
+    expect(first.status).toBe("processed");
+    expect(replay.status).toBe("duplicate");
   });
 });

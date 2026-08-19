@@ -2,9 +2,11 @@
 
 First commercial vertical. Built on the kernel in [16-core-intelligence-kernel.md](./16-core-intelligence-kernel.md). Series are keyed by **exact printing** (and grade/variant when the market is split).
 
-## Phase 08 boundary
+## Phase 08 implementation
 
-Phase 07 implemented canonical identity only ([PHASE_07.md](../PHASE_07.md), [17-tcg-canonical-identity.md](./17-tcg-canonical-identity.md)). Phase 08 has **not** started. Do not ingest eBay sold, TCGplayer, TCC market price, listing counts, volume, liquidity, spreads, or grading population until Phase 08 is explicitly begun.
+Phase 08 implemented exact-printing market history ([PHASE_08.md](../PHASE_08.md)). Shared provider snapshots are platform-global. Fixture providers only — no live eBay, TCGplayer, or TCC market HTTP. Final liquidity scores, indices, alpha, and opportunity scoring remain later.
+
+Condition (`nm`/`lp`/…) and grade (`grading_company` + `grade_label`) are snapshot dimensions, not new printing identities. Raw NM is not merged with PSA 10.
 
 ## Market data to track
 

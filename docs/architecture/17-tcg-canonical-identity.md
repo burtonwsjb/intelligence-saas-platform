@@ -14,7 +14,7 @@ This is TCG-pack identity. Non-TCG tenants never require these tables. Implement
 | 4. Physical inventory item | One tenant-owned copy | A user’s card with qty, cost basis, acquisition date | later |
 | 5. Graded / slabbed item | A certified copy | PSA 10 of that exact printing, cert number when known | later |
 
-Market history (Phase 08) attaches to **exact printing** (and to market variant / grade when the market is split). It does not attach to the bare concept.
+Market history (Phase 08) attaches to **exact printing**. Grade and condition are market-snapshot dimensions, not a replacement printing key. History does not attach to the bare concept.
 
 ## Games
 

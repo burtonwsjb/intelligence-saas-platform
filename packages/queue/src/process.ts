@@ -6,10 +6,15 @@ import {
   InvalidMetricError,
   KernelValidationError,
   MissingSignalEvidenceError,
+  TcgMarketRevisionError,
+  TcgMarketValidationError,
   UnknownEventTypeError,
   insertAuditEvent,
+  markTcgMarketIngestFailed,
   normalizeSourceEvent,
+  normalizeTcgMarketIngest,
   updateSourceEventStatus,
+  withPlatformContext,
   withSystemContext,
   type Database,
 } from "@isp/db";
@@ -28,11 +33,44 @@ function toUnrecoverable(error: unknown): never {
     error instanceof InvalidConfidenceError ||
     error instanceof KernelValidationError ||
     error instanceof IdentifierCollisionError ||
-    error instanceof MissingSignalEvidenceError
+    error instanceof MissingSignalEvidenceError ||
+    error instanceof TcgMarketRevisionError ||
+    error instanceof TcgMarketValidationError
   ) {
     throw new UnrecoverableJobError(error.message);
   }
   throw error;
+}
+
+async function processMarketNormalizeJob(
+  db: Database,
+  envelope: Extract<JobEnvelope, { job_type: "tcg.market.normalize.v1" }>,
+  attempt: number,
+): Promise<{ status: "processed" | "duplicate" }> {
+  logQueueEvent("info", "job.started", {
+    job_id: envelope.job_id,
+    market_ingest_id: envelope.market_ingest_id,
+    job_type: envelope.job_type,
+    request_id: envelope.request_id,
+    attempt,
+    status: "processing",
+  });
+  try {
+    const result = await withPlatformContext(db, (scoped) =>
+      normalizeTcgMarketIngest(scoped, envelope.market_ingest_id),
+    );
+    const status = result.status === "duplicate" ? ("duplicate" as const) : ("processed" as const);
+    logQueueEvent("info", "job.processed", {
+      job_id: envelope.job_id,
+      market_ingest_id: envelope.market_ingest_id,
+      job_type: envelope.job_type,
+      attempt,
+      status,
+    });
+    return { status };
+  } catch (error) {
+    toUnrecoverable(error);
+  }
 }
 
 export async function processNormalizeJob(
@@ -41,6 +79,9 @@ export async function processNormalizeJob(
   attempt = 1,
 ): Promise<{ status: "processed" | "duplicate" }> {
   const envelope = parseJobEnvelope(raw);
+  if (envelope.job_type === "tcg.market.normalize.v1") {
+    return processMarketNormalizeJob(db, envelope, attempt);
+  }
   logQueueEvent("info", "job.started", {
     job_id: envelope.job_id,
     source_event_id: envelope.source_event_id,
@@ -111,6 +152,18 @@ export async function markJobPermanentlyFailed(
   envelope: JobEnvelope,
   message: string,
 ): Promise<void> {
+  if (envelope.job_type === "tcg.market.normalize.v1") {
+    await withPlatformContext(db, (scoped) =>
+      markTcgMarketIngestFailed(scoped, envelope.market_ingest_id),
+    ).catch(() => undefined);
+    logQueueEvent("error", "job.permanent_failure", {
+      job_id: envelope.job_id,
+      market_ingest_id: envelope.market_ingest_id,
+      job_type: envelope.job_type,
+      status: "failed",
+    });
+    return;
+  }
   await withSystemContext(db, { organizationId: envelope.organization_id }, async (scoped) => {
     await updateSourceEventStatus(scoped, {
       id: envelope.source_event_id,

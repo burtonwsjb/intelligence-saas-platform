@@ -162,6 +162,19 @@ export async function withSystemContext<T>(
   });
 }
 
+export async function withPlatformContext<T>(
+  db: Database,
+  run: (db: Database) => Promise<T>,
+): Promise<T> {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select set_config('app.current_organization_id', '', true)`);
+    await tx.execute(sql`select set_config('app.current_user_id', '', true)`);
+    await tx.execute(sql`select set_config('app.current_principal_type', 'system', true)`);
+    await tx.execute(sql`select set_config('app.current_api_key_id', '', true)`);
+    return run(tx);
+  });
+}
+
 export async function withTenantScope<T>(
   db: Database,
   context: OrganizationContext,

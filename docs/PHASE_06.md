@@ -1,6 +1,6 @@
 # Phase 06 — Core intelligence kernel
 
-Status: **implemented**. Phase 07 is complete; see [PHASE_07.md](PHASE_07.md). Phase 08 has **not** started.
+Status: **implemented**. Phase 07 is complete; see [PHASE_07.md](PHASE_07.md). Phase 08 is complete; see [PHASE_08.md](PHASE_08.md). Phase 09 has **not** started.
 
 Industry-neutral substrate for entities, identifiers, observations, metrics, signals, evidence, feature snapshots, and decision-record foundations. No TCG identity, TCG Card Central, YouTube, Reddit, creator intelligence, market indices, prediction execution, or opportunity scoring.
 
@@ -202,7 +202,7 @@ All require an active tenant context.
 
 ## Phase 07 handoff
 
-Phase 07 added TCG canonical identity and a TCG Card Central **sandbox** contract as pack tables plus `entity_type=tcg_printing`. The generic kernel was not given TCG columns. See [PHASE_07.md](PHASE_07.md). Do not start Phase 08 until explicitly instructed.
+Phase 07 added TCG canonical identity and a TCG Card Central **sandbox** contract as pack tables plus `entity_type=tcg_printing`. The generic kernel was not given TCG columns. See [PHASE_07.md](PHASE_07.md). Phase 08 added global TCG market snapshots keyed by exact printing; see [PHASE_08.md](PHASE_08.md). Do not start Phase 09 until explicitly instructed.
 
 ## Known limitations
 

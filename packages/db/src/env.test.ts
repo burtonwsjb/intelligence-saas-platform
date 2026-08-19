@@ -114,9 +114,12 @@ describe("migrations", () => {
     expect(sql).not.toMatch(/ALTER TABLE "member" ENABLE ROW LEVEL SECURITY/);
     expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "tcg_game"/);
     expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "tcg_printing"/);
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "tcg_market_snapshot"/);
     expect(sql).toMatch(/app.forbid_tcg_canonical_mutate/);
+    expect(sql).toMatch(/app.forbid_tcg_market_mutate/);
     expect(sql).not.toMatch(/ALTER TABLE "tcg_game" ENABLE ROW LEVEL SECURITY/);
     expect(sql).not.toMatch(/ALTER TABLE "tcg_printing" ENABLE ROW LEVEL SECURITY/);
+    expect(sql).not.toMatch(/ALTER TABLE "tcg_market_snapshot" ENABLE ROW LEVEL SECURITY/);
   });
 
   it("does not add TCG identity columns to generic kernel tables", async () => {

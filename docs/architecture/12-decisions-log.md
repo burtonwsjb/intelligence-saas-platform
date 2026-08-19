@@ -52,6 +52,12 @@ Change only with an explicit new decision.
 | D46 | Printing identifiers | Immutable alias map; rebind writes `tcg_identifier_conflict` and throws | No silent remap when TCC/external ids change |
 | D47 | Kernel link | Per-tenant `entity_type=tcg_printing` keyed from the printing canonical key | Domain identity stays global; analytical subject stays tenant-scoped |
 | D48 | TCC in Phase 07 | `SandboxTcgCardCentralProvider` fixtures only | No network, no production URL, no real token |
+| D49 | TCG market facts | Platform-global `tcg_market_snapshot` keyed by exact printing; no tenant RLS | Do not duplicate licensed/shared provider observations per tenant |
+| D50 | Market vs kernel | TCG market metadata stays in pack tables; optional tenant observation projection | Kernel tables remain industry-neutral |
+| D51 | Market ingest jobs | `tcg.market.normalize.v1` on `tcg_market_ingest`, not tenant `outbox_job` | Market ingest is platform operational data |
+| D52 | Spread formula | `spread.v1` = `lowest_ask_minus_latest_sold` | Explicit units; do not treat listing as sold |
+| D53 | Outlier handling | Flag with `outlier.v1`; never delete raw history | Later analytics may filter |
+| D54 | Phase 08 providers | In-memory fixture TCC/TCGplayer/eBay only | No network, no credentials |
 
 ## Void
 

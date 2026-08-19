@@ -89,7 +89,7 @@ Exit: fixture events produce observations and signals.
 
 ## Phase 07 — TCG canonical identity and TCG Card Central sandbox contract
 
-Status: **complete** (see [PHASE_07.md](../PHASE_07.md)). Phase 08 has **not** started.
+Status: **complete** (see [PHASE_07.md](../PHASE_07.md)).
 
 - Game / set / card-concept / exact-printing layers (grade/inventory later)
 - First-class language codes (`en`, `ja`, `zh-Hans` required; catalog extensible)
@@ -102,13 +102,15 @@ Exit: exact printing keys exist; sandbox mapping tests pass.
 
 ## Phase 08 — TCG market-history ingestion
 
-Status: **not started**. Do not begin until explicitly instructed.
+Status: **complete** (see [PHASE_08.md](../PHASE_08.md)). Phase 09 has **not** started.
 
-- Price, sales, volume, listings, spread, liquidity series keyed by exact printing
-- Daily bars, quality flags
-- No silent cross-language merge
+- Immutable snapshots keyed by exact printing
+- Source registry; sold vs listing vs reference kept distinct
+- Condition and grade as separate dimensions; explicit currency
+- Fixture providers only (no real TCC/TCGplayer/eBay)
+- Quarantine for unresolved/ambiguous printings; outlier flags without deletion
 
-Exit: a printing has a durable history.
+Exit: a printing has a durable multi-source history.
 
 ## Phase 09 — YouTube / Reddit / source ingestion
 

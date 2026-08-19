@@ -53,6 +53,9 @@ import {
   ensureTcgPrintingEntity,
   seedTcgIdentityFixtures,
   tcgGame,
+  tcgMarketSnapshot,
+  ingestTcgMarketRecord,
+  withPlatformContext,
 } from "./index.js";
 
 const passwords = {
@@ -938,6 +941,76 @@ describe("PostgreSQL RLS isolation", () => {
       expect(entityA.entityType).toBe("tcg_printing");
       expect(entityA.id).not.toBe(entityB.id);
       expect(await asUser(ids.userA, ids.orgA, (db) => listEntities(db, ids.orgB))).toEqual([]);
+    } finally {
+      await adminConn.end();
+    }
+  });
+
+  it("prevents tenants from mutating global TCG market facts", async () => {
+    const adminConn = createDbConnection(adminUrl);
+    try {
+      const seeded = await seedTcgIdentityFixtures(adminConn.db);
+      const ingested = await withPlatformContext(adminConn.db, (db) =>
+        ingestTcgMarketRecord(db, {
+          provider: "fixture",
+          provider_record_id: `iso_sold_${crypto.randomUUID()}`,
+          event_type: "tcg.market.sold",
+          market_type: "marketplace_sold",
+          price_type: "sold",
+          observed_at: "2026-01-01T00:00:00.000Z",
+          currency: "USD",
+          condition: "nm",
+          price: 40,
+          printing: {
+            game: "pokemon",
+            set: "twm",
+            collector_number: "214/167",
+            language: "en",
+            variant: "normal",
+          },
+        }),
+      );
+      expect(ingested.status).toBe("processed");
+      const raw = postgres(replaceConnectionRole(adminUrl, DB_ROLES.user, passwords.user), {
+        max: 1,
+        prepare: false,
+      });
+      try {
+        const rows = await raw`select id from tcg_market_snapshot where printing_id = ${seeded.printings.greninjaEnNormal.id}`;
+        expect(rows.length).toBeGreaterThan(0);
+        await expect(
+          raw`insert into tcg_market_snapshot (
+            id, printing_id, source_key, market_type, price_type, observed_at, currency, condition, source_record_id, fingerprint
+          ) values (
+            'msn_hack', ${seeded.printings.greninjaEnNormal.id}, 'fixture', 'marketplace_sold', 'sold', now(), 'USD', 'nm', 'hack', 'fp'
+          )`,
+        ).rejects.toThrow();
+        await expect(
+          raw`update tcg_market_snapshot set price = 1 where id = ${ingested.snapshotId}`,
+        ).rejects.toThrow();
+        await expect(
+          raw`delete from tcg_market_snapshot where id = ${ingested.snapshotId}`,
+        ).rejects.toThrow();
+      } finally {
+        await raw.end({ timeout: 5 });
+      }
+
+      await expect(
+        asUser(ids.userA, ids.orgA, (db) =>
+          db.insert(tcgMarketSnapshot).values({
+            id: "msn_tenant_hack",
+            printingId: seeded.printings.greninjaEnNormal.id,
+            sourceKey: "fixture",
+            marketType: "marketplace_sold",
+            priceType: "sold",
+            observedAt: new Date(),
+            currency: "USD",
+            condition: "nm",
+            sourceRecordId: "tenant_hack",
+            fingerprint: "fp_tenant_hack",
+          }),
+        ),
+      ).rejects.toThrow();
     } finally {
       await adminConn.end();
     }

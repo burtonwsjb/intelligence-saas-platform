@@ -1,18 +1,29 @@
 import { z } from "zod";
 import { UnrecoverableJobError } from "./errors.js";
-import { JOB_TYPES } from "./names.js";
 
 export const JOB_ENVELOPE_VERSION = 1;
 
-export const jobEnvelopeSchema = z.object({
+const baseEnvelope = {
   job_version: z.literal(JOB_ENVELOPE_VERSION),
-  job_type: z.enum(JOB_TYPES),
   job_id: z.string().min(8).max(128),
-  organization_id: z.string().min(1).max(128),
-  source_event_id: z.string().min(8).max(128),
   created_at: z.string().datetime(),
   request_id: z.string().min(8).max(128).optional(),
-});
+};
+
+export const jobEnvelopeSchema = z.discriminatedUnion("job_type", [
+  z.object({
+    ...baseEnvelope,
+    job_type: z.literal("source_event.normalize"),
+    organization_id: z.string().min(1).max(128),
+    source_event_id: z.string().min(8).max(128),
+  }),
+  z.object({
+    ...baseEnvelope,
+    job_type: z.literal("tcg.market.normalize.v1"),
+    market_ingest_id: z.string().min(8).max(128),
+    organization_id: z.string().min(1).max(128).optional(),
+  }),
+]);
 
 export type JobEnvelope = z.infer<typeof jobEnvelopeSchema>;
 
@@ -36,6 +47,21 @@ export function createNormalizeEnvelope(input: {
     job_id: input.jobId,
     organization_id: input.organizationId,
     source_event_id: input.sourceEventId,
+    created_at: new Date().toISOString(),
+    request_id: input.requestId,
+  };
+}
+
+export function createMarketNormalizeEnvelope(input: {
+  jobId: string;
+  marketIngestId: string;
+  requestId?: string;
+}): JobEnvelope {
+  return {
+    job_version: JOB_ENVELOPE_VERSION,
+    job_type: "tcg.market.normalize.v1",
+    job_id: input.jobId,
+    market_ingest_id: input.marketIngestId,
     created_at: new Date().toISOString(),
     request_id: input.requestId,
   };

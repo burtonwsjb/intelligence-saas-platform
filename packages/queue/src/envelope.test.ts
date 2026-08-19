@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { UnrecoverableJobError } from "./errors.js";
-import { createNormalizeEnvelope, parseJobEnvelope } from "./envelope.js";
+import { createMarketNormalizeEnvelope, createNormalizeEnvelope, parseJobEnvelope } from "./envelope.js";
 import { DEFAULT_BACKOFF_MS, DEFAULT_JOB_ATTEMPTS, ingestQueueName } from "./names.js";
 import { queueEnvironmentName, requireRedisUrl, MissingRedisUrlError } from "./env.js";
 
@@ -17,6 +17,17 @@ describe("job envelope", () => {
       parseJobEnvelope({ ...envelope, job_type: "observations.create" }),
     ).toThrow(UnrecoverableJobError);
     expect(() => parseJobEnvelope({ hello: "world" })).toThrow(UnrecoverableJobError);
+  });
+
+  it("accepts a versioned TCG market normalize envelope", () => {
+    const envelope = createMarketNormalizeEnvelope({
+      jobId: "outbox_market01",
+      marketIngestId: "min_12345678",
+    });
+    expect(parseJobEnvelope(envelope).job_type).toBe("tcg.market.normalize.v1");
+    expect(() =>
+      parseJobEnvelope({ ...envelope, source_event_id: "event_12345678" }),
+    ).not.toThrow();
   });
 });
 

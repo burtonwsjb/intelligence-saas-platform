@@ -15,6 +15,7 @@ export {
 export { QueueUnavailableError, UnrecoverableJobError } from "./errors.js";
 export {
   JOB_ENVELOPE_VERSION,
+  createMarketNormalizeEnvelope,
   createNormalizeEnvelope,
   jobEnvelopeSchema,
   parseJobEnvelope,

@@ -17,7 +17,7 @@ Contracts only. Nothing is connected. TCG Card Central is not modified.
 | Type | Role | Phase |
 |---|---|---|
 | `generic_http` | Reusable capability. Phase 05 ingest + Phase 06 kernel normalization | 05 / 06 |
-| `market_feed` | Licensed/TCC/other price & sales | 08 |
+| `market_feed` | Licensed/TCC/other price & sales (Phase 08: fixture ingest only) | 08 |
 | `youtube` | Permitted metadata + derived extracts | 09 |
 | `reddit` | Permitted posts + derived social signals | 09 |
 | `tcg_card_central` | Sandbox 07; production 23 only with go-ahead | 07 / 23 |
@@ -39,13 +39,13 @@ GET /v1/cards/{id}
 GET /v1/printings/{id}
 POST /v1/printings/resolve
 GET /v1/sets/{id}
-GET /v1/cards/{id}/price              (deferred; Phase 08+)
-GET /v1/cards/{id}/price-history      (deferred; Phase 08+)
+GET /v1/cards/{id}/price              (commercial API later; Phase 08 stores fixture history internally)
+GET /v1/cards/{id}/price-history      (commercial API later)
 ```
 
 As customer, TCC would call this platform’s commercial `/v1` intelligence API with a normal tenant key.
 
-Phase 07 uses **in-memory fixtures only** (`SandboxTcgCardCentralProvider`). No staging or production TCC network calls. Production TCC is Phase 23 with an explicit command.
+Phase 07 uses **in-memory fixtures only** (`SandboxTcgCardCentralProvider`). Phase 08 market providers are also in-memory fixtures. No staging or production TCC/TCGplayer/eBay network calls. Production TCC is Phase 23 with an explicit command.
 
 ## YouTube and Reddit
 

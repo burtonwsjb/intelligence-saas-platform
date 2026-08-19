@@ -1,6 +1,6 @@
 # Phase 07 — TCG canonical identity and TCG Card Central sandbox contract
 
-Status: **implemented**. Phase 08 has **not** started.
+Status: **implemented**. Phase 08 is complete; see [PHASE_08.md](PHASE_08.md). Phase 09 has **not** started.
 
 TCG-specific identity lives beside the generic intelligence kernel. No market-history ingestion, no real TCG Card Central network calls, no TCC credentials, no commercial TCG API.
 
@@ -164,7 +164,7 @@ No silent remap. Identifier rows are immutable after insert. Manual resolution i
 - idempotent: replay returns the same entity id
 - observations in later phases attach to that entity id
 
-Generic ingest already accepts `entity.type=tcg_printing` without adding TCG columns to kernel tables. Phase 08 may emit `pricing.snapshot` (or later typed events) against that entity. Phase 07 does **not** ingest prices.
+Generic ingest already accepts `entity.type=tcg_printing` without adding TCG columns to kernel tables. Phase 08 projects optional tenant observations from global market snapshots onto that entity. Phase 07 does **not** ingest prices.
 
 ## TCC sandbox contract
 
@@ -177,7 +177,7 @@ Versioned identity operations (contract only; fixtures implement them):
 - `POST /v1/printings/resolve`
 - `GET /v1/sets/{id}`
 
-Market-price routes are deferred to Phase 08.
+Market-price routes remain deferred to the commercial API (Phase 16). Phase 08 stores fixture market history internally.
 
 ## TCC provider
 
@@ -229,9 +229,7 @@ This is distinct from later image/AI identification confidence (Phase 10+).
 
 ## Phase 08 handoff
 
-Phase 08 may ingest TCG market history **keyed by exact printing** (and later grade/variant splits). Do not start it until explicitly instructed.
-
-Do not ingest: eBay sold, TCGplayer, TCC market price, listing counts, volume, liquidity, spreads, grading population.
+Phase 08 ingested TCG market history keyed by exact printing. See [PHASE_08.md](PHASE_08.md).
 
 ## API
 
@@ -242,4 +240,4 @@ No public commercial TCG routes (`cards:read`, `prices:read`, `markets:read`). T
 - No production TCC client
 - No tenant-owned holdings/overrides table yet (portfolio is later)
 - No fuzzy / mention resolution (Phase 10)
-- No market bars (Phase 08)
+- No production market-provider clients

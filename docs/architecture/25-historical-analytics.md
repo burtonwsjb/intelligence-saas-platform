@@ -33,18 +33,19 @@ Durable history, keyed by entity (TCG: exact printing + language, and grade when
 v1 recommendation:
 
 1. Append-only `observations` and `observation_metric` (kernel; Phase 06 repositories)
-2. `market_bars_daily` (and later hourly where density exists) — not started
-3. `index_levels` as-of — not started
-4. `score_snapshots` daily — not started
-5. `prediction_records` + `prediction_outcomes` — not started
-6. Partition bars by month
-7. Keep raw source payloads only as long as license and cost allow; derived bars live longer
+2. Platform-global `tcg_market_snapshot` (Phase 08 exact-printing facts; sold/listing/reference/volume)
+3. `market_bars_daily` (and later hourly where density exists) — not started
+4. `index_levels` as-of — not started
+5. `score_snapshots` daily — not started
+6. `prediction_records` + `prediction_outcomes` — not started
+7. Partition bars by month
+8. Keep raw source payloads only as long as license and cost allow; derived bars live longer
 
 Do not store one giant JSON blob per day as the only history.
 
 ## Shared vs tenant data
 
-- Licensed or platform-collected **market** series may be global (not tenant-scoped) with a `dataset_id` and license flag
+- Licensed or platform-collected **market** series may be global (not tenant-scoped) with a `dataset_id` and license flag. Phase 08 stores shared provider snapshots in `tcg_market_snapshot` (no tenant RLS).
 - Tenant **holdings, trades, personalized scores** are tenant-scoped + RLS
 - Creator calls extracted from public sources are platform-scoped; a tenant’s private notes are tenant-scoped
 

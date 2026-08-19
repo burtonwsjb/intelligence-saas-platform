@@ -380,9 +380,18 @@ Implemented in Phase 07 as platform-global tables (no tenant RLS). See [PHASE_07
 - External aliases (TCC catalog id, future TCGplayer/eBay ids) point at one printing
 - Rebind attempts are recorded and rejected
 
+### `tcg_market_source` / `tcg_market_ingest` / `tcg_market_snapshot` / `tcg_market_quarantine` / `tcg_market_revision`
+
+Implemented in Phase 08 as platform-global tables (no tenant RLS). See [PHASE_08.md](../PHASE_08.md).
+
+- Snapshots bind to exact `printing_id` only
+- `price_type` distinguishes asking / sold / reference / bid
+- Condition and grade are snapshot dimensions
+- Unresolved records quarantine; snapshots are append-only
+
 ### `tcg_market_variants` / `tcg_graded_populations` / `tcg_slabbed_items`
 
-- Market split and grade layers (not Phase 07)
+- Census / inventory-item layers (not Phase 08)
 
 ### `tcg_holdings` (tenant RLS)
 
@@ -408,7 +417,7 @@ crm_accounts 1──* crm_contacts
 crm_accounts 1──* crm_opportunities
 entities 1──* observations 1──* signals
 creators 1──* creator_calls 1──* creator_call_outcomes
-tcg_card_concepts 1──* tcg_printings 1──* market_bars
+tcg_card_concepts 1──* tcg_printings 1──* tcg_market_snapshots
 ```
 
 ## Indexes that must exist later
