@@ -15,7 +15,7 @@ describe("migration smoke", () => {
     await admin.end({ timeout: 5 });
   });
 
-  it("applies Phase 02-20 objects on an empty-capable database", async () => {
+  it("applies Phase 02-22 objects on an empty-capable database", async () => {
     const tables = await admin<{ relname: string }[]>`
       select relname
       from pg_class
@@ -24,17 +24,20 @@ describe("migration smoke", () => {
         and relname in (
           'user', 'organization', 'tenant', 'api_key', 'source_event', 'outbox_job',
           'webhook_endpoint', 'platform_admins', 'platform_break_glass_audit',
-          'tcg_prediction', 'content_publication'
+          'tcg_prediction', 'content_publication', 'platform_feature_flags',
+          'beta_invitation'
         )
     `;
     expect(tables.map((row) => row.relname).sort()).toEqual(
       [
         "api_key",
+        "beta_invitation",
         "content_publication",
         "organization",
         "outbox_job",
         "platform_admins",
         "platform_break_glass_audit",
+        "platform_feature_flags",
         "source_event",
         "tcg_prediction",
         "tenant",
@@ -48,11 +51,17 @@ describe("migration smoke", () => {
         and proname in (
           'current_organization_id',
           'install_tenant_owned_rls',
-          'forbid_platform_audit_mutate'
+          'forbid_platform_audit_mutate',
+          'consume_beta_invite'
         )
     `;
     expect(fns.map((row) => row.proname).sort()).toEqual(
-      ["current_organization_id", "forbid_platform_audit_mutate", "install_tenant_owned_rls"].sort(),
+      [
+        "consume_beta_invite",
+        "current_organization_id",
+        "forbid_platform_audit_mutate",
+        "install_tenant_owned_rls",
+      ].sort(),
     );
   });
 });
