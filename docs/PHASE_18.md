@@ -1,6 +1,6 @@
 # Phase 18 — Customer application, intelligence dashboard, and analytics UX
 
-Status: **implemented**. Phase 19 has **not** started.
+Status: **implemented**. Phase 19 is complete; see [PHASE_19.md](PHASE_19.md). Phase 20 has **not** started.
 
 The backend intelligence objects are now reachable as a coherent customer-facing SaaS application. This is information architecture and functional workflow, not final visual polish. Local adapters remain the default. Predictions stay in shadow mode unless a tenant is entitled **and** `PREDICTIONS_CUSTOMER_VISIBLE=true`.
 
@@ -61,4 +61,4 @@ Default is off. `publishedPredictionsForCustomer` additionally drops `visibility
 
 ## Phase 19 boundary
 
-Do not implement evidence packages, SEO articles, or programmatic content generation here.
+Do not implement evidence-backed SEO content or the platform admin console here.

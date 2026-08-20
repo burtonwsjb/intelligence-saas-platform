@@ -74,6 +74,7 @@ import {
   crmOrganizationProfile,
   crmOperatorNote,
   inAppNotification,
+  contentCandidate,
 } from "./index.js";
 
 const passwords = {
@@ -1385,6 +1386,20 @@ describe("PostgreSQL RLS isolation", () => {
           organizationId: ids.orgA,
           category: "support",
           body: "Tenant must not write operator notes.",
+        }),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("prevents tenants from writing public SEO content facts", async () => {
+    await expect(
+      asUser(ids.userA, ids.orgA, (db) =>
+        db.insert(contentCandidate).values({
+          id: `cc_${crypto.randomUUID()}`,
+          outputType: "card_analysis",
+          languageCode: "en",
+          asOf: new Date(),
+          status: "proposed",
         }),
       ),
     ).rejects.toThrow();

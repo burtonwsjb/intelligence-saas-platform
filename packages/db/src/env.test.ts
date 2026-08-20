@@ -152,6 +152,13 @@ describe("migrations", () => {
     expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "email_delivery"/);
     expect(sql).toMatch(/app.install_operator_only_rls\('crm_operator_note'\)/);
     expect(sql).toMatch(/app.install_tenant_owned_rls\('in_app_notification'/);
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "content_candidate"/);
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "content_evidence_package"/);
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "content_publication"/);
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "tenant_content_report"/);
+    expect(sql).not.toMatch(/ALTER TABLE "content_candidate" ENABLE ROW LEVEL SECURITY/);
+    expect(sql).toMatch(/app.install_tenant_owned_rls\('tenant_content_report'/);
+    expect(sql).toMatch(/CONSTRAINT tenant_content_report_seo_chk CHECK \("public_seo" = false\)/);
   });
 
   it("does not add TCG identity columns to generic kernel tables", async () => {

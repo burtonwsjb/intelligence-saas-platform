@@ -208,7 +208,7 @@ Exit: trial → active → at-risk paths exist in test.
 
 ## Phase 18 — TCG customer dashboard
 
-Status: **complete** (see [PHASE_18.md](../PHASE_18.md)). Phase 19 has **not** started.
+Status: **complete** (see [PHASE_18.md](../PHASE_18.md)). Phase 19 is complete; see [PHASE_19.md](../PHASE_19.md).
 
 - Printings, history, creators, indices, opportunities, predictions
 - Explainability UI
@@ -216,6 +216,8 @@ Status: **complete** (see [PHASE_18.md](../PHASE_18.md)). Phase 19 has **not** s
 Exit: an analyst can use the TCG product in the browser.
 
 ## Phase 19 — Content / SEO intelligence
+
+Status: **complete** (see [PHASE_19.md](../PHASE_19.md)). Phase 20 has **not** started.
 
 - Evidence packages, validation, approval
 - Canonical URL rules, thin-page blockers

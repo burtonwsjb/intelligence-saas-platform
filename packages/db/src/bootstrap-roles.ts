@@ -143,6 +143,13 @@ export async function bootstrapRoles(
       "in_app_notification",
       "alert_rule",
       "usage_warning",
+      "content_candidate",
+      "content_evidence_package",
+      "content_draft",
+      "content_claim",
+      "content_validation",
+      "content_publication",
+      "tenant_content_report",
     ];
     for (const table of tables) {
       await sql.unsafe(`ALTER TABLE "${table}" OWNER TO ${DB_ROLES.migrate}`);
@@ -211,9 +218,15 @@ export async function bootstrapRoles(
         "creator_authority_slice", "creator_trust_event",
         "tcg_market_feature_snapshot", "tcg_index_definition", "tcg_index_membership",
         "tcg_index_level", "creator_call_alpha", "tcg_score_snapshot",
-      "tcg_prediction",
+        "tcg_prediction",
       "tcg_prediction_outcome",
-      "tcg_backtest_run"
+      "tcg_backtest_run",
+      "content_candidate",
+      "content_evidence_package",
+      "content_draft",
+      "content_claim",
+      "content_validation",
+      "content_publication"
       TO ${DB_ROLES.user}, ${DB_ROLES.worker};
       REVOKE INSERT, UPDATE, DELETE ON TABLE
         "tcg_game", "tcg_language", "tcg_set", "tcg_card_concept",
@@ -288,6 +301,19 @@ export async function bootstrapRoles(
         "crm_operator_note", "crm_tag", "crm_organization_tag",
         "crm_segment_definition", "crm_segment_membership"
       FROM ${DB_ROLES.user}, ${DB_ROLES.worker};
+      GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "tenant_content_report" TO ${DB_ROLES.user}, ${DB_ROLES.worker};
+      GRANT SELECT, INSERT ON TABLE
+        "content_candidate", "content_evidence_package", "content_draft",
+        "content_claim", "content_validation", "content_publication"
+      TO ${DB_ROLES.worker};
+      REVOKE INSERT, UPDATE, DELETE ON TABLE
+        "content_candidate", "content_evidence_package", "content_draft",
+        "content_claim", "content_validation", "content_publication"
+      FROM ${DB_ROLES.user};
+      REVOKE UPDATE, DELETE ON TABLE
+        "content_candidate", "content_evidence_package", "content_draft",
+        "content_claim", "content_validation", "content_publication"
+      FROM ${DB_ROLES.worker};
       GRANT DELETE ON TABLE "alert_rule", "webhook_endpoint", "webhook_delivery" TO ${DB_ROLES.user}, ${DB_ROLES.worker};
       REVOKE DELETE ON TABLE
         "crm_organization_profile", "crm_user_profile", "crm_lifecycle_transition",

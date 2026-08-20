@@ -19,3 +19,4 @@ export * from "./prediction.js";
 export * from "./webhook.js";
 export * from "./crm.js";
 export * from "./notification.js";
+export * from "./content.js";

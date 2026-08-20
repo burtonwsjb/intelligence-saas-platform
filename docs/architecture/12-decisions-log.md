@@ -93,6 +93,7 @@ Change only with an explicit new decision.
 | D88 | Billing retention | `retention.v1` keeps data on past-due/canceled; entitlements fall back to free | Do not invent destructive deletion |
 | D89 | Customer predictions | Entitlement plus `PREDICTIONS_CUSTOMER_VISIBLE`; shadow rows never listed | Do not auto-publish Phase 15 forecasts |
 | D90 | Application nav | Hide plan/role-gated product surfaces from customer nav | Direct URLs stay locked, not leaked |
+| D91 | Content generation | Evidence package required; local/fixture generators; LLM fail-closed | No AI spam; human approval for first SEO |
 
 ## Void
 

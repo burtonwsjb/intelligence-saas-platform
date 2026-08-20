@@ -127,6 +127,13 @@
       "when": 17,
       "tag": "0018_phase18_dashboard",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 18,
+      "tag": "0019_phase19_content",
+      "breakpoints": true
     }
   ]
 }
