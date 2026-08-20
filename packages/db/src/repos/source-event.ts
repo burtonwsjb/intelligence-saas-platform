@@ -42,6 +42,12 @@ export async function insertSourceEvent(
     processingStatus: "received",
     createdByApiKeyId: input.createdByApiKeyId,
   });
+  const { recordCustomerEvent } = await import("../crm/events.js");
+  await recordCustomerEvent(scoped, {
+    organizationId: input.organizationId,
+    eventType: "first_event.ingested",
+    idempotencyKey: "first_event.ingested",
+  });
 }
 
 export async function findSourceEventByIdempotency(

@@ -188,7 +188,7 @@ Exit: a prediction can be scored after a fixture horizon.
 
 ## Phase 16 — Customer API / webhooks / usage metering
 
-Status: **complete** (see [PHASE_16.md](../PHASE_16.md)). Phase 17 has **not** started.
+Status: **complete** (see [PHASE_16.md](../PHASE_16.md)). Phase 17 is complete; see [PHASE_17.md](../PHASE_17.md).
 
 - Commercial domains (cards, printings, creators, indices, …)
 - Signed webhooks, delivery logs, SSRF defense
@@ -198,9 +198,11 @@ Exit: a test key reads an opportunity and receives a signed webhook.
 
 ## Phase 17 — CRM / email / billing completion
 
+Status: **complete** (see [PHASE_17.md](../PHASE_17.md)). Phase 18 has **not** started.
+
 - Full CRM lifecycle states and activity timeline
-- Transactional vs lifecycle mail
-- Entitlement polish
+- Transactional vs lifecycle mail (local/fixture providers; Resend fail-closed)
+- Entitlement polish, trial window, non-destructive past-due/canceled retention
 
 Exit: trial → active → at-risk paths exist in test.
 

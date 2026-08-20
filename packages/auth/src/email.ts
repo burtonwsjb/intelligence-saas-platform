@@ -1,3 +1,6 @@
+import { createEmailProvider, type EmailProvider } from "./mail/index.js";
+import { renderEmailTemplate } from "./mail/templates.js";
+
 export type VerificationMessage = {
   to: string;
   url: string;
@@ -25,45 +28,48 @@ export function createMemoryInbox(): {
 export function createEmailDelivery(options: {
   nodeEnv: string;
   mode?: string;
+  resendApiKey?: string;
+  provider?: EmailProvider;
 }): EmailDelivery {
   const mode =
-    options.mode ?? (options.nodeEnv === "production" ? "unset" : "file");
-
-  if (options.nodeEnv === "production" && mode !== "resend") {
-    return {
-      async send() {
-        throw new Error(
-          "Email delivery is not configured for production. Configure Resend in the email phase.",
-        );
-      },
-    };
-  }
+    options.mode ?? (options.nodeEnv === "production" ? "resend" : "file");
 
   if (mode === "memory") {
     throw new Error("Use createMemoryInbox() for AUTH_EMAIL_MODE=memory.");
   }
 
-  if (mode === "log") {
-    return {
-      async send(message) {
-        console.info("auth.verification_email", { to: message.to });
-      },
-    };
-  }
+  const provider =
+    options.provider ??
+    createEmailProvider({
+      nodeEnv: options.nodeEnv,
+      mode,
+      resendApiKey: options.resendApiKey,
+    });
 
-  if (mode === "file") {
-    return {
-      async send(message) {
+  return {
+    async send(message) {
+      if (options.nodeEnv === "production") {
+        const health = await provider.healthCheck();
+        if (!health.ok) {
+          throw new Error(
+            "Email delivery is not configured for production. Configure Resend in the email phase.",
+          );
+        }
+      }
+      const rendered = renderEmailTemplate("verify_email", { verifyUrl: message.url });
+      await provider.sendTemplate({
+        to: message.to,
+        templateKey: rendered.templateKey,
+        templateVersion: rendered.templateVersion,
+        subject: rendered.subject,
+        html: rendered.html,
+        text: rendered.text,
+      });
+      if (provider.name === "local") {
         const { mkdir, writeFile } = await import("node:fs/promises");
         await mkdir(".local", { recursive: true });
-        await writeFile(
-          ".local/verification-url.txt",
-          `${message.to}\n${message.url}\n`,
-          "utf8",
-        );
-      },
-    };
-  }
-
-  throw new Error(`Unsupported AUTH_EMAIL_MODE: ${mode}`);
+        await writeFile(".local/verification-url.txt", `${message.to}\n${message.url}\n`, "utf8");
+      }
+    },
+  };
 }

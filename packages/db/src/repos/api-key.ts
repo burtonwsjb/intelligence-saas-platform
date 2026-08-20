@@ -66,6 +66,12 @@ export async function insertApiKey(
     createdByUserId: input.createdByUserId,
     expiresAt: input.expiresAt,
   });
+  const { recordCustomerEvent } = await import("../crm/events.js");
+  await recordCustomerEvent(scoped, {
+    organizationId: input.organizationId,
+    userId: input.createdByUserId,
+    eventType: "api_key.created",
+  });
 }
 
 export async function listApiKeys(

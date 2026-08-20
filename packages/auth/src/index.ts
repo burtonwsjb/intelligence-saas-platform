@@ -13,6 +13,18 @@ export {
   type VerificationMessage,
 } from "./email.js";
 export {
+  EMAIL_TEMPLATE_KEYS,
+  EmailNotConfiguredError,
+  FixtureEmailProvider,
+  LocalEmailProvider,
+  ResendEmailProvider,
+  createEmailProvider,
+  escapeHtml,
+  renderEmailTemplate,
+  type EmailProvider,
+  type EmailTemplateKey,
+} from "./mail/index.js";
+export {
   ac,
   admin,
   analyst,

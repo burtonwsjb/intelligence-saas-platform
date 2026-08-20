@@ -41,6 +41,9 @@ API keys cannot select a different tenant. Machine requests set transaction-loca
 - Entity resolution history is platform-global and append-only; tenants cannot insert or rewrite attempts
 - Creator calls are platform-global and immutable; tenants cannot insert or rewrite calls
 - Creator authority slices and trust events are append-only platform facts
+- CRM operator notes, tags, and segments are not tenant-readable
+- In-app notifications, notification preferences, alert rules, and email delivery rows are tenant RLS-scoped
+- Email templates escape user-controlled content; delivery logs omit full bodies
 
 ## Decision integrity
 

@@ -17,3 +17,5 @@ export * from "./analytics.js";
 export * from "./scoring.js";
 export * from "./prediction.js";
 export * from "./webhook.js";
+export * from "./crm.js";
+export * from "./notification.js";

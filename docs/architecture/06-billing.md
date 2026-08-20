@@ -1,6 +1,6 @@
 # Billing and API entitlements
 
-Stripe **test-mode foundation is implemented** (see [PHASE_04.md](../PHASE_04.md)). Local development uses **billing simulation** (no Stripe network). Hosted Checkout/Portal are deferred. Prices are not finalized. Live Stripe is forbidden until a later explicit go-ahead.
+Stripe **test-mode foundation is implemented** (see [PHASE_04.md](../PHASE_04.md)). Phase 17 completed the application-side billing lifecycle: trial window, past-due/canceled retention, plan TBD pricing display, and a local Checkout/Portal adapter that still fails closed. Local development uses **billing simulation** (no Stripe network). Hosted Checkout/Portal remain deferred. Dollar prices are not finalized. Live Stripe is forbidden until a later explicit go-ahead.
 
 ## Model
 

@@ -1,6 +1,6 @@
 # Phase 15 — Prediction engine, calibration, backtesting, and accountability
 
-Status: **implemented**. Phase 16 is complete; see [PHASE_16.md](PHASE_16.md). Phase 17 has **not** started.
+Status: **implemented**. Phase 16 is complete; see [PHASE_16.md](PHASE_16.md). Phase 17 is complete; see [PHASE_17.md](PHASE_17.md). Phase 18 has **not** started.
 
 Versioned probabilistic forecasts are issued from frozen market features, then scored when the horizon elapses. The v1 model is a deterministic statistical baseline. Default visibility is **shadow**. No customer-facing prediction product. No external AI model.
 

@@ -37,6 +37,12 @@ export async function insertWebhookEndpoint(
       status: "active",
     })
     .returning();
+  const { recordCustomerEvent } = await import("../crm/events.js");
+  await recordCustomerEvent(scoped, {
+    organizationId: input.organizationId,
+    eventType: "webhook.created",
+    idempotencyKey: `webhook.created:${id}`,
+  });
   return { endpoint: row!, secret };
 }
 

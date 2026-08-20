@@ -149,7 +149,7 @@ Rollback / recovery:
 
 `log` mode exists only as an explicit local override and logs the recipient address, not the verification URL.
 
-Production without Resend **fails closed**. Phase 17 (CRM / email) must configure Resend and set a production-safe `AUTH_EMAIL_MODE` / provider. Do not weaken production checks for local convenience.
+Production without Resend **fails closed**. Phase 17 added `EmailProvider` (local/fixture now; Resend adapter fail-closed without a key). Do not weaken production checks for local convenience.
 
 ## Onboarding flow
 

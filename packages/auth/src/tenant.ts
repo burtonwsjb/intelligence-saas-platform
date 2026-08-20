@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import {
+  ensureCrmOrganization,
   ensureTenantBilling,
   tenant,
   withOrganizationContext,
@@ -8,7 +9,7 @@ import {
 
 export async function ensureTenantRow(
   db: Database,
-  input: { organizationId: string; createdByUserId: string },
+  input: { organizationId: string; createdByUserId: string; displayName?: string },
 ): Promise<void> {
   await withOrganizationContext(
     db,
@@ -30,6 +31,12 @@ export async function ensureTenantRow(
         });
       }
       await ensureTenantBilling(scoped, input.organizationId);
+      await ensureCrmOrganization(scoped, {
+        organizationId: input.organizationId,
+        userId: input.createdByUserId,
+        displayName: input.displayName ?? input.organizationId,
+        signupSource: "self_serve",
+      });
     },
   );
 }

@@ -1,8 +1,13 @@
 import { sql } from "drizzle-orm";
 import {
-  insertAuditEvent,
+  recordCustomerEvent,
+  suggestLifecycleStage,
+  parseLifecycleStage,
+  transitionLifecycle,
   upsertTenantBilling,
   upsertTenantEntitlementOverride,
+  getCrmOrganizationProfile,
+  insertAuditEvent,
   type Database,
 } from "@isp/db";
 import { isKnownPlan, type EntitlementKey } from "./entitlements.js";
@@ -12,6 +17,7 @@ import {
   type SimulatedSubscriptionFixture,
 } from "./fixtures.js";
 import { requireLocalBillingSimulation } from "./mode.js";
+import { pastDueGraceEndsAt, trialWindow } from "./policy.js";
 import {
   normalizeSubscriptionStatus,
   type SubscriptionStatus,
@@ -81,6 +87,10 @@ export async function simulateTenantSubscription(
     throw new InvalidSimulatedBillingError("Unknown plan key.");
   }
   const status = normalizeSubscriptionStatus(fixture.status);
+  const now = new Date();
+  const trial = status === "trialing" ? trialWindow(now, input.env) : { trialStartedAt: null, trialEndsAt: null };
+  const canceledAt = status === "canceled" ? now : null;
+  const pastDueSince = status === "past_due" ? now : null;
   await upsertTenantBilling(scoped, {
     organizationId: input.organizationId,
     stripeCustomerId: null,
@@ -89,6 +99,11 @@ export async function simulateTenantSubscription(
     status,
     currentPeriodEnd: null,
     cancelAtPeriodEnd: status === "canceled",
+    trialStartedAt: trial.trialStartedAt,
+    trialEndsAt: trial.trialEndsAt,
+    canceledAt,
+    pastDueSince,
+    graceEndsAt: pastDueSince ? pastDueGraceEndsAt(pastDueSince, input.env) : null,
   });
   await insertAuditEvent(scoped, {
     id: crypto.randomUUID(),
@@ -98,6 +113,33 @@ export async function simulateTenantSubscription(
     targetId: "local_simulation",
     metadata: { source: "local_simulation", status, planKey: fixture.planKey },
   });
+  const eventType =
+    status === "canceled"
+      ? "subscription.canceled"
+      : status === "past_due"
+        ? "payment_failed"
+        : status === "trialing" || status === "active"
+          ? "subscription.started"
+          : "subscription.changed";
+  await recordCustomerEvent(scoped, {
+    organizationId: input.organizationId,
+    eventType,
+    payload: { status, planKey: fixture.planKey, source: "local_simulation" },
+  });
+  const profile = await getCrmOrganizationProfile(scoped, input.organizationId);
+  if (profile) {
+    const suggested = suggestLifecycleStage({
+      current: parseLifecycleStage(profile.lifecycleStage),
+      billing: { status, planKey: fixture.planKey },
+      activation: { activated: Boolean(profile.activatedAt) },
+    });
+    await transitionLifecycle(scoped, {
+      organizationId: input.organizationId,
+      toStage: suggested,
+      reason: `billing.${status}`,
+      actorType: "billing",
+    });
+  }
   return { planKey: fixture.planKey, status };
 }
 

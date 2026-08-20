@@ -1,6 +1,6 @@
 # Phase 10 — Advanced entity resolution
 
-Status: **implemented**. Later phases through Phase 16 are complete; see [PHASE_16.md](PHASE_16.md). Phase 17 has **not** started.
+Status: **implemented**. Later phases through Phase 17 are complete; see [PHASE_17.md](PHASE_17.md). Phase 18 has **not** started.
 
 Mentions and provider references resolve to canonical entities—especially exact TCG printings—with persisted candidates, evidence, and confidence. The resolver is evidence-based and never forces a winner. Fixture catalog only. No image/OCR. No production TCC.
 

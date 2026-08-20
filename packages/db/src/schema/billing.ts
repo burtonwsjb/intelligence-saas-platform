@@ -46,6 +46,11 @@ export const tenantBilling = pgTable(
     status: text("status").notNull().default("none"),
     currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
     cancelAtPeriodEnd: boolean("cancel_at_period_end").notNull().default(false),
+    trialStartedAt: timestamp("trial_started_at", { withTimezone: true }),
+    trialEndsAt: timestamp("trial_ends_at", { withTimezone: true }),
+    canceledAt: timestamp("canceled_at", { withTimezone: true }),
+    pastDueSince: timestamp("past_due_since", { withTimezone: true }),
+    graceEndsAt: timestamp("grace_ends_at", { withTimezone: true }),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({

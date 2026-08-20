@@ -112,6 +112,7 @@ export function createAuth(options: {
             await ensureTenantRow(options.db, {
               organizationId: org.id,
               createdByUserId: owner.id,
+              displayName: org.name,
             });
           },
         },

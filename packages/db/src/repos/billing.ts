@@ -104,9 +104,24 @@ export async function upsertTenantBilling(
     status: string;
     currentPeriodEnd?: Date | null;
     cancelAtPeriodEnd?: boolean;
+    trialStartedAt?: Date | null;
+    trialEndsAt?: Date | null;
+    canceledAt?: Date | null;
+    pastDueSince?: Date | null;
+    graceEndsAt?: Date | null;
   },
 ): Promise<void> {
   await assertTenantContext(scoped);
+  const existing = await getTenantBilling(scoped, input.organizationId);
+  const trialStartedAt =
+    input.trialStartedAt !== undefined ? input.trialStartedAt : (existing?.trialStartedAt ?? null);
+  const trialEndsAt =
+    input.trialEndsAt !== undefined ? input.trialEndsAt : (existing?.trialEndsAt ?? null);
+  const canceledAt = input.canceledAt !== undefined ? input.canceledAt : (existing?.canceledAt ?? null);
+  const pastDueSince =
+    input.pastDueSince !== undefined ? input.pastDueSince : (existing?.pastDueSince ?? null);
+  const graceEndsAt =
+    input.graceEndsAt !== undefined ? input.graceEndsAt : (existing?.graceEndsAt ?? null);
   await scoped
     .insert(tenantBilling)
     .values({
@@ -117,6 +132,11 @@ export async function upsertTenantBilling(
       status: input.status,
       currentPeriodEnd: input.currentPeriodEnd,
       cancelAtPeriodEnd: input.cancelAtPeriodEnd ?? false,
+      trialStartedAt,
+      trialEndsAt,
+      canceledAt,
+      pastDueSince,
+      graceEndsAt,
       updatedAt: new Date(),
     })
     .onConflictDoUpdate({
@@ -128,6 +148,11 @@ export async function upsertTenantBilling(
         status: input.status,
         currentPeriodEnd: input.currentPeriodEnd,
         cancelAtPeriodEnd: input.cancelAtPeriodEnd ?? false,
+        trialStartedAt,
+        trialEndsAt,
+        canceledAt,
+        pastDueSince,
+        graceEndsAt,
         updatedAt: new Date(),
       },
     });

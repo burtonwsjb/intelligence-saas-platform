@@ -146,6 +146,12 @@ describe("migrations", () => {
     expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "webhook_delivery"/);
     expect(sql).toMatch(/ALTER TABLE "webhook_endpoint" ENABLE ROW LEVEL SECURITY/);
     expect(sql).toMatch(/ALTER TABLE "webhook_delivery" ENABLE ROW LEVEL SECURITY/);
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "crm_organization_profile"/);
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "crm_operator_note"/);
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "in_app_notification"/);
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "email_delivery"/);
+    expect(sql).toMatch(/app.install_operator_only_rls\('crm_operator_note'\)/);
+    expect(sql).toMatch(/app.install_tenant_owned_rls\('in_app_notification'/);
   });
 
   it("does not add TCG identity columns to generic kernel tables", async () => {
@@ -168,6 +174,7 @@ describe("committed env example", () => {
     expect(example).toMatch(/^QUEUE_PREFIX=$/m);
     expect(example).toMatch(/^TCC_API_BASE_URL=$/m);
     expect(example).toMatch(/^TCC_API_TOKEN=$/m);
+    expect(example).toMatch(/^TRIAL_DURATION_DAYS=$/m);
     expect(example).not.toMatch(/tcgcardcentral\.com/i);
     expect(example).not.toMatch(/postgresql:\/\/[^:]+:[^@]+@/);
   });

@@ -1,6 +1,6 @@
 # Phase 16 — Commercial API, webhooks, usage metering, and customer intelligence delivery
 
-Status: **implemented**. Phase 17 has **not** started.
+Status: **implemented**. Phase 18 has **not** started.
 
 The intelligence system is exposed through tenant-authenticated `/v1` contracts. No production infrastructure is deployed. Stripe is not called on the request path. Predictions remain shadow-mode and are not published on the customer endpoint.
 
@@ -47,6 +47,6 @@ Supported events (from actual system state; not `prediction.created` while shado
 
 `{ error: { code, message, request_id } }`. No SQL or stack traces.
 
-## Phase 17 boundary
+## Phase 18 boundary
 
-Do not implement CRM, email lifecycle, or billing Checkout/Portal completion.
+CRM, email lifecycle, and local billing completion landed in Phase 17. Do not implement the customer intelligence dashboard here.

@@ -71,6 +71,9 @@ import {
   tcgScoreSnapshot,
   tcgPrediction,
   webhookEndpoint,
+  crmOrganizationProfile,
+  crmOperatorNote,
+  inAppNotification,
 } from "./index.js";
 
 const passwords = {
@@ -1322,9 +1325,10 @@ describe("PostgreSQL RLS isolation", () => {
   });
 
   it("prevents tenants from hopping webhook endpoints", async () => {
+    const endpointId = `wh_${crypto.randomUUID()}`;
     await asUser(ids.userA, ids.orgA, (db) =>
       db.insert(webhookEndpoint).values({
-        id: "wh_a",
+        id: endpointId,
         organizationId: ids.orgA,
         url: "https://example.com/a",
         secretCiphertext: "cipher",
@@ -1333,16 +1337,51 @@ describe("PostgreSQL RLS isolation", () => {
       }),
     );
     const visible = await asUser(ids.userB, ids.orgB, (db) => db.select().from(webhookEndpoint));
-    expect(visible).toEqual([]);
+    expect(visible.map((row) => row.id)).not.toContain(endpointId);
     await expect(
       asUser(ids.userB, ids.orgB, (db) =>
         db.insert(webhookEndpoint).values({
-          id: "wh_hop",
+          id: `wh_hop_${crypto.randomUUID()}`,
           organizationId: ids.orgA,
           url: "https://example.com/hop",
           secretCiphertext: "cipher",
           secretHash: "hash",
           eventTypes: ["usage.warning"],
+        }),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("keeps CRM profiles tenant-scoped and operator notes invisible to tenants", async () => {
+    await asUser(ids.userA, ids.orgA, async (db) => {
+      await db.insert(crmOrganizationProfile).values({
+        organizationId: ids.orgA,
+        displayName: "A",
+        lifecycleStage: "onboarding",
+      });
+      await db.insert(inAppNotification).values({
+        id: `n_${crypto.randomUUID()}`,
+        organizationId: ids.orgA,
+        userId: ids.userA,
+        type: "account",
+        title: "Hello",
+        body: "Tenant notice",
+        severity: "info",
+      });
+    });
+    const hopProfile = await asUser(ids.userB, ids.orgB, (db) => db.select().from(crmOrganizationProfile));
+    expect(hopProfile.map((row) => row.organizationId)).not.toContain(ids.orgA);
+    const hopNotes = await asUser(ids.userB, ids.orgB, (db) => db.select().from(crmOperatorNote));
+    expect(hopNotes).toEqual([]);
+    const hopInbox = await asUser(ids.userB, ids.orgB, (db) => db.select().from(inAppNotification));
+    expect(hopInbox.every((row) => row.organizationId === ids.orgB)).toBe(true);
+    await expect(
+      asUser(ids.userA, ids.orgA, (db) =>
+        db.insert(crmOperatorNote).values({
+          id: `note_${crypto.randomUUID()}`,
+          organizationId: ids.orgA,
+          category: "support",
+          body: "Tenant must not write operator notes.",
         }),
       ),
     ).rejects.toThrow();

@@ -21,6 +21,8 @@ import {
   listWebhookEndpoints,
   processDueWebhookDeliveries,
   recordUsage,
+  recordCustomerEvent,
+  evaluateUsageWarnings,
   tcgCardConcept,
   tcgPrinting,
   tcgSet,
@@ -35,6 +37,7 @@ import {
   QuotaExceededError,
   assertQuota,
   assertTenantFeature,
+  evaluateQuota,
   tenantLimit,
 } from "@isp/billing";
 import { jsonError } from "./errors.js";
@@ -98,6 +101,15 @@ async function meter(
         quantity: 1,
         idempotencyKey: `${requestId}:api.reads`,
       });
+      const quota = await evaluateQuota(scoped, {
+        organizationId: machine.organizationId,
+        meterKey: "api.reads",
+      });
+      await evaluateUsageWarnings(scoped, {
+        organizationId: machine.organizationId,
+        meterKey: "api.reads",
+        limit: quota.limit,
+      });
       if (extraMeter) {
         await recordUsage(scoped, {
           id: crypto.randomUUID(),
@@ -107,6 +119,13 @@ async function meter(
           quantity: 1,
           idempotencyKey: `${requestId}:${extraMeter}`,
         });
+        if (extraMeter === "opportunity.read") {
+          await recordCustomerEvent(scoped, {
+            organizationId: machine.organizationId,
+            eventType: "first_opportunity.viewed",
+            idempotencyKey: "first_opportunity.viewed",
+          });
+        }
       }
     },
   );

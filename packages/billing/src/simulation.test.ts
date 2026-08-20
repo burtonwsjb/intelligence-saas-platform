@@ -194,6 +194,17 @@ describe("local simulation against a disposable database", () => {
 
         await simulateTenantSubscription(scoped, {
           organizationId: "org_sim",
+          fixture: "trialing",
+          env: { NODE_ENV: "test" },
+        });
+        const trial = await getTenantBilling(scoped, "org_sim");
+        expect(trial?.status).toBe("trialing");
+        expect(trial?.trialStartedAt).toBeTruthy();
+        expect(trial?.trialEndsAt).toBeTruthy();
+        expect(hasFeature(await loadEntitlement(scoped, "org_sim", "predictions"))).toBe(true);
+
+        await simulateTenantSubscription(scoped, {
+          organizationId: "org_sim",
           fixture: "past_due",
           env: { NODE_ENV: "test" },
         });

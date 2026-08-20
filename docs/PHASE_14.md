@@ -1,6 +1,6 @@
 # Phase 14 — Opportunity, risk, confidence, liquidity, and recommendations
 
-Status: **implemented**. Phase 15 is complete; see [PHASE_15.md](PHASE_15.md). Phase 16 is complete; see [PHASE_16.md](PHASE_16.md). Phase 17 has **not** started.
+Status: **implemented**. Phase 15 is complete; see [PHASE_15.md](PHASE_15.md). Phase 16 is complete; see [PHASE_16.md](PHASE_16.md). Phase 17 is complete; see [PHASE_17.md](PHASE_17.md). Phase 18 has **not** started.
 
 This is the first phase that may issue a structured recommendation. Four scores remain separate. Weights are centralized, versioned, and marked **uncalibrated**. Hype cannot create `strong_buy`. Weak evidence is `insufficient_data`.
 

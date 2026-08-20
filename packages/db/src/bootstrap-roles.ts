@@ -128,6 +128,21 @@ export async function bootstrapRoles(
       "tcg_backtest_run",
       "webhook_endpoint",
       "webhook_delivery",
+      "crm_organization_profile",
+      "crm_user_profile",
+      "crm_lifecycle_transition",
+      "crm_customer_event",
+      "crm_operator_note",
+      "crm_tag",
+      "crm_organization_tag",
+      "crm_segment_definition",
+      "crm_segment_membership",
+      "crm_churn_reason",
+      "notification_preference",
+      "email_delivery",
+      "in_app_notification",
+      "alert_rule",
+      "usage_warning",
     ];
     for (const table of tables) {
       await sql.unsafe(`ALTER TABLE "${table}" OWNER TO ${DB_ROLES.migrate}`);
@@ -162,6 +177,8 @@ export async function bootstrapRoles(
       ALTER FUNCTION app.require_system_resolution_write() OWNER TO ${DB_ROLES.migrate};
       ALTER FUNCTION app.forbid_creator_call_mutate() OWNER TO ${DB_ROLES.migrate};
       ALTER FUNCTION app.require_system_creator_write() OWNER TO ${DB_ROLES.migrate};
+      ALTER FUNCTION app.install_tenant_owned_rls(text, boolean) OWNER TO ${DB_ROLES.migrate};
+      ALTER FUNCTION app.install_operator_only_rls(text) OWNER TO ${DB_ROLES.migrate};
     `);
 
     await sql.unsafe(`
@@ -169,7 +186,10 @@ export async function bootstrapRoles(
         "user", "session", "account", "verification", "organization", "member", "invitation",
         "tenant", "tenant_resource", "tenant_billing", "tenant_entitlement_override",
         "api_key", "usage_event", "usage_month", "source_event", "outbox_job", "entity",
-        "webhook_endpoint", "webhook_delivery"
+        "webhook_endpoint", "webhook_delivery",
+        "crm_organization_profile", "crm_user_profile", "crm_lifecycle_transition",
+        "crm_customer_event", "crm_churn_reason", "notification_preference",
+        "email_delivery", "in_app_notification", "alert_rule", "usage_warning"
       TO ${DB_ROLES.user}, ${DB_ROLES.worker};
       GRANT SELECT, INSERT ON TABLE
         "entity_identifier", "observation", "observation_metric", "evidence_reference",
@@ -260,6 +280,20 @@ export async function bootstrapRoles(
       REVOKE DELETE ON TABLE "tcg_market_ingest", "tcg_index_membership" FROM ${DB_ROLES.worker};
       GRANT SELECT, INSERT ON TABLE "audit_event" TO ${DB_ROLES.user}, ${DB_ROLES.worker};
       REVOKE UPDATE, DELETE ON TABLE "audit_event" FROM ${DB_ROLES.user}, ${DB_ROLES.worker};
+      GRANT SELECT ON TABLE
+        "crm_operator_note", "crm_tag", "crm_organization_tag",
+        "crm_segment_definition", "crm_segment_membership"
+      TO ${DB_ROLES.user}, ${DB_ROLES.worker};
+      REVOKE INSERT, UPDATE, DELETE ON TABLE
+        "crm_operator_note", "crm_tag", "crm_organization_tag",
+        "crm_segment_definition", "crm_segment_membership"
+      FROM ${DB_ROLES.user}, ${DB_ROLES.worker};
+      GRANT DELETE ON TABLE "alert_rule" TO ${DB_ROLES.user}, ${DB_ROLES.worker};
+      REVOKE DELETE ON TABLE
+        "crm_organization_profile", "crm_user_profile", "crm_lifecycle_transition",
+        "crm_customer_event", "crm_churn_reason", "notification_preference",
+        "email_delivery", "in_app_notification", "usage_warning"
+      FROM ${DB_ROLES.user}, ${DB_ROLES.worker};
       REVOKE SELECT, INSERT, UPDATE, DELETE ON TABLE "stripe_event" FROM ${DB_ROLES.user}, ${DB_ROLES.worker};
       GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ${DB_ROLES.migrate}, ${DB_ROLES.admin};
       GRANT EXECUTE ON FUNCTION app.current_organization_id() TO ${DB_ROLES.user}, ${DB_ROLES.worker}, ${DB_ROLES.migrate}, ${DB_ROLES.admin};
