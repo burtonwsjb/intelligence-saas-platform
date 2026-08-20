@@ -1,6 +1,6 @@
 # Phase 16 — Commercial API, webhooks, usage metering, and customer intelligence delivery
 
-Status: **implemented**. Phase 18 has **not** started.
+Status: **implemented**. Phase 18 is complete; see [PHASE_18.md](PHASE_18.md). Phase 19 has **not** started.
 
 The intelligence system is exposed through tenant-authenticated `/v1` contracts. No production infrastructure is deployed. Stripe is not called on the request path. Predictions remain shadow-mode and are not published on the customer endpoint.
 

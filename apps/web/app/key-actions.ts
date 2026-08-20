@@ -11,6 +11,7 @@ import {
   requireSession,
   requireUsableTenant,
   revokeTenantApiKey,
+  rotateTenantApiKey,
 } from "@isp/auth";
 import { and, eq } from "drizzle-orm";
 
@@ -36,6 +37,8 @@ export async function createApiKeyAction(formData: FormData) {
   const { session, organizationId, role } = await requireKeyActor();
   const name = String(formData.get("name") ?? "");
   const scopes = formData.getAll("scopes");
+  const expiresRaw = String(formData.get("expiresAt") ?? "").trim();
+  const expiresAt = expiresRaw ? new Date(expiresRaw) : null;
   const created = await withOrganizationContext(
     getDb(),
     { organizationId, userId: session.user.id },
@@ -47,6 +50,7 @@ export async function createApiKeyAction(formData: FormData) {
         name,
         scopes,
         pepper: requireApiKeyPepper(),
+        expiresAt: expiresAt && Number.isFinite(expiresAt.getTime()) ? expiresAt : null,
       }),
   );
   redirect(`/app/keys?created=${encodeURIComponent(created.fullKey)}`);
@@ -67,4 +71,29 @@ export async function revokeApiKeyAction(formData: FormData) {
       }),
   );
   redirect("/app/keys");
+}
+
+export async function rotateApiKeyAction(formData: FormData) {
+  const { session, organizationId, role } = await requireKeyActor();
+  const apiKeyId = String(formData.get("apiKeyId") ?? "");
+  const name = String(formData.get("name") ?? "");
+  const scopes = String(formData.get("scopes") ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const created = await withOrganizationContext(
+    getDb(),
+    { organizationId, userId: session.user.id },
+    (scoped) =>
+      rotateTenantApiKey(scoped, {
+        organizationId,
+        actorUserId: session.user.id,
+        actorRole: role,
+        apiKeyId,
+        name,
+        scopes,
+        pepper: requireApiKeyPepper(),
+      }),
+  );
+  redirect(`/app/keys?created=${encodeURIComponent(created.fullKey)}`);
 }

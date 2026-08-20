@@ -9,9 +9,9 @@ TCG Card Central is only a future external integration (optional reference-data 
 
 ## Current phase
 
-**Phase 17 complete locally.** CRM lifecycle, local email providers, in-app notifications, usage warnings, and billing trial/retention foundations. Cloud Redis and Neon are not provisioned. Stripe live mode is forbidden. See [docs/PHASE_17.md](docs/PHASE_17.md).
+**Phase 18 complete locally.** Customer intelligence dashboard, opportunity/printing identity, gated predictions, alerts, API key rotation, webhooks, usage, team, and settings. Cloud Redis and Neon are not provisioned. Stripe live mode is forbidden. See [docs/PHASE_18.md](docs/PHASE_18.md).
 
-Do not begin Phase 18 until explicitly instructed.
+Do not begin Phase 19 until explicitly instructed.
 
 ## Local commands
 
@@ -51,7 +51,7 @@ TypeScript, pnpm/Turborepo, Next.js, Hono, PostgreSQL/Neon, Drizzle, Better Auth
 - [Phase 14](docs/PHASE_14.md)
 - [Phase 15](docs/PHASE_15.md)
 - [Phase 16](docs/PHASE_16.md)
-- [Phase 17](docs/PHASE_17.md)
+- [Phase 18](docs/PHASE_18.md)
 - [CI](docs/CI.md)
 - [Overview](docs/architecture/00-overview.md)
 - [Roadmap (phases 00–23)](docs/architecture/11-phase-roadmap.md)
@@ -83,4 +83,5 @@ TypeScript, pnpm/Turborepo, Next.js, Hono, PostgreSQL/Neon, Drizzle, Better Auth
 | Prediction engine | Phase 15 complete locally; shadow statistical baseline; immutable outcomes |
 | Commercial API / webhooks | Phase 16 complete locally; scoped `/v1` contracts; SSRF-safe webhooks; no deploy |
 | CRM / email / billing lifecycle | Phase 17 complete locally; local/fixture email; TBD prices; no Resend/Stripe live |
+| Customer intelligence dashboard | Phase 18 complete locally; shadow predictions remain hidden; no platform admin UI |
 | Cloud / Stripe live / TCC production | Not created, not connected, not modified |

@@ -91,6 +91,8 @@ Change only with an explicit new decision.
 | D86 | Activation rules | Versioned `activation.v1`: org created plus any one product-use signal | Do not hard-code a single activation event |
 | D87 | Operator CRM | Notes/tags/segments use deny-all tenant RLS; `app_admin` BYPASSRLS | Tenants must not see operator notes |
 | D88 | Billing retention | `retention.v1` keeps data on past-due/canceled; entitlements fall back to free | Do not invent destructive deletion |
+| D89 | Customer predictions | Entitlement plus `PREDICTIONS_CUSTOMER_VISIBLE`; shadow rows never listed | Do not auto-publish Phase 15 forecasts |
+| D90 | Application nav | Hide plan/role-gated product surfaces from customer nav | Direct URLs stay locked, not leaked |
 
 ## Void
 

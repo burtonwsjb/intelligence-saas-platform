@@ -1354,11 +1354,14 @@ describe("PostgreSQL RLS isolation", () => {
 
   it("keeps CRM profiles tenant-scoped and operator notes invisible to tenants", async () => {
     await asUser(ids.userA, ids.orgA, async (db) => {
-      await db.insert(crmOrganizationProfile).values({
-        organizationId: ids.orgA,
-        displayName: "A",
-        lifecycleStage: "onboarding",
-      });
+      await db
+        .insert(crmOrganizationProfile)
+        .values({
+          organizationId: ids.orgA,
+          displayName: "A",
+          lifecycleStage: "onboarding",
+        })
+        .onConflictDoNothing();
       await db.insert(inAppNotification).values({
         id: `n_${crypto.randomUUID()}`,
         organizationId: ids.orgA,

@@ -27,5 +27,5 @@ export {
   listAlertRules,
   setAlertRuleEnabled,
 } from "./notifications/alerts.js";
-export { evaluateUsageWarnings } from "./notifications/usage-warning.js";
+export { evaluateUsageWarnings, listUsageWarnings } from "./notifications/usage-warning.js";
 export { insertEmailDelivery, listEmailDeliveries } from "./notifications/delivery.js";

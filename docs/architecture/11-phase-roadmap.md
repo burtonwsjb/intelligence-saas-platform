@@ -198,7 +198,7 @@ Exit: a test key reads an opportunity and receives a signed webhook.
 
 ## Phase 17 — CRM / email / billing completion
 
-Status: **complete** (see [PHASE_17.md](../PHASE_17.md)). Phase 18 has **not** started.
+Status: **complete** (see [PHASE_17.md](../PHASE_17.md)). Phase 18 is complete; see [PHASE_18.md](../PHASE_18.md).
 
 - Full CRM lifecycle states and activity timeline
 - Transactional vs lifecycle mail (local/fixture providers; Resend fail-closed)
@@ -207,6 +207,8 @@ Status: **complete** (see [PHASE_17.md](../PHASE_17.md)). Phase 18 has **not** s
 Exit: trial → active → at-risk paths exist in test.
 
 ## Phase 18 — TCG customer dashboard
+
+Status: **complete** (see [PHASE_18.md](../PHASE_18.md)). Phase 19 has **not** started.
 
 - Printings, history, creators, indices, opportunities, predictions
 - Explainability UI

@@ -288,7 +288,7 @@ export async function bootstrapRoles(
         "crm_operator_note", "crm_tag", "crm_organization_tag",
         "crm_segment_definition", "crm_segment_membership"
       FROM ${DB_ROLES.user}, ${DB_ROLES.worker};
-      GRANT DELETE ON TABLE "alert_rule" TO ${DB_ROLES.user}, ${DB_ROLES.worker};
+      GRANT DELETE ON TABLE "alert_rule", "webhook_endpoint", "webhook_delivery" TO ${DB_ROLES.user}, ${DB_ROLES.worker};
       REVOKE DELETE ON TABLE
         "crm_organization_profile", "crm_user_profile", "crm_lifecycle_transition",
         "crm_customer_event", "crm_churn_reason", "notification_preference",

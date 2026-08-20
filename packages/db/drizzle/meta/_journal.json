@@ -120,6 +120,13 @@
       "when": 16,
       "tag": "0017_phase17_crm",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 17,
+      "tag": "0018_phase18_dashboard",
+      "breakpoints": true
     }
   ]
 }

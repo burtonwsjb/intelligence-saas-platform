@@ -1,9 +1,9 @@
 import { requirePageOrganization } from "@/lib/session";
 import { getDb } from "@/lib/auth";
 import { listApiKeys, member, withOrganizationContext } from "@isp/db";
-import { hasPermission } from "@isp/auth";
+import { ISSUABLE_SCOPES, hasPermission } from "@isp/auth";
 import { and, eq } from "drizzle-orm";
-import { createApiKeyAction, revokeApiKeyAction } from "@/app/key-actions";
+import { createApiKeyAction, revokeApiKeyAction, rotateApiKeyAction } from "@/app/key-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +30,8 @@ export default async function ApiKeysPage({
     <>
       <h1>API keys</h1>
       <p className="muted">
-        Keys are tenant-bound test credentials. The full secret is shown once.
+        Tenant-bound test credentials. The full secret is shown once on create or rotate. Prefix, last used, and
+        expiration remain visible.
       </p>
       {query.created ? (
         <p>
@@ -44,29 +45,45 @@ export default async function ApiKeysPage({
             <input name="name" required maxLength={80} />
           </label>
           <label>
-            <input type="checkbox" name="scopes" value="decisions:read" defaultChecked />
-            decisions:read
+            Expires (optional)
+            <input name="expiresAt" type="datetime-local" />
           </label>
-          <label>
-            <input type="checkbox" name="scopes" value="ingest:write" />
-            ingest:write
-          </label>
+          {ISSUABLE_SCOPES.map((scope) => (
+            <label key={scope}>
+              <input type="checkbox" name="scopes" value={scope} defaultChecked={scope === "decisions:read"} />
+              {scope}
+            </label>
+          ))}
           <button type="submit">Create key</button>
         </form>
       ) : (
-        <p className="muted">Your role cannot create or revoke API keys.</p>
+        <p className="muted">Your role cannot create, rotate, or revoke API keys.</p>
       )}
       <ul>
         {keys.map((key) => (
           <li key={key.id}>
-            {key.name} — {key.prefix} — {key.status}
+            {key.name} — {key.prefix} — {key.status} — scopes {key.scopes}
+            {" — last used "}
+            {key.lastUsedAt ? key.lastUsedAt.toISOString() : "never"}
+            {" — expires "}
+            {key.expiresAt ? key.expiresAt.toISOString() : "none"}
             {canManage && key.status === "active" ? (
-              <form action={revokeApiKeyAction}>
-                <input type="hidden" name="apiKeyId" value={key.id} />
-                <button className="link-button" type="submit">
-                  Revoke
-                </button>
-              </form>
+              <>
+                <form action={rotateApiKeyAction}>
+                  <input type="hidden" name="apiKeyId" value={key.id} />
+                  <input type="hidden" name="name" value={`${key.name} rotated`} />
+                  <input type="hidden" name="scopes" value={key.scopes} />
+                  <button className="link-button" type="submit">
+                    Rotate
+                  </button>
+                </form>
+                <form action={revokeApiKeyAction}>
+                  <input type="hidden" name="apiKeyId" value={key.id} />
+                  <button className="link-button" type="submit">
+                    Revoke
+                  </button>
+                </form>
+              </>
             ) : null}
           </li>
         ))}

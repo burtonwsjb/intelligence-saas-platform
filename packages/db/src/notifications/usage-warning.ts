@@ -6,6 +6,11 @@ import { usageWarning } from "../schema/notification.js";
 import { USAGE_WARNING_THRESHOLDS } from "./catalog.js";
 import { createInAppNotification } from "./inbox.js";
 
+export async function listUsageWarnings(scoped: Database, organizationId: string) {
+  await assertTenantContext(scoped);
+  return scoped.select().from(usageWarning).where(eq(usageWarning.organizationId, organizationId));
+}
+
 export async function evaluateUsageWarnings(
   scoped: Database,
   input: {

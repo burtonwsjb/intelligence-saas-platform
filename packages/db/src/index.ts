@@ -471,6 +471,7 @@ export {
   listEmailDeliveries,
   listInAppNotifications,
   listNotificationPreferences,
+  listUsageWarnings,
   markAllNotificationsRead,
   markNotificationRead,
   seedNotificationPreferences,
@@ -494,10 +495,43 @@ export {
 } from "./webhooks/secret.js";
 export {
   disableWebhookEndpoint,
+  deleteWebhookEndpoint,
   enqueueWebhookDelivery,
   getWebhookEndpoint,
   insertWebhookEndpoint,
   listWebhookDeliveries,
   listWebhookEndpoints,
+  rotateWebhookSecret,
 } from "./webhooks/persist.js";
+export {
+  customerPredictionsEnabled,
+  PREDICTIONS_CUSTOMER_FLAG,
+} from "./dashboard/flags.js";
+export {
+  countCatalog,
+  formatPrintingIdentity,
+  getIndexWorkspace,
+  getPrintingIdentity,
+  getPrintingWorkspace,
+  listIndexOverview,
+  listLatestOpportunities,
+  listPrintingCatalog,
+  listRecentCreatorCalls,
+  publishedPredictionsForCustomer,
+  type OpportunityFilter,
+  type PrintingIdentity,
+} from "./dashboard/queries.js";
+export {
+  isPredictionsNavVisible,
+  visibleAppNav,
+  type AppNavAccess,
+  type AppNavItem,
+} from "./dashboard/nav.js";
+export { sparklinePath } from "./dashboard/sparkline.js";
+export {
+  INVITABLE_ROLES,
+  assertCanManageTeam,
+  assertNotLastOwner,
+  isInvitableRole,
+} from "./dashboard/team.js";
 export * from "./schema/index.js";

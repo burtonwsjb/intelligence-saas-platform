@@ -105,6 +105,45 @@ export async function enqueueWebhookDelivery(
   return row!;
 }
 
+export async function deleteWebhookEndpoint(
+  scoped: Database,
+  input: { organizationId: string; endpointId: string },
+) {
+  await scoped
+    .delete(webhookDelivery)
+    .where(
+      and(
+        eq(webhookDelivery.endpointId, input.endpointId),
+        eq(webhookDelivery.organizationId, input.organizationId),
+      ),
+    );
+  const deleted = await scoped
+    .delete(webhookEndpoint)
+    .where(and(eq(webhookEndpoint.id, input.endpointId), eq(webhookEndpoint.organizationId, input.organizationId)))
+    .returning({ id: webhookEndpoint.id });
+  return deleted.length > 0;
+}
+
+export async function rotateWebhookSecret(
+  scoped: Database,
+  input: { organizationId: string; endpointId: string; pepper: string },
+) {
+  const existing = await getWebhookEndpoint(scoped, input);
+  if (!existing) {
+    return null;
+  }
+  const secret = generateWebhookSecret();
+  await scoped
+    .update(webhookEndpoint)
+    .set({
+      secretCiphertext: encryptWebhookSecret(secret, input.pepper),
+      secretHash: hashWebhookSecret(secret, input.pepper),
+      updatedAt: new Date(),
+    })
+    .where(and(eq(webhookEndpoint.id, input.endpointId), eq(webhookEndpoint.organizationId, input.organizationId)));
+  return secret;
+}
+
 export async function listWebhookDeliveries(scoped: Database, organizationId: string) {
   return scoped.select().from(webhookDelivery).where(eq(webhookDelivery.organizationId, organizationId));
 }
