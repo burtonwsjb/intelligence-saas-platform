@@ -50,6 +50,8 @@ export function visibleAppNav(access: AppNavAccess): AppNavItem[] {
   }
   items.push(
     { href: "/app/usage", label: "Usage", key: "usage" },
+    { href: "/app/feedback", label: "Feedback", key: "feedback" },
+    { href: "/app/onboarding-checklist", label: "Onboarding", key: "onboarding" },
     { href: "/app/team", label: "Team", key: "team" },
     { href: "/app/billing", label: "Billing", key: "billing" },
     { href: "/app/settings", label: "Settings", key: "settings" },

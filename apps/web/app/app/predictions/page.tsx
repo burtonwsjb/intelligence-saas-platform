@@ -4,6 +4,7 @@ import { getDb } from "@/lib/auth";
 import { publishedPredictionsForCustomer, tcgPrediction } from "@isp/db";
 import { desc } from "drizzle-orm";
 import Link from "next/link";
+import { IntelligenceDisclaimer } from "@/components/IntelligenceDisclaimer";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +27,7 @@ export default async function PredictionsPage() {
   return (
     <>
       <h1>Predictions</h1>
+      <IntelligenceDisclaimer />
       <p className="muted">Only visibility=published forecasts are listed. Shadow rows stay internal.</p>
       {visible.length === 0 ? (
         <EmptyState

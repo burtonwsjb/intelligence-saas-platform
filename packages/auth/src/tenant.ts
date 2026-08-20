@@ -3,6 +3,7 @@ import {
   ensureCrmOrganization,
   ensureTenantBilling,
   tenant,
+  upsertBetaOrganization,
   withOrganizationContext,
   type Database,
 } from "@isp/db";
@@ -36,6 +37,11 @@ export async function ensureTenantRow(
         userId: input.createdByUserId,
         displayName: input.displayName ?? input.organizationId,
         signupSource: "self_serve",
+      });
+      await upsertBetaOrganization(scoped, {
+        organizationId: input.organizationId,
+        cohort: "internal",
+        onboarding: { organization_created: true },
       });
     },
   );

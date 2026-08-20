@@ -8,6 +8,8 @@ export const BREAK_GLASS_ACTIONS = [
   "support.case",
   "predictions.preview",
   "health.view",
+  "beta.invite",
+  "feature.flag",
 ] as const;
 
 export type BreakGlassAction = (typeof BREAK_GLASS_ACTIONS)[number];

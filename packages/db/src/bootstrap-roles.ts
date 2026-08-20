@@ -163,6 +163,12 @@ export async function bootstrapRoles(
       "platform_admins",
       "platform_break_glass_audit",
       "platform_support_case",
+      "platform_feature_flags",
+      "beta_invitation",
+      "beta_organization",
+      "product_feedback",
+      "bug_report",
+      "product_event",
     ];
     for (const table of tables) {
       await sql.unsafe(`ALTER TABLE "${table}" OWNER TO ${DB_ROLES.migrate}`);
@@ -200,6 +206,7 @@ export async function bootstrapRoles(
       ALTER FUNCTION app.install_tenant_owned_rls(text, boolean) OWNER TO ${DB_ROLES.migrate};
       ALTER FUNCTION app.install_operator_only_rls(text) OWNER TO ${DB_ROLES.migrate};
       ALTER FUNCTION app.forbid_platform_audit_mutate() OWNER TO ${DB_ROLES.migrate};
+      ALTER FUNCTION app.consume_beta_invite(text, text) OWNER TO ${DB_ROLES.migrate};
     `);
 
     await sql.unsafe(`
@@ -336,6 +343,13 @@ export async function bootstrapRoles(
       REVOKE INSERT, UPDATE, DELETE ON TABLE
         "platform_break_glass_audit", "platform_support_case"
       FROM ${DB_ROLES.user}, ${DB_ROLES.worker};
+      GRANT SELECT ON TABLE "platform_feature_flags" TO ${DB_ROLES.user}, ${DB_ROLES.worker};
+      REVOKE INSERT, UPDATE, DELETE ON TABLE "platform_feature_flags" FROM ${DB_ROLES.user}, ${DB_ROLES.worker};
+      GRANT SELECT ON TABLE "beta_invitation" TO ${DB_ROLES.user}, ${DB_ROLES.worker};
+      REVOKE INSERT, UPDATE, DELETE ON TABLE "beta_invitation" FROM ${DB_ROLES.user}, ${DB_ROLES.worker};
+      GRANT SELECT, INSERT, UPDATE ON TABLE "beta_organization", "product_feedback", "bug_report" TO ${DB_ROLES.user}, ${DB_ROLES.worker};
+      GRANT SELECT, INSERT ON TABLE "product_event" TO ${DB_ROLES.user}, ${DB_ROLES.worker};
+      REVOKE UPDATE, DELETE ON TABLE "product_event" FROM ${DB_ROLES.user}, ${DB_ROLES.worker};
       GRANT DELETE ON TABLE "alert_rule", "webhook_endpoint", "webhook_delivery" TO ${DB_ROLES.user}, ${DB_ROLES.worker};
       REVOKE DELETE ON TABLE
         "crm_organization_profile", "crm_user_profile", "crm_lifecycle_transition",
@@ -357,6 +371,7 @@ export async function bootstrapRoles(
       GRANT EXECUTE ON FUNCTION app.claim_stripe_event(text, text, text, text) TO ${DB_ROLES.user}, ${DB_ROLES.worker};
       GRANT EXECUTE ON FUNCTION app.lookup_organization_by_stripe_customer(text) TO ${DB_ROLES.user}, ${DB_ROLES.worker};
       GRANT EXECUTE ON FUNCTION app.list_pending_outbox(integer) TO ${DB_ROLES.user}, ${DB_ROLES.worker};
+      GRANT EXECUTE ON FUNCTION app.consume_beta_invite(text, text) TO ${DB_ROLES.user}, ${DB_ROLES.worker}, ${DB_ROLES.migrate}, ${DB_ROLES.admin};
     `);
   } finally {
     await sql.end({ timeout: 5 });

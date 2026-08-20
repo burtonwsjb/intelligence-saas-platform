@@ -7,6 +7,7 @@ import {
 import {
   assertFeature,
   assertWithinLimit,
+  applyBetaSafetyCaps,
   getLimit,
   hasFeature,
   resolveEntitlement,
@@ -24,25 +25,27 @@ export async function loadEntitlement(
     listPlanCatalog(scoped),
     listTenantEntitlementOverrides(scoped, organizationId),
   ]);
-  return resolveEntitlement({
-    planKey: billing?.planKey ?? "free",
-    status: billing?.status ?? "none",
-    catalog: catalog.entitlements.map((row) => ({
-      planKey: row.planKey,
-      entitlementKey: row.entitlementKey,
-      valueKind: row.valueKind,
-      enabled: row.enabled,
-      limitValue: row.limitValue,
-    })),
-    overrides: overrides.map((row) => ({
+  return applyBetaSafetyCaps(
+    resolveEntitlement({
       planKey: billing?.planKey ?? "free",
-      entitlementKey: row.entitlementKey,
-      valueKind: row.valueKind,
-      enabled: row.enabled,
-      limitValue: row.limitValue,
-    })),
-    key,
-  });
+      status: billing?.status ?? "none",
+      catalog: catalog.entitlements.map((row) => ({
+        planKey: row.planKey,
+        entitlementKey: row.entitlementKey,
+        valueKind: row.valueKind,
+        enabled: row.enabled,
+        limitValue: row.limitValue,
+      })),
+      overrides: overrides.map((row) => ({
+        planKey: billing?.planKey ?? "free",
+        entitlementKey: row.entitlementKey,
+        valueKind: row.valueKind,
+        enabled: row.enabled,
+        limitValue: row.limitValue,
+      })),
+      key,
+    }),
+  );
 }
 
 export async function tenantHasFeature(

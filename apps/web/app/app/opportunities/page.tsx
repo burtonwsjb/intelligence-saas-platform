@@ -1,4 +1,5 @@
 import { EmptyState } from "@/components/EmptyState";
+import { IntelligenceDisclaimer } from "@/components/IntelligenceDisclaimer";
 import { IdentityLine } from "@/components/IdentityLine";
 import { loadAppAccess } from "@/lib/app-access";
 import { getDb } from "@/lib/auth";
@@ -39,6 +40,7 @@ export default async function OpportunitiesPage({
   return (
     <>
       <h1>Opportunities</h1>
+      <IntelligenceDisclaimer />
       <p className="muted">
         Opportunity, risk, confidence, and liquidity are separate scores. Language and variant are part of identity.
       </p>

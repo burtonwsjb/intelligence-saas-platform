@@ -5,7 +5,15 @@ import { authClient } from "@/lib/auth-client";
 
 type Mode = "login" | "signup";
 
-export function AuthForm({ mode }: { mode: Mode }) {
+export function AuthForm({
+  mode,
+  inviteToken,
+  inviteOnly,
+}: {
+  mode: Mode;
+  inviteToken?: string;
+  inviteOnly?: boolean;
+}) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -17,6 +25,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
     const email = String(form.get("email") ?? "");
     const password = String(form.get("password") ?? "");
     const name = String(form.get("name") ?? "Member");
+    const invite = String(form.get("inviteToken") ?? inviteToken ?? "");
 
     try {
       if (mode === "signup") {
@@ -25,6 +34,13 @@ export function AuthForm({ mode }: { mode: Mode }) {
           password,
           name,
           callbackURL: "/onboarding",
+          fetchOptions: {
+            headers: invite
+              ? {
+                  "x-beta-invite": invite,
+                }
+              : undefined,
+          },
         });
         if (result.error) {
           setError(result.error.message ?? "Unable to sign up.");
@@ -53,6 +69,12 @@ export function AuthForm({ mode }: { mode: Mode }) {
 
   return (
     <form className="auth-form" onSubmit={onSubmit}>
+      {mode === "signup" && inviteOnly ? (
+        <label>
+          Invite token
+          <input name="inviteToken" type="text" required defaultValue={inviteToken} autoComplete="off" />
+        </label>
+      ) : null}
       {mode === "signup" ? (
         <label>
           Name

@@ -4,6 +4,7 @@ import {
   QuotaExceededError,
   assertFeature,
   assertWithinLimit,
+  applyBetaSafetyCaps,
   effectivePlanKey,
   getLimit,
   hasFeature,
@@ -101,5 +102,24 @@ describe("entitlement resolver", () => {
         1,
       ),
     ).toThrow(QuotaExceededError);
+  });
+
+  it("applies conservative beta caps without raising limits", () => {
+    const capped = applyBetaSafetyCaps(
+      {
+        key: "api_keys",
+        kind: "limit",
+        enabled: true,
+        limit: 50,
+      },
+      { BETA_SAFETY_LIMITS: "true" },
+    );
+    expect(capped.limit).toBe(3);
+    expect(
+      applyBetaSafetyCaps(
+        { key: "content_generation", kind: "boolean", enabled: true, limit: null },
+        { ISP_ENV: "staging" },
+      ).enabled,
+    ).toBe(false);
   });
 });

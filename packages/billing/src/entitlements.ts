@@ -89,6 +89,32 @@ export function hasFeature(value: EntitlementValue): boolean {
   return value.enabled;
 }
 
+export function applyBetaSafetyCaps(
+  value: EntitlementValue,
+  env: NodeJS.ProcessEnv = process.env,
+): EntitlementValue {
+  const staging = env.ISP_ENV === "staging" || env.BETA_SAFETY_LIMITS?.trim() === "true";
+  if (!staging) {
+    return value;
+  }
+  if (value.key === "api_requests_per_month" && value.kind === "limit") {
+    return { ...value, limit: Math.min(value.limit ?? 10_000, 10_000) };
+  }
+  if (value.key === "api_keys" && value.kind === "limit") {
+    return { ...value, limit: Math.min(value.limit ?? 3, 3) };
+  }
+  if (value.key === "team_members" && value.kind === "limit") {
+    return { ...value, limit: Math.min(value.limit ?? 5, 5) };
+  }
+  if (value.key === "webhooks" && value.kind === "limit") {
+    return { ...value, limit: Math.min(value.limit ?? 2, 2) };
+  }
+  if (value.key === "content_generation") {
+    return { ...value, enabled: false, limit: 0 };
+  }
+  return value;
+}
+
 export function getLimit(value: EntitlementValue): number {
   if (!value.enabled) {
     return 0;

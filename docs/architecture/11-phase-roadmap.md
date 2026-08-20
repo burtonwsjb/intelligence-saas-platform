@@ -243,10 +243,12 @@ Exit: staging is independently hosted (not on TCC infra). **Not met.**
 
 ## Phase 22 — Controlled beta
 
-- Invited TCG tenants
-- Stripe test or limited live per explicit go-ahead
+Status: **readiness prepared, blocked on staging** (see [PHASE_22.md](../PHASE_22.md)). Do not onboard external beta tenants until staging exists.
 
-Exit: beta checklist signed off.
+- Invite-only signup, cohorts, flags, feedback
+- Stripe test only; predictions shadow by default
+
+Exit: beta checklist signed off. **Not met.**
 
 ## Phase 23 — Production
 

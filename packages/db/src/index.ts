@@ -602,4 +602,27 @@ export {
   setSupportCaseStatus,
   upsertOperatorIndexDefinition,
 } from "./platform-exports.js";
+export {
+  BETA_COHORTS,
+  BetaInviteError,
+  FEATURE_FLAG_KEYS,
+  ONBOARDING_STEPS,
+  PRODUCT_EVENT_NAMES,
+  consumeBetaInvite,
+  createBetaInvite,
+  featureFlagEnabled,
+  generateInviteToken,
+  hashInviteToken,
+  insertBugReport,
+  insertProductEvent,
+  insertProductFeedback,
+  isBetaCohort,
+  isFeatureFlagKey,
+  isProductEventName,
+  listFeatureFlags,
+  markOnboardingStep,
+  sanitizeOperatorText,
+  setFeatureFlag,
+  upsertBetaOrganization,
+} from "./beta/beta.js";
 export * from "./schema/index.js";

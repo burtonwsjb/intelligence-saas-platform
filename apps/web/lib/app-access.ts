@@ -5,6 +5,7 @@ import { getAuth, getDb } from "@/lib/auth";
 import {
   countUnreadNotifications,
   customerPredictionsEnabled,
+  featureFlagEnabled,
   member,
   withOrganizationContext,
   type AppNavAccess,
@@ -62,6 +63,7 @@ export async function loadAppAccess(): Promise<{
       return { hasAlerts, hasWebhooks, hasCreatorAnalytics, hasPredictions, unread };
     },
   );
+  const platformFlag = await featureFlagEnabled(getDb(), "predictions_customer_visible");
   return {
     organizationId,
     userId,
@@ -76,7 +78,7 @@ export async function loadAppAccess(): Promise<{
       hasWebhooks: snapshot.hasWebhooks,
       hasCreatorAnalytics: snapshot.hasCreatorAnalytics,
       hasPredictionsEntitlement: snapshot.hasPredictions,
-      predictionsCustomerVisible: customerPredictionsEnabled(),
+      predictionsCustomerVisible: customerPredictionsEnabled(process.env, { platformFlag }),
     },
   };
 }

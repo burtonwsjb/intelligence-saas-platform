@@ -8,8 +8,12 @@ import {
   insertOperatorNote,
   insertSupportCase,
   setCreatorTrustKeepingHistory,
+  setFeatureFlag,
   setSupportCaseStatus,
   upsertOperatorIndexDefinition,
+  createBetaInvite,
+  insertBreakGlassAudit,
+  isFeatureFlagKey,
 } from "@isp/db";
 import { requireGrantedOperator } from "@/lib/platform-admin";
 
@@ -113,4 +117,53 @@ export async function setSupportStatusAction(formData: FormData) {
     actorUserId: operator.session.user.id,
   });
   redirect("/admin/support");
+}
+
+export async function createBetaInviteAction(formData: FormData) {
+  const operator = await requireGrantedOperator();
+  if (!operator.adminDb) {
+    redirect("/admin/beta?error=config");
+  }
+  const days = Number(formData.get("days") ?? "14");
+  const maxUses = Number(formData.get("maxUses") ?? "1");
+  try {
+    const created = await createBetaInvite(operator.adminDb, {
+      email: String(formData.get("email") ?? "").trim() || null,
+      organizationHint: String(formData.get("organizationHint") ?? "").trim() || null,
+      cohort: String(formData.get("cohort") ?? "beta_wave_1"),
+      expiresAt: new Date(Date.now() + Math.max(1, days) * 86_400_000),
+      maxUses: Number.isFinite(maxUses) ? maxUses : 1,
+      createdByUserId: operator.session.user.id,
+    });
+    await insertBreakGlassAudit(operator.adminDb, {
+      actorUserId: operator.session.user.id,
+      action: "beta.invite",
+      metadata: { inviteId: created.id },
+    });
+    redirect(`/admin/beta?token=${encodeURIComponent(created.token)}`);
+  } catch {
+    redirect("/admin/beta?error=rejected");
+  }
+}
+
+export async function setFeatureFlagAction(formData: FormData) {
+  const operator = await requireGrantedOperator();
+  if (!operator.adminDb) {
+    redirect("/admin/beta?error=config");
+  }
+  const key = String(formData.get("key") ?? "");
+  if (!isFeatureFlagKey(key)) {
+    redirect("/admin/beta?error=rejected");
+  }
+  await setFeatureFlag(operator.adminDb, {
+    key,
+    enabled: String(formData.get("enabled") ?? "") === "true",
+    actorUserId: operator.session.user.id,
+  });
+  await insertBreakGlassAudit(operator.adminDb, {
+    actorUserId: operator.session.user.id,
+    action: "feature.flag",
+    metadata: { key },
+  });
+  redirect("/admin/beta");
 }

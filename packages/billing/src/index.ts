@@ -5,6 +5,7 @@ export {
   QuotaExceededError,
   assertFeature,
   assertWithinLimit,
+  applyBetaSafetyCaps,
   effectivePlanKey,
   getLimit,
   hasFeature,

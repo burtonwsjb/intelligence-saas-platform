@@ -29,6 +29,18 @@ describe("customer prediction gate", () => {
   it("defaults the customer flag off", () => {
     expect(customerPredictionsEnabled({})).toBe(false);
     expect(customerPredictionsEnabled({ PREDICTIONS_CUSTOMER_VISIBLE: "true" })).toBe(true);
+    expect(
+      customerPredictionsEnabled(
+        { NODE_ENV: "production", PREDICTIONS_CUSTOMER_VISIBLE: "true" },
+        { platformFlag: false },
+      ),
+    ).toBe(false);
+    expect(
+      customerPredictionsEnabled(
+        { ISP_ENV: "staging", NODE_ENV: "production" },
+        { platformFlag: true },
+      ),
+    ).toBe(true);
   });
 
   it("hides shadow predictions even when the flag and entitlement are on", () => {

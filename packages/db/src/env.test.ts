@@ -172,6 +172,8 @@ describe("migrations", () => {
     expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "platform_admins"/);
     expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "platform_break_glass_audit"/);
     expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "platform_support_case"/);
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "beta_invitation"/);
+    expect(sql).toMatch(/app.consume_beta_invite/);
     expect(sql).toMatch(/app.forbid_platform_audit_mutate/);
     expect(sql).toMatch(/app.install_operator_only_rls\('platform_break_glass_audit'\)/);
   });
@@ -200,6 +202,7 @@ describe("committed env example", () => {
     expect(example).toMatch(/^WORKER_DATABASE_URL=$/m);
     expect(example).toMatch(/^REDIS_TLS=$/m);
     expect(example).toMatch(/^PREDICTIONS_CUSTOMER_VISIBLE=$/m);
+    expect(example).toMatch(/^BETA_INVITE_ONLY=$/m);
     expect(example).toMatch(/^PLATFORM_ADMIN_EMAILS=$/m);
     expect(example).toMatch(/^TRIAL_DURATION_DAYS=$/m);
     expect(example).not.toMatch(/tcgcardcentral\.com/i);
