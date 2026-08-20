@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { member, tenant } from "@isp/db";
 import { createAuth, MissingAuthSecretError } from "./auth.js";
+import { InvalidRuntimeEnvError } from "@isp/shared";
 import { createMemoryInbox } from "./email.js";
 import {
   AuthRequiredError,
@@ -63,6 +64,22 @@ describe("auth configuration", () => {
         env: { ...testEnv, BETTER_AUTH_SECRET: "short" },
       }),
     ).toThrow(MissingAuthSecretError);
+  });
+
+  it("rejects hosted localhost auth URLs", async () => {
+    const db = await createTestDatabase();
+    expect(() =>
+      createAuth({
+        db,
+        env: {
+          ...testEnv,
+          NODE_ENV: "production",
+          ISP_ENV: "production",
+          APP_URL: "http://localhost:3000",
+          BETTER_AUTH_URL: "http://localhost:3000",
+        },
+      }),
+    ).toThrow(InvalidRuntimeEnvError);
   });
 });
 

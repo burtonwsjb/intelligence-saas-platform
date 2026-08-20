@@ -7,6 +7,7 @@ import {
   MissingDatabaseUrlError,
   requireDatabaseAdminUrl,
   requireDatabaseUrl,
+  requireWorkerDatabaseUrl,
 } from "./env.js";
 import { readMigrationSql } from "./migrations.js";
 import {
@@ -50,6 +51,15 @@ describe("database env", () => {
   it("returns a configured DATABASE_URL", () => {
     expect(requireDatabaseUrl({ DATABASE_URL: "postgresql://isp@localhost/isp" })).toBe(
       "postgresql://isp@localhost/isp",
+    );
+    expect(
+      requireWorkerDatabaseUrl({
+        WORKER_DATABASE_URL: "postgresql://app_worker@localhost/isp",
+        DATABASE_URL: "postgresql://app_user@localhost/isp",
+      }),
+    ).toBe("postgresql://app_worker@localhost/isp");
+    expect(requireWorkerDatabaseUrl({ DATABASE_URL: "postgresql://app_user@localhost/isp" })).toBe(
+      "postgresql://app_user@localhost/isp",
     );
   });
 });
@@ -186,6 +196,9 @@ describe("committed env example", () => {
     expect(example).toMatch(/^QUEUE_PREFIX=$/m);
     expect(example).toMatch(/^TCC_API_BASE_URL=$/m);
     expect(example).toMatch(/^TCC_API_TOKEN=$/m);
+    expect(example).toMatch(/^ISP_ENV=$/m);
+    expect(example).toMatch(/^WORKER_DATABASE_URL=$/m);
+    expect(example).toMatch(/^REDIS_TLS=$/m);
     expect(example).toMatch(/^PREDICTIONS_CUSTOMER_VISIBLE=$/m);
     expect(example).toMatch(/^PLATFORM_ADMIN_EMAILS=$/m);
     expect(example).toMatch(/^TRIAL_DURATION_DAYS=$/m);

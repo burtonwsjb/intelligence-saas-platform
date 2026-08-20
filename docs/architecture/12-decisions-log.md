@@ -95,6 +95,8 @@ Change only with an explicit new decision.
 | D90 | Application nav | Hide plan/role-gated product surfaces from customer nav | Direct URLs stay locked, not leaked |
 | D91 | Content generation | Evidence package required; local/fixture generators; LLM fail-closed | No AI spam; human approval for first SEO |
 | D92 | Platform admin | `platform_admins` table grant; local email allowlist is non-production only; `platform_break_glass_audit` is append-only and separate from tenant `audit_event` | Not a tenant role; inspect is not impersonation |
+| D93 | Runtime env | `ISP_ENV` local/test/staging/production; hosted Node without `ISP_ENV` is production | No silent production→local fallbacks |
+| D94 | Staging topology | Vercel web + Railway API/worker + Neon + managed Redis; independent of TCC | Phase 21 full complete only when hosted |
 
 ## Void
 

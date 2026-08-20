@@ -2,6 +2,7 @@ export {
   createDb,
   createDbConnection,
   createDbFromEnv,
+  createDbFromWorkerEnv,
   type Database,
 } from "./client.js";
 export {
@@ -11,6 +12,7 @@ export {
   MissingDatabaseUrlError,
   requireDatabaseAdminUrl,
   requireDatabaseUrl,
+  requireWorkerDatabaseUrl,
 } from "./env.js";
 export {
   InvalidTenantContextError,
@@ -391,6 +393,7 @@ export {
   MAX_WEBHOOK_ATTEMPTS,
 } from "./webhooks/catalog.js";
 export { attemptWebhookDelivery, processDueWebhookDeliveries, type WebhookFetch } from "./webhooks/deliver.js";
+export { safeWebhookFetch } from "./webhooks/fetch.js";
 export {
   ACTIVATION_CRITERIA,
   ACTIVATION_RULE_VERSION,

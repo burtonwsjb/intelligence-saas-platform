@@ -39,17 +39,27 @@ export async function bootstrapRoles(
 ): Promise<void> {
   const sql = postgres(adminUrl, { max: 1, prepare: false });
   try {
-    const database = (
-      await sql<{ current_database: string }[]>`select current_database()`
-    )[0]!.current_database;
-
     await sql.unsafe(createRoleSql(DB_ROLES.migrate, passwords.migrate, { bypassRls: true }));
     await sql.unsafe(createRoleSql(DB_ROLES.user, passwords.user, { bypassRls: false }));
     await sql.unsafe(createRoleSql(DB_ROLES.worker, passwords.worker, { bypassRls: false }));
     await sql.unsafe(createRoleSql(DB_ROLES.admin, passwords.admin, { bypassRls: true }));
 
     await sql.unsafe(`
-      GRANT CONNECT ON DATABASE ${database} TO ${DB_ROLES.migrate}, ${DB_ROLES.user}, ${DB_ROLES.worker}, ${DB_ROLES.admin};
+      DO $grant$
+      BEGIN
+        EXECUTE format(
+          'GRANT CONNECT ON DATABASE %I TO %I, %I, %I, %I',
+          current_database(),
+          '${DB_ROLES.migrate}',
+          '${DB_ROLES.user}',
+          '${DB_ROLES.worker}',
+          '${DB_ROLES.admin}'
+        );
+      EXCEPTION
+        WHEN insufficient_privilege THEN
+          NULL;
+      END
+      $grant$;
       GRANT USAGE ON SCHEMA public TO ${DB_ROLES.migrate}, ${DB_ROLES.user}, ${DB_ROLES.worker}, ${DB_ROLES.admin};
       GRANT USAGE ON SCHEMA app TO ${DB_ROLES.migrate}, ${DB_ROLES.user}, ${DB_ROLES.worker}, ${DB_ROLES.admin};
       REVOKE CREATE ON SCHEMA public FROM PUBLIC;

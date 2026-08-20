@@ -100,12 +100,26 @@ describe("platform admin grants and config", () => {
         PLATFORM_ADMIN_EMAILS: "ops@example.com",
       }),
     ).toBe(false);
+    expect(
+      emailIsLocalPlatformAdmin("ops@example.com", {
+        NODE_ENV: "development",
+        ISP_ENV: "staging",
+        PLATFORM_ADMIN_EMAILS: "ops@example.com",
+      }),
+    ).toBe(false);
   });
 
   it("fails closed for production admin DB without APP_ADMIN_PASSWORD", () => {
     expect(() =>
       resolvePlatformAdminConnectionUrl({
         NODE_ENV: "production",
+        DATABASE_ADMIN_URL: "postgresql://isp@localhost/isp",
+      }),
+    ).toThrow(PlatformAdminDbNotConfiguredError);
+    expect(() =>
+      resolvePlatformAdminConnectionUrl({
+        NODE_ENV: "development",
+        ISP_ENV: "staging",
         DATABASE_ADMIN_URL: "postgresql://isp@localhost/isp",
       }),
     ).toThrow(PlatformAdminDbNotConfiguredError);

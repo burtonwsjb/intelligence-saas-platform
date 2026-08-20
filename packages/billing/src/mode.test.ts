@@ -19,6 +19,9 @@ describe("billing modes", () => {
       "stripe_test",
     );
     expect(resolveBillingMode({ NODE_ENV: "production" })).toBe("stripe_test");
+    expect(() =>
+      resolveBillingMode({ ISP_ENV: "staging", NODE_ENV: "development", BILLING_MODE: "local_simulation" }),
+    ).toThrow(ProductionBillingSimulationError);
     expect(() => resolveBillingMode({ BILLING_MODE: "stripe_live" })).toThrow(
       LiveStripeForbiddenError,
     );

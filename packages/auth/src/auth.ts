@@ -1,6 +1,7 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
 import { organization } from "better-auth/plugins";
+import { assertHostedSecrets, isHostedRuntime } from "@isp/shared";
 import {
   account,
   invitation,
@@ -24,6 +25,12 @@ export type AuthEnv = {
   APP_URL: string;
   NODE_ENV: string;
   AUTH_EMAIL_MODE?: string;
+  ISP_ENV?: string;
+  BILLING_MODE?: string;
+  PLATFORM_ADMIN_EMAILS?: string;
+  QUEUE_PREFIX?: string;
+  REDIS_URL?: string;
+  REDIS_TLS?: string;
 };
 
 export class MissingAuthSecretError extends Error {
@@ -58,6 +65,8 @@ export function createAuth(options: {
   extraPlugins?: Parameters<typeof betterAuth>[0]["plugins"];
 }) {
   const secret = requireAuthSecret(options.env.BETTER_AUTH_SECRET);
+  assertHostedSecrets(options.env);
+  const hosted = isHostedRuntime(options.env);
   const emailDelivery =
     options.emailDelivery ??
     createEmailDelivery({
@@ -93,12 +102,19 @@ export function createAuth(options: {
       },
     },
     session: {
+      expiresIn: 60 * 60 * 24 * 7,
+      updateAge: 60 * 60 * 24,
       cookieCache: {
         enabled: false,
       },
     },
     advanced: {
-      useSecureCookies: options.env.NODE_ENV === "production",
+      useSecureCookies: hosted || options.env.NODE_ENV === "production",
+      defaultCookieAttributes: {
+        sameSite: "lax",
+        httpOnly: true,
+        secure: hosted || options.env.NODE_ENV === "production",
+      },
       disableCSRFCheck: false,
     },
     plugins: [

@@ -1,6 +1,6 @@
 import { Worker } from "bullmq";
 import { UnrecoverableError } from "bullmq";
-import { createDbFromEnv, type Database } from "@isp/db";
+import { createDbFromWorkerEnv, type Database } from "@isp/db";
 import {
   UnrecoverableJobError,
   createIngestQueue,
@@ -22,7 +22,7 @@ export function startWorker(options?: {
   queue?: IngestQueue;
 }): { stop: () => Promise<void> } {
   requireRedisUrl(options?.env);
-  const db = options?.db ?? createDbFromEnv(options?.env);
+  const db = options?.db ?? createDbFromWorkerEnv(options?.env);
   const connection = createRedisConnection(options?.env);
   const queue = options?.queue ?? createIngestQueue(options?.env);
   const worker = new Worker<JobEnvelope>(

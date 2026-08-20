@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { healthOk } from "@isp/contracts";
-import { isNonEmptyString } from "@isp/shared";
+import { isNonEmptyString, structuredLog } from "@isp/shared";
+import { sql } from "drizzle-orm";
 import {
   createDbFromEnv,
   recordUsage,
@@ -17,7 +18,7 @@ import {
   assertQuota,
   processStripeWebhook,
 } from "@isp/billing";
-import { publishOutboxJob, QueueUnavailableError, type IngestQueue } from "@isp/queue";
+import { assertRedisAvailable, publishOutboxJob, QueueUnavailableError, type IngestQueue } from "@isp/queue";
 import { createMachineAuth, requireScope, type MachinePrincipal } from "./machine-auth.js";
 import { jsonError } from "./errors.js";
 import {
@@ -43,6 +44,36 @@ export function createApiApp(options?: {
     Variables: { db: Database; machine: MachinePrincipal };
   }>();
   const machineAuth = createMachineAuth(options);
+  const env = options?.env ?? process.env;
+
+  app.use("*", async (c, next) => {
+    const requestId = resolveRequestId(c.req.header("x-request-id"));
+    const started = Date.now();
+    await next();
+    c.header("x-request-id", requestId);
+    c.header("x-content-type-options", "nosniff");
+    c.header("x-frame-options", "DENY");
+    c.header("referrer-policy", "no-referrer");
+    const originHeader = c.req.header("origin");
+    const allowed = env.APP_URL?.trim();
+    if (originHeader && allowed) {
+      try {
+        if (new URL(originHeader).origin === new URL(allowed).origin) {
+          c.header("access-control-allow-origin", originHeader);
+          c.header("vary", "Origin");
+        }
+      } catch {
+        // ignore malformed Origin
+      }
+    }
+    structuredLog("info", "http.request", {
+      request_id: requestId,
+      method: c.req.method,
+      path: c.req.path,
+      status: c.res.status,
+      latency_ms: Date.now() - started,
+    });
+  });
 
   app.get("/health", (c) => {
     const body = healthOk();
@@ -53,6 +84,30 @@ export function createApiApp(options?: {
       });
     }
     return c.json(body);
+  });
+
+  app.get("/ready", async (c) => {
+    let database = "ok";
+    try {
+      const db = options?.db ?? createDbFromEnv(options?.env);
+      await db.execute(sql`select 1`);
+    } catch {
+      database = "error";
+    }
+    let redis = "skipped";
+    if (env.REDIS_URL?.trim()) {
+      try {
+        await assertRedisAvailable(options?.env);
+        redis = "ok";
+      } catch {
+        redis = "error";
+      }
+    }
+    const ready = database === "ok";
+    return c.json(
+      { status: ready ? "ready" : "not_ready", database, redis },
+      ready ? 200 : 503,
+    );
   });
 
   app.post("/webhooks/stripe", async (c) => {

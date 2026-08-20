@@ -23,6 +23,7 @@ import {
   recordUsage,
   recordCustomerEvent,
   evaluateUsageWarnings,
+  safeWebhookFetch,
   tcgCardConcept,
   tcgPrinting,
   tcgSet,
@@ -687,11 +688,7 @@ export function registerCommercialRoutes(
           processDueWebhookDeliveries(scoped, {
             organizationId: machine.organizationId,
             pepper,
-            fetchImpl:
-              options?.webhookFetch ??
-              (async () => {
-                throw new Error("Webhook delivery fetch is not configured.");
-              }),
+            fetchImpl: options?.webhookFetch ?? safeWebhookFetch,
             lookup: options?.dnsLookup,
           }),
       );

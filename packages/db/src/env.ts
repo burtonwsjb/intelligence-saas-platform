@@ -19,6 +19,13 @@ export function requireDatabaseUrl(
   return url;
 }
 
+/** Worker prefers `WORKER_DATABASE_URL` (`app_worker`) and otherwise uses `DATABASE_URL`. */
+export function requireWorkerDatabaseUrl(
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  return env.WORKER_DATABASE_URL?.trim() || requireDatabaseUrl(env);
+}
+
 export function requireDatabaseAdminUrl(
   env: NodeJS.ProcessEnv = process.env,
 ): string {

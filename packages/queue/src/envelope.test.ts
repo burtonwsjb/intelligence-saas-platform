@@ -43,6 +43,7 @@ describe("queue naming and redis env", () => {
   it("namespaces queues by environment and fails closed without REDIS_URL", () => {
     expect(queueEnvironmentName({ NODE_ENV: "test" })).toBe("test");
     expect(queueEnvironmentName({ NODE_ENV: "production" })).toBe("production");
+    expect(queueEnvironmentName({ ISP_ENV: "staging", NODE_ENV: "production" })).toBe("staging");
     expect(ingestQueueName({ NODE_ENV: "test" })).toBe("isp-test-ingest");
     expect(DEFAULT_JOB_ATTEMPTS).toBe(5);
     expect(DEFAULT_BACKOFF_MS).toBe(2_000);

@@ -19,6 +19,7 @@
   "dependencies": {
     "@better-auth/drizzle-adapter": "^1.7.1",
     "@isp/db": "workspace:*",
+    "@isp/shared": "workspace:*",
     "better-auth": "^1.7.1",
     "drizzle-orm": "^0.45.2"
   },

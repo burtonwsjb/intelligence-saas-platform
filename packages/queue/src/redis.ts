@@ -14,6 +14,7 @@ export function createRedisConnection(
     connectTimeout: failFast ? 750 : 10_000,
     enableOfflineQueue: !failFast,
     retryStrategy: failFast ? () => null : (times) => Math.min(times * 200, 2_000),
+    tls: url.startsWith("rediss://") ? {} : undefined,
   });
   redis.on("error", () => {
     // Callers map connection failures to QueueUnavailableError. Do not crash.

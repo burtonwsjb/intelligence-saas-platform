@@ -1,6 +1,6 @@
 # Phase 20 — Platform administration
 
-Status: **implemented**. Do not begin Phase 21 (staging / Vercel / Railway / Neon) until explicitly instructed.
+Status: **implemented**. Phase 21 local staging/security work is separate; independent staging is still not hosted.
 
 The operator console replaces the `/admin` placeholder. Platform admins are a server-checked `platform_admins` grant, not a tenant role. Local adapters remain the default. Neon, Railway, Vercel, live Stripe, and production Resend are not required.
 

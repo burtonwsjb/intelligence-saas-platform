@@ -136,6 +136,9 @@ importers:
       '@isp/queue':
         specifier: workspace:*
         version: link:../../packages/queue
+      '@isp/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       bullmq:
         specifier: ^5.61.0
         version: 5.81.3(supports-color@7.2.0)
@@ -167,6 +170,9 @@ importers:
       '@isp/db':
         specifier: workspace:*
         version: link:../db
+      '@isp/shared':
+        specifier: workspace:*
+        version: link:../shared
       better-auth:
         specifier: ^1.7.1
         version: 1.7.1(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@electric-sql/pglite@0.5.5)(kysely@0.29.5)(postgres@3.4.9))(next@16.3.1(@types/node@24.13.3)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(vitest@3.2.7(@types/node@24.13.3)(supports-color@7.2.0)(tsx@4.23.12))
@@ -198,6 +204,9 @@ importers:
       '@isp/db':
         specifier: workspace:*
         version: link:../db
+      '@isp/shared':
+        specifier: workspace:*
+        version: link:../shared
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(@electric-sql/pglite@0.5.5)(kysely@0.29.5)(postgres@3.4.9)
@@ -250,6 +259,9 @@ importers:
 
   packages/db:
     dependencies:
+      '@isp/shared':
+        specifier: workspace:*
+        version: link:../shared
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(@electric-sql/pglite@0.5.5)(kysely@0.29.5)(postgres@3.4.9)
@@ -287,6 +299,9 @@ importers:
       '@isp/db':
         specifier: workspace:*
         version: link:../db
+      '@isp/shared':
+        specifier: workspace:*
+        version: link:../shared
       bullmq:
         specifier: ^5.61.0
         version: 5.81.3(supports-color@7.2.0)
@@ -318,6 +333,9 @@ importers:
       '@isp/config':
         specifier: workspace:*
         version: link:../config
+      '@types/node':
+        specifier: ^24.3.0
+        version: 24.13.3
       eslint:
         specifier: ^9.32.0
         version: 9.39.5(supports-color@7.2.0)

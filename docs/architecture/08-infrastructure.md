@@ -34,6 +34,7 @@ Local development does not require Vercel or Railway. Phase 05 uses disposable D
 
 ## Planned variable names only
 
+- `ISP_ENV` (`local` \| `test` \| `staging` \| `production`)
 - `DATABASE_URL`
 - `REDIS_URL` (server-side; local `redis://localhost:6379`)
 - `QUEUE_PREFIX` (optional `isp-{prefix}-ingest` segment; not a secret)

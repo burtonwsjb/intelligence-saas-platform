@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   WebhookUrlRejectedError,
   assertPublicWebhookUrl,
+  assertRedirectTargetSafe,
   assertResolvedAddressesPublic,
 } from "./ssrf.js";
 import { signWebhookPayload, webhookSignatureValid } from "./secret.js";
@@ -19,6 +20,31 @@ describe("webhook SSRF defense", () => {
     expect(() => assertResolvedAddressesPublic(["127.0.0.1"])).toThrow(WebhookUrlRejectedError);
     expect(() => assertResolvedAddressesPublic(["::1"])).toThrow(WebhookUrlRejectedError);
     expect(() => assertPublicWebhookUrl("https://example.com/hooks/isp")).not.toThrow();
+  });
+
+  it("rejects alternate IP forms, short dotted names, credentials, length, and metadata hosts", () => {
+    expect(() => assertPublicWebhookUrl("http://127.1/hook")).toThrow(WebhookUrlRejectedError);
+    expect(() => assertPublicWebhookUrl("http://0.0.0.0/hook")).toThrow(WebhookUrlRejectedError);
+    expect(() => assertPublicWebhookUrl("http://2130706433/hook")).toThrow(WebhookUrlRejectedError);
+    expect(() => assertPublicWebhookUrl("http://0x7f000001/hook")).toThrow(WebhookUrlRejectedError);
+    expect(() => assertPublicWebhookUrl("http://0177.0.0.1/hook")).toThrow(WebhookUrlRejectedError);
+    expect(() => assertPublicWebhookUrl("http://[::ffff:127.0.0.1]/hook")).toThrow(WebhookUrlRejectedError);
+    expect(() => assertPublicWebhookUrl("http://user:pass@example.com/hook")).toThrow(WebhookUrlRejectedError);
+    expect(() => assertPublicWebhookUrl("javascript:alert(1)")).toThrow(WebhookUrlRejectedError);
+    expect(() => assertPublicWebhookUrl(`https://example.com/${"a".repeat(3000)}`)).toThrow(
+      WebhookUrlRejectedError,
+    );
+    expect(() => assertPublicWebhookUrl("http://169.254.169.254/latest/meta-data")).toThrow(
+      WebhookUrlRejectedError,
+    );
+    expect(() => assertResolvedAddressesPublic(["10.1.2.3"])).toThrow(WebhookUrlRejectedError);
+    expect(() => assertResolvedAddressesPublic(["fd00:ec2::254"])).toThrow(WebhookUrlRejectedError);
+    expect(() => assertRedirectTargetSafe("http://127.0.0.1/x", new URL("https://example.com/h"))).toThrow(
+      WebhookUrlRejectedError,
+    );
+    expect(() =>
+      assertRedirectTargetSafe("https://evil.example/h", new URL("https://example.com/h")),
+    ).toThrow(WebhookUrlRejectedError);
   });
 });
 

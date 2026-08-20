@@ -234,10 +234,12 @@ Exit: operators can exclude a creator without deleting history.
 
 ## Phase 21 — Staging / security / load testing
 
-- Vercel + Railway + Neon staging
-- RLS/security review, load on ingest and bars
+Status: **local readiness prepared** (see [PHASE_21.md](../PHASE_21.md)). Independent staging is **not** hosted yet. Full Phase 21 is blocked on Vercel + Railway + Neon + Redis provisioning.
 
-Exit: staging is independently hosted (not on TCC infra).
+- Vercel + Railway + Neon staging **configuration** is in-repo
+- RLS/security review, bounded load smoke, SSRF expansion
+
+Exit: staging is independently hosted (not on TCC infra). **Not met.**
 
 ## Phase 22 — Controlled beta
 

@@ -17,9 +17,11 @@ Disposable `postgres:16-alpine` and `redis:7-alpine` services are started for RL
 2. `pnpm typecheck`
 3. `pnpm lint`
 4. `pnpm test`
-5. `pnpm test:isolation`
+5. `pnpm test:isolation` (includes migration smoke on disposable Postgres)
 6. `pnpm test:integration`
 7. `pnpm build`
+
+Unit tests include bounded API load smoke and a static security scan. Heavy load is manual ([docs/load-testing.md](./load-testing.md)).
 
 Required checks are those steps. The job name is `validate`.
 

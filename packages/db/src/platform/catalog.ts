@@ -1,3 +1,5 @@
+import { isHostedRuntime } from "@isp/shared";
+
 export const BREAK_GLASS_ACTIONS = [
   "tenant.inspect",
   "creator.exclude",
@@ -47,7 +49,7 @@ export function parsePlatformAdminEmails(env: NodeJS.ProcessEnv = process.env): 
 }
 
 export function isProductionEnv(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.NODE_ENV === "production";
+  return isHostedRuntime(env);
 }
 
 /**

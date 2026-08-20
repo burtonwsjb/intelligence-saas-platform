@@ -1,3 +1,4 @@
+import { isHostedRuntime } from "@isp/shared";
 import { LiveStripeForbiddenError } from "./stripe-env.js";
 
 export const BILLING_MODES = [
@@ -29,7 +30,7 @@ export function resolveBillingMode(
   if (requested === "stripe_live") {
     throw new LiveStripeForbiddenError();
   }
-  if (env.NODE_ENV === "production") {
+  if (isHostedRuntime(env)) {
     if (requested === "local_simulation") {
       throw new ProductionBillingSimulationError();
     }
@@ -44,7 +45,7 @@ export function resolveBillingMode(
 export function isLocalBillingSimulationAllowed(
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
-  if (env.NODE_ENV === "production") {
+  if (isHostedRuntime(env)) {
     return false;
   }
   return resolveBillingMode(env) === "local_simulation";
@@ -53,7 +54,7 @@ export function isLocalBillingSimulationAllowed(
 export function requireLocalBillingSimulation(
   env: NodeJS.ProcessEnv = process.env,
 ): void {
-  if (env.NODE_ENV === "production") {
+  if (isHostedRuntime(env)) {
     throw new ProductionBillingSimulationError();
   }
   if (resolveBillingMode(env) !== "local_simulation") {

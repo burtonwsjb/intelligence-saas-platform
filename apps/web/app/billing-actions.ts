@@ -12,6 +12,7 @@ import {
 } from "@isp/auth";
 import { and, eq } from "drizzle-orm";
 import { createCheckoutSession, createPortalSession } from "@isp/billing";
+import { defaultPublicOrigin } from "@isp/shared";
 
 function isRedirectError(error: unknown): boolean {
   return (
@@ -44,7 +45,7 @@ export async function startCheckout(formData: FormData) {
   try {
     const { session, organizationId } = await requireBillingActor();
     const planKey = String(formData.get("planKey") ?? "");
-    const origin = process.env.APP_URL ?? "http://localhost:3000";
+    const origin = defaultPublicOrigin();
     const { url } = await withOrganizationContext(
       getDb(),
       { organizationId, userId: session.user.id },
@@ -70,7 +71,7 @@ export async function startCheckout(formData: FormData) {
 export async function openBillingPortal() {
   try {
     const { session, organizationId } = await requireBillingActor();
-    const origin = process.env.APP_URL ?? "http://localhost:3000";
+    const origin = defaultPublicOrigin();
     const { url } = await withOrganizationContext(
       getDb(),
       { organizationId, userId: session.user.id },

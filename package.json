@@ -3,7 +3,7 @@
   "private": true,
   "packageManager": "pnpm@11.22.0",
   "engines": {
-    "node": ">=20.11.0"
+    "node": ">=22.13.0"
   },
   "scripts": {
     "dev": "turbo dev",
@@ -22,7 +22,9 @@
     "db:generate": "pnpm --filter @isp/db generate",
     "db:migrate": "pnpm --filter @isp/db migrate",
     "db:bootstrap": "pnpm --filter @isp/db bootstrap",
-    "db:status": "pnpm --filter @isp/db status"
+    "db:status": "pnpm --filter @isp/db status",
+    "test:load-smoke": "pnpm --filter @isp/api exec vitest run src/load.smoke.test.ts",
+    "test:security-scan": "pnpm --filter @isp/web exec vitest run lib/security-scan.test.ts"
   },
   "devDependencies": {
     "turbo": "^2.10.10",
