@@ -134,6 +134,13 @@
       "when": 18,
       "tag": "0019_phase19_content",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 19,
+      "tag": "0020_phase20_admin",
+      "breakpoints": true
     }
   ]
 }

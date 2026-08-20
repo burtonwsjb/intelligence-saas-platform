@@ -137,4 +137,4 @@ Opportunity and prediction features may include:
 
 Consensus of excluded or low-quality extractors is ignored. Social reach is not substituted for authority.
 
-Phase 11 implements creator identity, immutable calls, price-at-call, and pending outcome slots ([PHASE_11.md](../PHASE_11.md)). Phase 12 adds horizon evaluation, Wilson/Bayes shrinkage, contextual slices, and trust states ([PHASE_12.md](../PHASE_12.md)). Phase 13 adds language-aware index benchmarks and `alpha.v1` relative return on a separate immutable row ([PHASE_13.md](../PHASE_13.md)).
+Phase 11 implements creator identity, immutable calls, price-at-call, and pending outcome slots ([PHASE_11.md](../PHASE_11.md)). Phase 12 adds horizon evaluation, Wilson/Bayes shrinkage, contextual slices, and trust states ([PHASE_12.md](../PHASE_12.md)). Phase 13 adds language-aware index benchmarks and `alpha.v1` relative return on a separate immutable row ([PHASE_13.md](../PHASE_13.md)). Phase 20 operators can set trust to `excluded` without deleting call history ([PHASE_20.md](../PHASE_20.md)).

@@ -17,6 +17,7 @@ export async function HeaderNav() {
   return (
     <nav className="shell-nav" aria-label="Primary">
       <Link href="/app">App</Link>
+      <Link href="/admin">Admin</Link>
       <form action={signOutAction}>
         <button className="link-button" type="submit">
           Sign out

@@ -15,7 +15,8 @@ describe("protected paths", () => {
     expect(isProtectedPath("/app/settings")).toBe(true);
     expect(isProtectedPath("/onboarding")).toBe(true);
     expect(isProtectedPath("/login")).toBe(false);
-    expect(isProtectedPath("/admin")).toBe(false);
+    expect(isProtectedPath("/admin")).toBe(true);
+    expect(isProtectedPath("/admin/customers")).toBe(true);
   });
 });
 

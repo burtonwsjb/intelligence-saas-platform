@@ -1,6 +1,6 @@
 # Phase 18 — Customer application, intelligence dashboard, and analytics UX
 
-Status: **implemented**. Phase 19 is complete; see [PHASE_19.md](PHASE_19.md). Phase 20 has **not** started.
+Status: **implemented**. Phase 19 is complete; see [PHASE_19.md](PHASE_19.md). Phase 20 is complete; see [PHASE_20.md](PHASE_20.md).
 
 The backend intelligence objects are now reachable as a coherent customer-facing SaaS application. This is information architecture and functional workflow, not final visual polish. Local adapters remain the default. Predictions stay in shadow mode unless a tenant is entitled **and** `PREDICTIONS_CUSTOMER_VISIBLE=true`.
 
@@ -13,7 +13,7 @@ The backend intelligence objects are now reachable as a coherent customer-facing
 | `apps/web/app/app/` | Authenticated application shell and product pages |
 | `apps/web/components/` | Reusable identity line, sparkline, empty/locked states, printing workspace |
 
-TCG Card Central is not used. Platform admin remains the `/admin` placeholder until Phase 20.
+TCG Card Central is not used. Platform admin is the Phase 20 `/admin` console.
 
 ## Navigation (18A)
 

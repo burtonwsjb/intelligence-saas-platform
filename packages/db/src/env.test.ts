@@ -159,6 +159,11 @@ describe("migrations", () => {
     expect(sql).not.toMatch(/ALTER TABLE "content_candidate" ENABLE ROW LEVEL SECURITY/);
     expect(sql).toMatch(/app.install_tenant_owned_rls\('tenant_content_report'/);
     expect(sql).toMatch(/CONSTRAINT tenant_content_report_seo_chk CHECK \("public_seo" = false\)/);
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "platform_admins"/);
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "platform_break_glass_audit"/);
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "platform_support_case"/);
+    expect(sql).toMatch(/app.forbid_platform_audit_mutate/);
+    expect(sql).toMatch(/app.install_operator_only_rls\('platform_break_glass_audit'\)/);
   });
 
   it("does not add TCG identity columns to generic kernel tables", async () => {
@@ -181,6 +186,8 @@ describe("committed env example", () => {
     expect(example).toMatch(/^QUEUE_PREFIX=$/m);
     expect(example).toMatch(/^TCC_API_BASE_URL=$/m);
     expect(example).toMatch(/^TCC_API_TOKEN=$/m);
+    expect(example).toMatch(/^PREDICTIONS_CUSTOMER_VISIBLE=$/m);
+    expect(example).toMatch(/^PLATFORM_ADMIN_EMAILS=$/m);
     expect(example).toMatch(/^TRIAL_DURATION_DAYS=$/m);
     expect(example).not.toMatch(/tcgcardcentral\.com/i);
     expect(example).not.toMatch(/postgresql:\/\/[^:]+:[^@]+@/);

@@ -217,7 +217,7 @@ Exit: an analyst can use the TCG product in the browser.
 
 ## Phase 19 — Content / SEO intelligence
 
-Status: **complete** (see [PHASE_19.md](../PHASE_19.md)). Phase 20 has **not** started.
+Status: **complete** (see [PHASE_19.md](../PHASE_19.md)). Phase 20 is complete; see [PHASE_20.md](../PHASE_20.md).
 
 - Evidence packages, validation, approval
 - Canonical URL rules, thin-page blockers
@@ -225,6 +225,8 @@ Status: **complete** (see [PHASE_19.md](../PHASE_19.md)). Phase 20 has **not** s
 Exit: one evidence-backed card analysis can be approved.
 
 ## Phase 20 — Admin platform
+
+Status: **complete** (see [PHASE_20.md](../PHASE_20.md)).
 
 - Creator trust, index specs, source health, break-glass audit
 

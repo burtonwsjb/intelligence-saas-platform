@@ -76,4 +76,4 @@ When TCC is a **provider**, this platform stores connector credentials and calls
 
 ## Platform admin
 
-Platform admins are a server-checked `platform_admins` grant, not a tenant role. Break-glass tenant inspection writes an audit row.
+Platform admins are a server-checked `platform_admins` grant, not a tenant role. Break-glass tenant inspection writes `platform_break_glass_audit`. See [PHASE_20.md](../PHASE_20.md).

@@ -1,6 +1,6 @@
 # Phase 17 — CRM, customer lifecycle, email, notifications, and billing completion foundation
 
-Status: **implemented**. Phase 18 is complete; see [PHASE_18.md](PHASE_18.md). Phase 19 is complete; see [PHASE_19.md](PHASE_19.md). Phase 20 has **not** started.
+Status: **implemented**. Phase 18 is complete; see [PHASE_18.md](PHASE_18.md). Phase 19 is complete; see [PHASE_19.md](PHASE_19.md). Phase 20 is complete; see [PHASE_20.md](PHASE_20.md).
 
 The first-party SaaS customer lifecycle exists around Better Auth users and organizations. Local simulation remains the default billing mode. Real Stripe Checkout/Portal, Resend production delivery, Neon, Railway, and Vercel are not required.
 
@@ -80,7 +80,7 @@ Explainable components only: activation, recent activity, API usage, errors, web
 
 ## Admin queries
 
-Server-side listings exist for trials, active, past due, canceled, at-risk, recent signups, inactive, tagged high usage, and stage counts. **No platform admin UI in this phase.**
+Server-side listings exist for trials, active, past due, canceled, at-risk, recent signups, inactive, tagged high usage, and stage counts. The operator UI that consumes them is Phase 20.
 
 ## Phase 18 boundary
 

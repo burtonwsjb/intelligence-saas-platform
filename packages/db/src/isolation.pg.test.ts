@@ -75,6 +75,11 @@ import {
   crmOperatorNote,
   inAppNotification,
   contentCandidate,
+  platformAdmins,
+  platformBreakGlassAudit,
+  platformSupportCase,
+  hasPlatformAdminGrant,
+  listCrmCustomers,
 } from "./index.js";
 
 const passwords = {
@@ -1403,5 +1408,53 @@ describe("PostgreSQL RLS isolation", () => {
         }),
       ),
     ).rejects.toThrow();
+  });
+
+  it("keeps platform admin grants and break-glass audit off tenant roles", async () => {
+    const adminConn = createDbConnection(
+      replaceConnectionRole(adminUrl, DB_ROLES.admin, passwords.admin),
+    );
+    try {
+      await expect(
+        asUser(ids.userA, ids.orgA, (db) =>
+          db.insert(platformAdmins).values({ userId: ids.userA, note: "self-grant" }),
+        ),
+      ).rejects.toThrow();
+      await expect(
+        asUser(ids.userA, ids.orgA, (db) =>
+          db.insert(platformBreakGlassAudit).values({
+            id: `bg_${crypto.randomUUID()}`,
+            actorUserId: ids.userA,
+            action: "tenant.inspect",
+            organizationId: ids.orgB,
+          }),
+        ),
+      ).rejects.toThrow();
+      const hiddenAudit = await asUser(ids.userA, ids.orgA, (db) =>
+        db.select().from(platformBreakGlassAudit),
+      );
+      expect(hiddenAudit).toEqual([]);
+      const hiddenCases = await asUser(ids.userA, ids.orgA, (db) =>
+        db.select().from(platformSupportCase),
+      );
+      expect(hiddenCases).toEqual([]);
+      await adminConn.db
+        .insert(platformAdmins)
+        .values({ userId: ids.userA })
+        .onConflictDoNothing();
+      expect(await hasPlatformAdminGrant(appDb, ids.userA)).toBe(true);
+      await adminConn.db
+        .insert(crmOrganizationProfile)
+        .values({
+          organizationId: ids.orgA,
+          displayName: "A",
+          lifecycleStage: "onboarding",
+        })
+        .onConflictDoNothing();
+      const customers = await listCrmCustomers(adminConn.db);
+      expect(customers.map((row) => row.organizationId)).toEqual(expect.arrayContaining([ids.orgA]));
+    } finally {
+      await adminConn.end();
+    }
   });
 });

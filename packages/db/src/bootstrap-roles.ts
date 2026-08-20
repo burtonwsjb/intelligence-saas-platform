@@ -150,6 +150,9 @@ export async function bootstrapRoles(
       "content_validation",
       "content_publication",
       "tenant_content_report",
+      "platform_admins",
+      "platform_break_glass_audit",
+      "platform_support_case",
     ];
     for (const table of tables) {
       await sql.unsafe(`ALTER TABLE "${table}" OWNER TO ${DB_ROLES.migrate}`);
@@ -186,6 +189,7 @@ export async function bootstrapRoles(
       ALTER FUNCTION app.require_system_creator_write() OWNER TO ${DB_ROLES.migrate};
       ALTER FUNCTION app.install_tenant_owned_rls(text, boolean) OWNER TO ${DB_ROLES.migrate};
       ALTER FUNCTION app.install_operator_only_rls(text) OWNER TO ${DB_ROLES.migrate};
+      ALTER FUNCTION app.forbid_platform_audit_mutate() OWNER TO ${DB_ROLES.migrate};
     `);
 
     await sql.unsafe(`
@@ -314,6 +318,14 @@ export async function bootstrapRoles(
         "content_candidate", "content_evidence_package", "content_draft",
         "content_claim", "content_validation", "content_publication"
       FROM ${DB_ROLES.worker};
+      GRANT SELECT ON TABLE "platform_admins" TO ${DB_ROLES.user}, ${DB_ROLES.worker};
+      REVOKE INSERT, UPDATE, DELETE ON TABLE "platform_admins" FROM ${DB_ROLES.user}, ${DB_ROLES.worker};
+      GRANT SELECT ON TABLE
+        "platform_break_glass_audit", "platform_support_case"
+      TO ${DB_ROLES.user}, ${DB_ROLES.worker};
+      REVOKE INSERT, UPDATE, DELETE ON TABLE
+        "platform_break_glass_audit", "platform_support_case"
+      FROM ${DB_ROLES.user}, ${DB_ROLES.worker};
       GRANT DELETE ON TABLE "alert_rule", "webhook_endpoint", "webhook_delivery" TO ${DB_ROLES.user}, ${DB_ROLES.worker};
       REVOKE DELETE ON TABLE
         "crm_organization_profile", "crm_user_profile", "crm_lifecycle_transition",

@@ -11,7 +11,7 @@ Cloud Neon is still **not** provisioned. Isolation is proven with disposable Pos
 | `app_migrate` | no | yes | yes | migrations / provisioning |
 | `app_user` | no | no | no | web/API runtime |
 | `app_worker` | no | no | no | reserved for later jobs |
-| `app_admin` | no | yes | no | future break-glass only |
+| `app_admin` | no | yes | no | break-glass platform admin (Phase 20) |
 
 `app_user` and `app_worker` receive DML on Better Auth identity tables and tenant-owned application tables. They have SELECT/INSERT only on `audit_event`. They cannot CREATE/DROP/ALTER schema objects, disable RLS, or `SET ROLE` into migrate/admin.
 
@@ -97,14 +97,14 @@ Billing-only owner exceptions belong to a later billing phase.
 
 `audit_event` is application-owned and tenant-scoped: id, organization_id, actor_user_id, action, target_type, target_id, metadata, created_at.
 
-Normal application behavior is append-only. `app_user` cannot UPDATE/DELETE audit rows. Platform break-glass audit should be a later separate table, not mixed into tenant audit.
+Normal application behavior is append-only. `app_user` cannot UPDATE/DELETE audit rows. Platform break-glass audit lives in `platform_break_glass_audit` (Phase 20), not mixed into tenant `audit_event`.
 
 ## Platform admin boundary
 
 - Not an organization role
-- `/admin` remains a non-privileged placeholder
+- `/admin` is the Phase 20 operator console, gated by `platform_admins`
 - `app_user` cannot become platform admin
-- Future break-glass uses `app_admin` / a separate path and must be audited
+- Break-glass uses `app_admin` and writes `platform_break_glass_audit`
 - Impersonation must not inherit unrestricted database access
 
 ## Test strategy

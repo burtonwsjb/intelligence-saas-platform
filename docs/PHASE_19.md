@@ -1,6 +1,6 @@
 # Phase 19 — Content intelligence and SEO foundation
 
-Status: **implemented**. Phase 20 has **not** started.
+Status: **implemented**. Phase 20 is complete; see [PHASE_20.md](PHASE_20.md).
 
 Publishing is evidence-driven. There is no generation step without an evidence package that cites market observations, scores, and creator calls when used. Live LLM APIs are not required. Local and fixture generators are the default. Production LLM mode remains fail-closed.
 
@@ -13,7 +13,7 @@ Publishing is evidence-driven. There is no generation step without an evidence p
 | `packages/db/src/content/` | Evidence.v1, local/fixture generators, validate.v1, human approval |
 | `apps/web/app/intelligence/[...slug]/page.tsx` | Public canonical URL renderer |
 
-TCG Card Central is not used. Platform admin UI remains Phase 20.
+TCG Card Central is not used. Platform admin UI is Phase 20.
 
 ## Required flow
 
@@ -39,4 +39,4 @@ One canonical URL per printing+language: `/intelligence/{game}/{language}/{canon
 
 ## Phase 20 boundary
 
-Do not build the platform admin console, creator-trust operator UI, or break-glass tools here.
+The platform admin console, creator-trust operator UI, and break-glass tools are Phase 20; see [PHASE_20.md](PHASE_20.md).

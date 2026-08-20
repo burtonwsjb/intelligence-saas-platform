@@ -175,6 +175,25 @@ export async function withPlatformContext<T>(
   });
 }
 
+/**
+ * Sets the signed-in user without an organization. Used to check
+ * `platform_admins` self-SELECT. Does not grant tenant data access.
+ */
+export async function withActorContext<T>(
+  db: Database,
+  userId: string,
+  run: (db: Database) => Promise<T>,
+): Promise<T> {
+  const safeUserId = assertContextId(userId, "userId");
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select set_config('app.current_organization_id', '', true)`);
+    await tx.execute(sql`select set_config('app.current_user_id', ${safeUserId}, true)`);
+    await tx.execute(sql`select set_config('app.current_principal_type', 'user', true)`);
+    await tx.execute(sql`select set_config('app.current_api_key_id', '', true)`);
+    return run(tx);
+  });
+}
+
 export async function withTenantScope<T>(
   db: Database,
   context: OrganizationContext,
