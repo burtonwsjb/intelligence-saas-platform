@@ -98,6 +98,7 @@ Change only with an explicit new decision.
 | D93 | Runtime env | `ISP_ENV` local/test/staging/production; hosted Node without `ISP_ENV` is production | No silent production→local fallbacks |
 | D94 | Staging topology | Vercel web + Railway API/worker + Neon + managed Redis; independent of TCC | Phase 21 full complete only when hosted |
 | D95 | Beta invites | Hash-only tokens; `SECURITY DEFINER` consume; optional `BETA_INVITE_ONLY` | Never store plaintext invites |
+| D96 | Production gate | Readiness docs only until explicit production authorization | No live Stripe / real TCC / DNS from Mega-Phase D |
 
 ## Void
 

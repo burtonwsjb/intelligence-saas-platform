@@ -22,6 +22,14 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <HeaderNav />
         </header>
         <main className="shell-main">{children}</main>
+        <footer className="shell-header">
+          <nav className="shell-nav" aria-label="Legal">
+            <Link href="/terms">Terms</Link>
+            <Link href="/privacy">Privacy</Link>
+            <Link href="/acceptable-use">Acceptable use</Link>
+            <Link href="/api-terms">API terms</Link>
+          </nav>
+        </footer>
       </body>
     </html>
   );

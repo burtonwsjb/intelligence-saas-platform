@@ -252,10 +252,12 @@ Exit: beta checklist signed off. **Not met.**
 
 ## Phase 23 — Production
 
-- Production hosts and Stripe live
+Status: **readiness documentation only** (see [PHASE_23_READINESS.md](../PHASE_23_READINESS.md)). Production is **not authorized**.
+
+- Production hosts and Stripe live remain future gates
 - TCC **production** integration only with an explicit command
 
-Exit: production TCG intelligence SaaS is live on this stack.
+Exit: production TCG intelligence SaaS is live on this stack. **Not met.**
 
 ## Sequencing notes
 
