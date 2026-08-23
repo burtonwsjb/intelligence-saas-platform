@@ -122,7 +122,7 @@ PGlite is not used to claim RLS isolation.
 
 ```bash
 pnpm db:migrate      # DATABASE_ADMIN_URL
-pnpm db:bootstrap    # CREATE/ALTER ROLE + GRANT; needs APP_*_PASSWORD
+pnpm db:bootstrap    # CREATE missing roles or validate existing; GRANT; needs APP_*_PASSWORD
 pnpm db:status
 ```
 

@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   applyMigrations,
+  assertDisposableAdminUrl,
   bootstrapRoles,
   createDbConnection,
   DB_ROLES,
@@ -12,6 +13,7 @@ import {
   organization,
   replaceConnectionRole,
   requireDatabaseAdminUrl,
+  testRolePasswords,
   tenant,
   user,
   withOrganizationContext,
@@ -21,12 +23,7 @@ import {
 import { createNormalizeEnvelope, publishOutboxJob, requireRedisUrl } from "@isp/queue";
 import { startWorker } from "./worker.js";
 
-const passwords = {
-  migrate: "isp_ci_migrate_only",
-  user: "isp_ci_app_user_only",
-  worker: "isp_ci_app_worker_only",
-  admin: "isp_ci_app_admin_only",
-};
+const passwords = testRolePasswords();
 
 const env = {
   ...process.env,
@@ -57,6 +54,7 @@ describe("BullMQ worker", () => {
   beforeAll(async () => {
     requireRedisUrl(process.env);
     const adminUrl = requireDatabaseAdminUrl();
+    assertDisposableAdminUrl(adminUrl);
     await applyMigrations(adminUrl);
     await bootstrapRoles(adminUrl, passwords);
     adminConn = createDbConnection(adminUrl);

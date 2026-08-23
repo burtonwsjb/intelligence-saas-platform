@@ -1,4 +1,4 @@
-import postgres from "postgres";
+import postgres, { type Sql } from "postgres";
 import { DB_ROLES } from "./roles.js";
 
 export type RolePasswords = {
@@ -8,29 +8,169 @@ export type RolePasswords = {
   admin: string;
 };
 
+export type RoleFlags = {
+  rolcanlogin: boolean;
+  rolsuper: boolean;
+  rolcreatedb: boolean;
+  rolcreaterole: boolean;
+  rolinherit: boolean;
+  rolbypassrls: boolean;
+};
+
+export class RoleInvariantError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RoleInvariantError";
+  }
+}
+
+export class HostedTestDatabaseError extends Error {
+  constructor() {
+    super(
+      "Isolation and integration tests must use disposable local or CI Postgres, not Neon.",
+    );
+    this.name = "HostedTestDatabaseError";
+  }
+}
+
 function escapeLiteral(value: string): string {
   return value.replaceAll("'", "''");
 }
 
-function createRoleSql(
+export function expectedRoleFlags(bypassRls: boolean): RoleFlags {
+  return {
+    rolcanlogin: true,
+    rolsuper: false,
+    rolcreatedb: false,
+    rolcreaterole: false,
+    rolinherit: false,
+    rolbypassrls: bypassRls,
+  };
+}
+
+export function describeRoleMismatch(actual: RoleFlags, expected: RoleFlags): string {
+  const labels: [keyof RoleFlags, string, string][] = [
+    ["rolcanlogin", "LOGIN", "NOLOGIN"],
+    ["rolsuper", "SUPERUSER", "NOSUPERUSER"],
+    ["rolcreatedb", "CREATEDB", "NOCREATEDB"],
+    ["rolcreaterole", "CREATEROLE", "NOCREATEROLE"],
+    ["rolinherit", "INHERIT", "NOINHERIT"],
+    ["rolbypassrls", "BYPASSRLS", "NOBYPASSRLS"],
+  ];
+  return labels
+    .filter(([key]) => actual[key] !== expected[key])
+    .map(([key, whenTrue, whenFalse]) => `${actual[key] ? whenTrue : whenFalse} (need ${expected[key] ? whenTrue : whenFalse})`)
+    .join(", ");
+}
+
+export function roleFlagsMatch(actual: RoleFlags, expected: RoleFlags): boolean {
+  return describeRoleMismatch(actual, expected).length === 0;
+}
+
+export function createMissingRoleSql(
   role: string,
   password: string,
   options: { bypassRls: boolean },
 ): string {
   const bypass = options.bypassRls ? "BYPASSRLS" : "NOBYPASSRLS";
-  return `
-    DO $$
-    BEGIN
-      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${role}') THEN
-        CREATE ROLE ${role} LOGIN PASSWORD '${escapeLiteral(password)}'
-          NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT ${bypass};
-      ELSE
-        ALTER ROLE ${role} LOGIN PASSWORD '${escapeLiteral(password)}'
-          NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT ${bypass};
-      END IF;
-    END
-    $$;
+  return `CREATE ROLE ${role} LOGIN PASSWORD '${escapeLiteral(password)}'
+          NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT ${bypass}`;
+}
+
+export function correctRoleSql(
+  role: string,
+  password: string,
+  options: { bypassRls: boolean },
+): string {
+  const bypass = options.bypassRls ? "BYPASSRLS" : "NOBYPASSRLS";
+  return `ALTER ROLE ${role} LOGIN PASSWORD '${escapeLiteral(password)}'
+          NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT ${bypass}`;
+}
+
+export function isHostedPostgresUrl(url: string): boolean {
+  try {
+    return /\.neon\.tech$/i.test(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+}
+
+export function assertDisposableAdminUrl(url: string): void {
+  if (isHostedPostgresUrl(url)) {
+    throw new HostedTestDatabaseError();
+  }
+}
+
+export function testRolePasswords(env: NodeJS.ProcessEnv = process.env): RolePasswords {
+  return {
+    migrate: env.APP_MIGRATE_PASSWORD?.trim() || "isp_ci_migrate_only",
+    user: env.APP_USER_PASSWORD?.trim() || "isp_ci_app_user_only",
+    worker: env.APP_WORKER_PASSWORD?.trim() || "isp_ci_app_worker_only",
+    admin: env.APP_ADMIN_PASSWORD?.trim() || "isp_ci_app_admin_only",
+  };
+}
+
+function isInsufficientPrivilege(error: unknown): boolean {
+  const code = error && typeof error === "object" && "code" in error ? String(error.code) : "";
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    code === "42501" ||
+    /permission denied|must be able to SET ROLE|must be owner/i.test(message)
+  );
+}
+
+async function currentUserIsSuperuser(sql: Sql): Promise<boolean> {
+  const rows = await sql<{ rolsuper: boolean }[]>`
+    SELECT rolsuper FROM pg_roles WHERE rolname = current_user
   `;
+  return rows[0]?.rolsuper === true;
+}
+
+async function readRoleFlags(sql: Sql, role: string): Promise<RoleFlags | null> {
+  const rows = await sql<RoleFlags[]>`
+    SELECT rolcanlogin, rolsuper, rolcreatedb, rolcreaterole, rolinherit, rolbypassrls
+    FROM pg_roles
+    WHERE rolname = ${role}
+  `;
+  return rows[0] ?? null;
+}
+
+async function ensureApplicationRole(
+  sql: Sql,
+  role: string,
+  password: string,
+  options: { bypassRls: boolean },
+): Promise<void> {
+  const expected = expectedRoleFlags(options.bypassRls);
+  const existing = await readRoleFlags(sql, role);
+  if (!existing) {
+    await sql.unsafe(createMissingRoleSql(role, password, options));
+    return;
+  }
+  if (roleFlagsMatch(existing, expected)) {
+    return;
+  }
+  const mismatch = describeRoleMismatch(existing, expected);
+  if (await currentUserIsSuperuser(sql)) {
+    await sql.unsafe(correctRoleSql(role, password, options));
+    return;
+  }
+  throw new RoleInvariantError(
+    `Role ${role} exists but does not match required attributes: ${mismatch}. ` +
+      "This provisioner cannot ALTER ROLE (Neon owners typically cannot). " +
+      "Fix the role in the Neon SQL editor or recreate it with LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT and the expected BYPASSRLS/NOBYPASSRLS.",
+  );
+}
+
+async function transferOwnerIfAllowed(sql: Sql, statement: string): Promise<void> {
+  try {
+    await sql.unsafe(statement);
+  } catch (error) {
+    if (isInsufficientPrivilege(error)) {
+      return;
+    }
+    throw error;
+  }
 }
 
 export async function bootstrapRoles(
@@ -39,10 +179,10 @@ export async function bootstrapRoles(
 ): Promise<void> {
   const sql = postgres(adminUrl, { max: 1, prepare: false });
   try {
-    await sql.unsafe(createRoleSql(DB_ROLES.migrate, passwords.migrate, { bypassRls: true }));
-    await sql.unsafe(createRoleSql(DB_ROLES.user, passwords.user, { bypassRls: false }));
-    await sql.unsafe(createRoleSql(DB_ROLES.worker, passwords.worker, { bypassRls: false }));
-    await sql.unsafe(createRoleSql(DB_ROLES.admin, passwords.admin, { bypassRls: true }));
+    await ensureApplicationRole(sql, DB_ROLES.migrate, passwords.migrate, { bypassRls: true });
+    await ensureApplicationRole(sql, DB_ROLES.user, passwords.user, { bypassRls: false });
+    await ensureApplicationRole(sql, DB_ROLES.worker, passwords.worker, { bypassRls: false });
+    await ensureApplicationRole(sql, DB_ROLES.admin, passwords.admin, { bypassRls: true });
 
     await sql.unsafe(`
       DO $grant$
@@ -171,43 +311,49 @@ export async function bootstrapRoles(
       "product_event",
     ];
     for (const table of tables) {
-      await sql.unsafe(`ALTER TABLE "${table}" OWNER TO ${DB_ROLES.migrate}`);
+      await transferOwnerIfAllowed(
+        sql,
+        `ALTER TABLE "${table}" OWNER TO ${DB_ROLES.migrate}`,
+      );
     }
-    await sql.unsafe(`
-      ALTER FUNCTION app.current_organization_id() OWNER TO ${DB_ROLES.migrate};
-      ALTER FUNCTION app.current_user_id() OWNER TO ${DB_ROLES.migrate};
-      ALTER FUNCTION app.current_principal_type() OWNER TO ${DB_ROLES.migrate};
-      ALTER FUNCTION app.current_api_key_id() OWNER TO ${DB_ROLES.migrate};
-      ALTER FUNCTION app.has_active_membership() OWNER TO ${DB_ROLES.migrate};
-      ALTER FUNCTION app.tenant_is_active() OWNER TO ${DB_ROLES.migrate};
-      ALTER FUNCTION app.has_machine_principal() OWNER TO ${DB_ROLES.migrate};
-      ALTER FUNCTION app.has_system_principal() OWNER TO ${DB_ROLES.migrate};
-      ALTER FUNCTION app.is_authorized_principal() OWNER TO ${DB_ROLES.migrate};
-      ALTER FUNCTION app.lookup_api_key_by_prefix(text) OWNER TO ${DB_ROLES.migrate};
-      ALTER FUNCTION app.claim_stripe_event(text, text, text, text) OWNER TO ${DB_ROLES.migrate};
-      ALTER FUNCTION app.lookup_organization_by_stripe_customer(text) OWNER TO ${DB_ROLES.migrate};
-      ALTER FUNCTION app.list_pending_outbox(integer) OWNER TO ${DB_ROLES.migrate};
-      ALTER FUNCTION app.forbid_analytical_mutate() OWNER TO ${DB_ROLES.migrate};
-      ALTER FUNCTION app.protect_entity() OWNER TO ${DB_ROLES.migrate};
-      ALTER FUNCTION app.protect_decision_record() OWNER TO ${DB_ROLES.migrate};
-      ALTER FUNCTION app.install_kernel_rls(text, boolean) OWNER TO ${DB_ROLES.migrate};
-      ALTER FUNCTION app.forbid_tcg_canonical_mutate() OWNER TO ${DB_ROLES.migrate};
-      ALTER FUNCTION app.forbid_tcg_market_mutate() OWNER TO ${DB_ROLES.migrate};
-      ALTER FUNCTION app.require_system_tcg_market_write() OWNER TO ${DB_ROLES.migrate};
-      ALTER FUNCTION app.forbid_analytics_mutate() OWNER TO ${DB_ROLES.migrate};
-      ALTER FUNCTION app.require_system_analytics_write() OWNER TO ${DB_ROLES.migrate};
-      ALTER FUNCTION app.close_index_membership() OWNER TO ${DB_ROLES.migrate};
-      ALTER FUNCTION app.forbid_source_mutate() OWNER TO ${DB_ROLES.migrate};
-      ALTER FUNCTION app.require_system_source_write() OWNER TO ${DB_ROLES.migrate};
-      ALTER FUNCTION app.forbid_resolution_mutate() OWNER TO ${DB_ROLES.migrate};
-      ALTER FUNCTION app.require_system_resolution_write() OWNER TO ${DB_ROLES.migrate};
-      ALTER FUNCTION app.forbid_creator_call_mutate() OWNER TO ${DB_ROLES.migrate};
-      ALTER FUNCTION app.require_system_creator_write() OWNER TO ${DB_ROLES.migrate};
-      ALTER FUNCTION app.install_tenant_owned_rls(text, boolean) OWNER TO ${DB_ROLES.migrate};
-      ALTER FUNCTION app.install_operator_only_rls(text) OWNER TO ${DB_ROLES.migrate};
-      ALTER FUNCTION app.forbid_platform_audit_mutate() OWNER TO ${DB_ROLES.migrate};
-      ALTER FUNCTION app.consume_beta_invite(text, text) OWNER TO ${DB_ROLES.migrate};
-    `);
+    const functions = [
+      "app.current_organization_id()",
+      "app.current_user_id()",
+      "app.current_principal_type()",
+      "app.current_api_key_id()",
+      "app.has_active_membership()",
+      "app.tenant_is_active()",
+      "app.has_machine_principal()",
+      "app.has_system_principal()",
+      "app.is_authorized_principal()",
+      "app.lookup_api_key_by_prefix(text)",
+      "app.claim_stripe_event(text, text, text, text)",
+      "app.lookup_organization_by_stripe_customer(text)",
+      "app.list_pending_outbox(integer)",
+      "app.forbid_analytical_mutate()",
+      "app.protect_entity()",
+      "app.protect_decision_record()",
+      "app.install_kernel_rls(text, boolean)",
+      "app.forbid_tcg_canonical_mutate()",
+      "app.forbid_tcg_market_mutate()",
+      "app.require_system_tcg_market_write()",
+      "app.forbid_analytics_mutate()",
+      "app.require_system_analytics_write()",
+      "app.close_index_membership()",
+      "app.forbid_source_mutate()",
+      "app.require_system_source_write()",
+      "app.forbid_resolution_mutate()",
+      "app.require_system_resolution_write()",
+      "app.forbid_creator_call_mutate()",
+      "app.require_system_creator_write()",
+      "app.install_tenant_owned_rls(text, boolean)",
+      "app.install_operator_only_rls(text)",
+      "app.forbid_platform_audit_mutate()",
+      "app.consume_beta_invite(text, text)",
+    ];
+    for (const fn of functions) {
+      await transferOwnerIfAllowed(sql, `ALTER FUNCTION ${fn} OWNER TO ${DB_ROLES.migrate}`);
+    }
 
     await sql.unsafe(`
       GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
@@ -358,6 +504,8 @@ export async function bootstrapRoles(
       FROM ${DB_ROLES.user}, ${DB_ROLES.worker};
       REVOKE SELECT, INSERT, UPDATE, DELETE ON TABLE "stripe_event" FROM ${DB_ROLES.user}, ${DB_ROLES.worker};
       GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ${DB_ROLES.migrate}, ${DB_ROLES.admin};
+      GRANT ALL ON ALL FUNCTIONS IN SCHEMA app TO ${DB_ROLES.migrate}, ${DB_ROLES.admin};
+      GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO ${DB_ROLES.migrate}, ${DB_ROLES.admin};
       GRANT EXECUTE ON FUNCTION app.current_organization_id() TO ${DB_ROLES.user}, ${DB_ROLES.worker}, ${DB_ROLES.migrate}, ${DB_ROLES.admin};
       GRANT EXECUTE ON FUNCTION app.current_user_id() TO ${DB_ROLES.user}, ${DB_ROLES.worker}, ${DB_ROLES.migrate}, ${DB_ROLES.admin};
       GRANT EXECUTE ON FUNCTION app.current_principal_type() TO ${DB_ROLES.user}, ${DB_ROLES.worker}, ${DB_ROLES.migrate}, ${DB_ROLES.admin};

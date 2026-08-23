@@ -3,6 +3,7 @@ import { eq, sql } from "drizzle-orm";
 import postgres from "postgres";
 import {
   applyMigrations,
+  assertDisposableAdminUrl,
   bootstrapRoles,
   claimStripeEvent,
   createDbConnection,
@@ -22,6 +23,7 @@ import {
   recordUsage,
   replaceConnectionRole,
   requireDatabaseAdminUrl,
+  testRolePasswords,
   updateTenantResource,
   withMachineContext,
   withOrganizationContext,
@@ -58,7 +60,6 @@ import {
   ingestSourceContentRecord,
   sourceContent,
   withPlatformContext,
-  seedTcgIdentityFixtures,
   resolveEntity,
   entityResolutionAttempt,
   extractCreatorCallsFromContent,
@@ -82,12 +83,7 @@ import {
   listCrmCustomers,
 } from "./index.js";
 
-const passwords = {
-  migrate: "isp_ci_migrate_only",
-  user: "isp_ci_app_user_only",
-  worker: "isp_ci_app_worker_only",
-  admin: "isp_ci_app_admin_only",
-};
+const passwords = testRolePasswords();
 
 const ids = {
   userA: "user_a",
@@ -116,6 +112,7 @@ describe("PostgreSQL RLS isolation", () => {
 
   beforeAll(async () => {
     adminUrl = requireDatabaseAdminUrl();
+    assertDisposableAdminUrl(adminUrl);
     await applyMigrations(adminUrl);
     await bootstrapRoles(adminUrl, passwords);
     admin = postgres(adminUrl, { max: 1, prepare: false });

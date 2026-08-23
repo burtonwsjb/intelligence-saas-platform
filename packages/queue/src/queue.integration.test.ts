@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { UnrecoverableError, Worker } from "bullmq";
 import {
   applyMigrations,
+  assertDisposableAdminUrl,
   bootstrapRoles,
   createDbConnection,
   DB_ROLES,
@@ -18,6 +19,7 @@ import {
   receiveSourceContentRecord,
   replaceConnectionRole,
   requireDatabaseAdminUrl,
+  testRolePasswords,
   seedTcgIdentityFixtures,
   tenant,
   user,
@@ -36,12 +38,7 @@ import { markJobPermanentlyFailed, processNormalizeJob } from "./process.js";
 import { createRedisConnection } from "./redis.js";
 import { getIngestJobStatus } from "./status.js";
 
-const passwords = {
-  migrate: "isp_ci_migrate_only",
-  user: "isp_ci_app_user_only",
-  worker: "isp_ci_app_worker_only",
-  admin: "isp_ci_app_admin_only",
-};
+const passwords = testRolePasswords();
 
 const env = {
   ...process.env,
@@ -73,6 +70,7 @@ describe("Redis + Postgres ingest queue", () => {
   beforeAll(async () => {
     requireRedisUrl(process.env);
     const adminUrl = requireDatabaseAdminUrl();
+    assertDisposableAdminUrl(adminUrl);
     await applyMigrations(adminUrl);
     await bootstrapRoles(adminUrl, passwords);
     adminConn = createDbConnection(adminUrl);

@@ -19,7 +19,20 @@ export {
   MissingTenantContextError,
 } from "./errors.js";
 export { applyMigrations } from "./migrate-lib.js";
-export { bootstrapRoles, replaceConnectionRole } from "./bootstrap-roles.js";
+export {
+  assertDisposableAdminUrl,
+  bootstrapRoles,
+  createMissingRoleSql,
+  expectedRoleFlags,
+  HostedTestDatabaseError,
+  isHostedPostgresUrl,
+  replaceConnectionRole,
+  RoleInvariantError,
+  roleFlagsMatch,
+  testRolePasswords,
+  type RoleFlags,
+  type RolePasswords,
+} from "./bootstrap-roles.js";
 export { listMigrationFiles, readMigrationSql } from "./migrations.js";
 export { DB_ROLES } from "./roles.js";
 export {

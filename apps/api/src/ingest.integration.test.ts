@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { generateApiKeySecret } from "@isp/auth";
 import {
   applyMigrations,
+  assertDisposableAdminUrl,
   bootstrapRoles,
   createDbConnection,
   DB_ROLES,
@@ -14,6 +15,7 @@ import {
   organization,
   replaceConnectionRole,
   requireDatabaseAdminUrl,
+  testRolePasswords,
   tenant,
   tenantBilling,
   user,
@@ -24,12 +26,7 @@ import {
 import { dispatchPendingOutbox, requireRedisUrl } from "@isp/queue";
 import { createApiApp } from "./app.js";
 
-const passwords = {
-  migrate: "isp_ci_migrate_only",
-  user: "isp_ci_app_user_only",
-  worker: "isp_ci_app_worker_only",
-  admin: "isp_ci_app_admin_only",
-};
+const passwords = testRolePasswords();
 
 const pepper = "phase05-integration-pepper-value";
 const env = {
@@ -62,6 +59,7 @@ describe("POST /v1/events with Redis + Postgres", () => {
   beforeAll(async () => {
     requireRedisUrl(process.env);
     const adminUrl = requireDatabaseAdminUrl();
+    assertDisposableAdminUrl(adminUrl);
     await applyMigrations(adminUrl);
     await bootstrapRoles(adminUrl, passwords);
     adminConn = createDbConnection(adminUrl);

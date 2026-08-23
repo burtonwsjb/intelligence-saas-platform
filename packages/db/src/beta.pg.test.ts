@@ -3,6 +3,7 @@ import postgres from "postgres";
 import { eq } from "drizzle-orm";
 import {
   applyMigrations,
+  assertDisposableAdminUrl,
   bootstrapRoles,
   createDbConnection,
   DB_ROLES,
@@ -10,25 +11,22 @@ import {
   productFeedback,
   replaceConnectionRole,
   requireDatabaseAdminUrl,
+  testRolePasswords,
   withOrganizationContext,
   type Database,
 } from "./index.js";
 
-const passwords = {
-  migrate: "isp_ci_migrate_only",
-  user: "isp_ci_app_user_only",
-  worker: "isp_ci_app_worker_only",
-  admin: "isp_ci_app_admin_only",
-};
+const passwords = testRolePasswords();
 
 describe("beta feedback RLS", () => {
   let adminUrl: string;
-  let admin: ReturnType<typeof postgres>;
-  let appConn: ReturnType<typeof createDbConnection>;
+  let admin: ReturnType<typeof postgres> | undefined;
+  let appConn: ReturnType<typeof createDbConnection> | undefined;
   let appDb: Database;
 
   beforeAll(async () => {
     adminUrl = requireDatabaseAdminUrl();
+    assertDisposableAdminUrl(adminUrl);
     await applyMigrations(adminUrl);
     await bootstrapRoles(adminUrl, passwords);
     admin = postgres(adminUrl, { max: 1, prepare: false });
@@ -55,8 +53,8 @@ describe("beta feedback RLS", () => {
   });
 
   afterAll(async () => {
-    await appConn.end();
-    await admin.end({ timeout: 5 });
+    await appConn?.end();
+    await admin?.end({ timeout: 5 });
   });
 
   it("keeps product feedback inside the writing tenant", async () => {

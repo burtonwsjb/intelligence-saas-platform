@@ -4,7 +4,7 @@
 |---|---|---|
 | `BETTER_AUTH_SECRET` | Generate ≥32 bytes; deploy web; users re-authenticate | Sessions |
 | `API_KEY_PEPPER` | Dual-pepper window is not implemented; rotating **breaks existing keys**. Issue new keys first, then rotate only during a planned cutover | All API keys |
-| Database role passwords | `ALTER ROLE` via Neon SQL as owner; update Railway/Vercel; bounce connections | DB sessions |
+| Database role passwords | Rotate in the Neon SQL editor (app bootstrap does not `ALTER ROLE` when attributes already match); update Railway/Vercel; bounce connections | DB sessions |
 | Redis | Vendor rotate + update `REDIS_URL`; worker/API restart | In-flight jobs retry |
 | Stripe webhook secret | Dashboard rotate; update `STRIPE_WEBHOOK_SECRET` | Webhook verify until updated |
 | Resend | Dashboard rotate `RESEND_API_KEY` | Outbound mail until updated |

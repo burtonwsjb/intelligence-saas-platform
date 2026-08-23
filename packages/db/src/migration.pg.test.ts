@@ -1,18 +1,19 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import postgres from "postgres";
-import { applyMigrations, requireDatabaseAdminUrl } from "./index.js";
+import { applyMigrations, assertDisposableAdminUrl, requireDatabaseAdminUrl } from "./index.js";
 
 describe("migration smoke", () => {
-  let admin: ReturnType<typeof postgres>;
+  let admin: ReturnType<typeof postgres> | undefined;
 
   beforeAll(async () => {
     const url = requireDatabaseAdminUrl();
+    assertDisposableAdminUrl(url);
     await applyMigrations(url);
     admin = postgres(url, { max: 1, prepare: false });
   });
 
   afterAll(async () => {
-    await admin.end({ timeout: 5 });
+    await admin?.end({ timeout: 5 });
   });
 
   it("applies Phase 02-22 objects on an empty-capable database", async () => {
