@@ -41,20 +41,21 @@ Shared:
 API:
 
 - `PORT` provided by Railway
-- `DATABASE_URL` Neon pooled `app_user`
+- `APP_DATABASE_URL` Neon pooled `app_user` (required; hosted API does not fall back to `DATABASE_URL`)
 - `REDIS_URL`
 - `API_KEY_PEPPER`
 - `BETTER_AUTH_SECRET` not required on API unless shared auth is added later
 
 Worker:
 
-- `WORKER_DATABASE_URL` Neon `app_worker` (unpooled or session mode if SET LOCAL is used; this app uses transaction-local `set_config`, so transaction pooling is OK)
+- `WORKER_DATABASE_URL` Neon `app_worker` (required; hosted worker does not fall back to `DATABASE_URL`)
+- Pooled is OK because this app uses transaction-local `set_config`
 - `REDIS_URL`, `QUEUE_PREFIX=staging`
 - Do not start the API process in the worker service
 
 Web:
 
-- `DATABASE_URL` Neon pooled `app_user`
+- `APP_DATABASE_URL` Neon pooled `app_user` (required). A Neon Vercel integration may create `DATABASE_URL` with the owner/default credential; leave that integration-managed variable alone and do not use it for application runtime
 - `DATABASE_ADMIN_URL` + `APP_ADMIN_PASSWORD` for `/admin` break-glass
 - `BETTER_AUTH_SECRET` (≥32 chars)
 - `API_KEY_PEPPER`

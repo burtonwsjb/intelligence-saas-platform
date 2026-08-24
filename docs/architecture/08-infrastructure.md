@@ -35,7 +35,10 @@ Local development does not require Vercel or Railway. Phase 05 uses disposable D
 ## Planned variable names only
 
 - `ISP_ENV` (`local` \| `test` \| `staging` \| `production`)
-- `DATABASE_URL`
+- `DATABASE_URL` (local/test; also Neon/Vercel integration-managed, unused by hosted runtime)
+- `APP_DATABASE_URL` (hosted web/API restricted `app_user`)
+- `WORKER_DATABASE_URL` (hosted worker `app_worker`)
+- `DATABASE_ADMIN_URL` (migrations/bootstrap only)
 - `REDIS_URL` (server-side; local `redis://localhost:6379`)
 - `QUEUE_PREFIX` (optional `isp-{prefix}-ingest` segment; not a secret)
 - `BETTER_AUTH_SECRET`

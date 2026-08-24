@@ -9,7 +9,7 @@ This file is a checklist so a later production deploy is controlled. It does **n
 
 Classify every production variable as required secret, required public, optional, derived, or provider-specific. Values stay in the host secret store.
 
-Required secrets: `BETTER_AUTH_SECRET`, `API_KEY_PEPPER`, `DATABASE_URL`, `DATABASE_ADMIN_URL`, `APP_MIGRATE_PASSWORD`, `APP_USER_PASSWORD`, `APP_WORKER_PASSWORD`, `APP_ADMIN_PASSWORD`, `REDIS_URL`, `RESEND_API_KEY`, Stripe test (or later live only after explicit authorization), provider tokens.
+Required secrets: `BETTER_AUTH_SECRET`, `API_KEY_PEPPER`, `APP_DATABASE_URL`, `WORKER_DATABASE_URL`, `DATABASE_ADMIN_URL`, `APP_MIGRATE_PASSWORD`, `APP_USER_PASSWORD`, `APP_WORKER_PASSWORD`, `APP_ADMIN_PASSWORD`, `REDIS_URL`, `RESEND_API_KEY`, Stripe test (or later live only after explicit authorization), provider tokens.
 
 Required public: `ISP_ENV=production`, `NODE_ENV=production`, `APP_URL`, `BETTER_AUTH_URL`, `API_URL`, `QUEUE_PREFIX=production`.
 

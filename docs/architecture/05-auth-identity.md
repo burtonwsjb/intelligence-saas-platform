@@ -56,7 +56,7 @@ A key with only `decisions:read` cannot ingest. A key cannot escape its tenant.
 | `app_migrate` | migration runner | DDL |
 | `app_admin` | break-glass platform admin | audited, not used by tenants |
 
-There is no Supabase service role. Normal requests use `DATABASE_URL` as `app_user`. Migrations use `DATABASE_ADMIN_URL`. Server processes set transaction-local `app.current_organization_id` and `app.current_user_id` before tenant-owned queries so RLS can enforce the active tenant.
+There is no Supabase service role. Hosted web/API use `APP_DATABASE_URL` as `app_user`. Local/test may use `DATABASE_URL`. Migrations use `DATABASE_ADMIN_URL`. Server processes set transaction-local `app.current_organization_id` and `app.current_user_id` before tenant-owned queries so RLS can enforce the active tenant.
 
 ## TCG Card Central identities later
 

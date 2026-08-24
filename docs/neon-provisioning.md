@@ -5,7 +5,7 @@ Do not create a Neon project from this repository. When authorized:
 1. Neon console → New project. Region: choose the same region as Railway staging (often `us-east-1` / `aws-us-east-1`). Free/launch tier is enough for staging.
 2. Database name: `isp_staging` (or default `neondb`).
 3. Copy the **unpooled** connection string for migrations (`DATABASE_ADMIN_URL`). Enable `sslmode=require`.
-4. Copy the **pooled** connection string for `app_user` (`DATABASE_URL`).
+4. Build the **pooled** restricted `app_user` URL and store it as `APP_DATABASE_URL` for hosted web/API. Do not point hosted runtime at a Neon Vercel integration `DATABASE_URL` (that credential is the owner/default role and cannot be edited in Vercel). Leave the integration-managed `DATABASE_URL` in place; hosted staging/production fail closed if `APP_DATABASE_URL` is absent.
 5. Roles are **not** created by SQL migrations. Run `pnpm db:bootstrap` as the Neon owner using:
    - `APP_MIGRATE_PASSWORD`
    - `APP_USER_PASSWORD`
@@ -17,4 +17,4 @@ Do not create a Neon project from this repository. When authorized:
 9. `GRANT CONNECT ON DATABASE` is skipped if the owner lacks privilege; Neon owner typically can grant it.
 10. Do not use the local Docker superuser URL. Hosted admin DB without `APP_ADMIN_PASSWORD` fails closed.
 11. RLS uses `set_config(..., true)` inside transactions with `prepare: false`, which is compatible with Neon/PgBouncer **transaction** pooling. Do not rely on session-level `SET` across pooled checkouts.
-12. Worker should use `WORKER_DATABASE_URL` as role `app_worker`.
+12. Worker should use `WORKER_DATABASE_URL` as role `app_worker`. Hosted worker does not fall back to `DATABASE_URL`.

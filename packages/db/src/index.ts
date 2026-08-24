@@ -8,8 +8,11 @@ export {
 export {
   isMissingDatabaseAdminUrlError,
   isMissingDatabaseUrlError,
+  isMissingWorkerDatabaseUrlError,
+  MissingAppDatabaseUrlError,
   MissingDatabaseAdminUrlError,
   MissingDatabaseUrlError,
+  MissingWorkerDatabaseUrlError,
   requireDatabaseAdminUrl,
   requireDatabaseUrl,
   requireWorkerDatabaseUrl,

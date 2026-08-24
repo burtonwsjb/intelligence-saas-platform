@@ -8,8 +8,8 @@ No hosted environment may fall back to local billing simulation, `PLATFORM_ADMIN
 
 | Concern | local | test | staging | production |
 |---|---|---|---|---|
-| Database | Docker Postgres; `DATABASE_URL` may be superuser locally | CI disposable Postgres | Neon; `app_user` pooled; migrations unpooled `DATABASE_ADMIN_URL` | Same pattern, separate project |
-| Worker DB | `DATABASE_URL` or `WORKER_DATABASE_URL` | same | `WORKER_DATABASE_URL` as `app_worker` | `app_worker` |
+| Database | Docker Postgres; `DATABASE_URL` may be superuser locally | CI disposable Postgres | Neon; hosted web/API require `APP_DATABASE_URL` as pooled `app_user` and do not fall back to integration `DATABASE_URL`; migrations unpooled `DATABASE_ADMIN_URL` | Same pattern, separate project |
+| Worker DB | `DATABASE_URL` or `WORKER_DATABASE_URL` | same | `WORKER_DATABASE_URL` as `app_worker` (required; no `DATABASE_URL` fallback) | `app_worker` (required) |
 | Redis | `redis://localhost:6379` | CI Redis | Managed Redis; `rediss://` preferred | `rediss://` unless `REDIS_TLS=optional` on a private network |
 | Auth cookies | insecure HTTP ok | test | Secure + HTTPS `APP_URL` | Secure + HTTPS |
 | Billing | `local_simulation` default | simulation | `stripe_test` only | `stripe_test` until live is explicitly authorized (still forbidden in code) |
@@ -28,9 +28,9 @@ No hosted environment may fall back to local billing simulation, `PLATFORM_ADMIN
 | Process | Required (hosted) | Must never reach the client bundle |
 |---|---|---|
 | Web public | `APP_URL`, `API_URL` (if used) | secrets |
-| Web server | `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `API_KEY_PEPPER` (if issuing keys), `DATABASE_ADMIN_URL` + `APP_ADMIN_PASSWORD` for `/admin` | all of the above |
-| API | `DATABASE_URL`, `REDIS_URL`, `API_KEY_PEPPER`, `APP_URL`, `PORT` from the platform | same |
-| Worker | `WORKER_DATABASE_URL` or `DATABASE_URL`, `REDIS_URL`, `QUEUE_PREFIX` | same |
+| Web server | `APP_DATABASE_URL` (hosted) or `DATABASE_URL` (local/test), `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `API_KEY_PEPPER` (if issuing keys), `DATABASE_ADMIN_URL` + `APP_ADMIN_PASSWORD` for `/admin` | all of the above |
+| API | `APP_DATABASE_URL` (hosted) or `DATABASE_URL` (local/test), `REDIS_URL`, `API_KEY_PEPPER`, `APP_URL`, `PORT` from the platform | same |
+| Worker | `WORKER_DATABASE_URL` (hosted required; local/test may fall back to runtime URL), `REDIS_URL`, `QUEUE_PREFIX` | same |
 | Migrate/bootstrap | `DATABASE_ADMIN_URL` (unpooled), `APP_*_PASSWORD` | same |
 
 `assertHostedSecrets()` runs at API/worker/web auth startup.

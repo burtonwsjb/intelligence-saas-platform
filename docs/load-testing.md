@@ -42,5 +42,5 @@ Heavy load is **not** in GitHub Actions (`validate` stays unit/isolation/integra
 ## Chaos (local)
 
 - API process starts without Redis: `/health` is ok; `/ready` redis=error or skipped; ingest still 202.
-- Worker without `DATABASE_URL`: first job fails; process should not pretend success.
+- Worker without `WORKER_DATABASE_URL` (hosted) or runtime DB URL (local): first job fails; process should not pretend success.
 - Recovery: restoring Redis/DB allows outbox sweep to publish and process remaining jobs.

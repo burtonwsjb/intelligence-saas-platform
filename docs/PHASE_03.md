@@ -21,11 +21,13 @@ Cloud Neon is still **not** provisioned. Isolation is proven with disposable Pos
 
 | Variable | Role | Use |
 |---|---|---|
-| `DATABASE_URL` | `app_user` | Application runtime. Browser never sees this. |
+| `APP_DATABASE_URL` | `app_user` | Hosted web/API runtime. Required in staging/production. Browser never sees this. |
+| `DATABASE_URL` | local/test runtime | Local Docker/CI. Hosted must not fall back to this (Neon integration may set an owner credential). |
 | `DATABASE_ADMIN_URL` | provisioner / migrate | `pnpm db:migrate` and `pnpm db:bootstrap` |
+| `WORKER_DATABASE_URL` | `app_worker` | Hosted worker runtime. Required in staging/production. |
 | `APP_*_PASSWORD` | bootstrap only | Local untracked passwords for the four roles |
 
-Missing `DATABASE_URL` throws `MissingDatabaseUrlError`. Missing `DATABASE_ADMIN_URL` throws `MissingDatabaseAdminUrlError` when migrating/bootstrapping.
+Missing local `DATABASE_URL` throws `MissingDatabaseUrlError`. Missing hosted `APP_DATABASE_URL` throws `MissingAppDatabaseUrlError`. Missing `DATABASE_ADMIN_URL` throws `MissingDatabaseAdminUrlError` when migrating/bootstrapping.
 
 ## RLS context model
 

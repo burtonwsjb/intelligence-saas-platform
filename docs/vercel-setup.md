@@ -8,6 +8,7 @@ Do not deploy from this document until the operator is signed in.
 4. Node.js: 22.
 5. Install command: `pnpm install --frozen-lockfile`
 6. Build command: `pnpm --filter @isp/web... build` (see `vercel.json`).
-7. Environment: `ISP_ENV=staging`, `APP_URL`, `BETTER_AUTH_URL`, `DATABASE_URL`, `BETTER_AUTH_SECRET`, `API_KEY_PEPPER`, plus admin DB vars if `/admin` is used.
-8. Do not add `PLATFORM_ADMIN_EMAILS`.
-9. Preview deployments should not share production Redis/DB.
+7. Environment: `ISP_ENV=staging`, `APP_URL`, `BETTER_AUTH_URL`, `APP_DATABASE_URL` (restricted pooled `app_user`), `BETTER_AUTH_SECRET`, `API_KEY_PEPPER`, plus admin DB vars if `/admin` is used.
+8. If the Neon Vercel integration created `DATABASE_URL`, leave it in place and do not use it for application runtime. Hosted web fails closed without `APP_DATABASE_URL`.
+9. Do not add `PLATFORM_ADMIN_EMAILS`.
+10. Preview deployments should not share production Redis/DB.

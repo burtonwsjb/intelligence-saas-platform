@@ -10,6 +10,7 @@ describe("committed secrets", () => {
     const example = readFileSync(path.join(repoRoot, ".env.example"), "utf8");
     expect(example).toMatch(/^BETTER_AUTH_SECRET=$/m);
     expect(example).toMatch(/^DATABASE_URL=$/m);
+    expect(example).toMatch(/^APP_DATABASE_URL=$/m);
     expect(example).toMatch(/^DATABASE_ADMIN_URL=$/m);
     expect(example).not.toMatch(/postgresql:\/\/[^:]+:[^@]+@/);
     expect(example).not.toMatch(/sk_live_/);

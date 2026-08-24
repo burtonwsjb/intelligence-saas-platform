@@ -3,8 +3,11 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  isMissingDatabaseUrlError,
+  MissingAppDatabaseUrlError,
   MissingDatabaseAdminUrlError,
   MissingDatabaseUrlError,
+  MissingWorkerDatabaseUrlError,
   requireDatabaseAdminUrl,
   requireDatabaseUrl,
   requireWorkerDatabaseUrl,
@@ -61,6 +64,86 @@ describe("database env", () => {
     expect(requireWorkerDatabaseUrl({ DATABASE_URL: "postgresql://app_user@localhost/isp" })).toBe(
       "postgresql://app_user@localhost/isp",
     );
+  });
+
+  it("prefers APP_DATABASE_URL over DATABASE_URL for local runtime", () => {
+    expect(
+      requireDatabaseUrl({
+        APP_DATABASE_URL: "postgresql://app_user@localhost/isp",
+        DATABASE_URL: "postgresql://owner@localhost/isp",
+      }),
+    ).toBe("postgresql://app_user@localhost/isp");
+  });
+
+  it("requires APP_DATABASE_URL on hosted staging and does not fall back to DATABASE_URL", () => {
+    expect(() =>
+      requireDatabaseUrl({
+        ISP_ENV: "staging",
+        NODE_ENV: "production",
+        DATABASE_URL: "postgresql://owner@localhost/isp",
+      }),
+    ).toThrow(MissingAppDatabaseUrlError);
+    expect(() =>
+      requireDatabaseUrl({
+        ISP_ENV: "staging",
+        NODE_ENV: "production",
+        DATABASE_URL: "postgresql://owner@localhost/isp",
+      }),
+    ).toThrow(/must not fall back to DATABASE_URL/);
+    expect(
+      requireDatabaseUrl({
+        ISP_ENV: "staging",
+        NODE_ENV: "production",
+        APP_DATABASE_URL: "postgresql://app_user@localhost/isp",
+        DATABASE_URL: "postgresql://owner@localhost/isp",
+      }),
+    ).toBe("postgresql://app_user@localhost/isp");
+  });
+
+  it("requires APP_DATABASE_URL on production and does not fall back to DATABASE_URL", () => {
+    expect(() =>
+      requireDatabaseUrl({
+        NODE_ENV: "production",
+        DATABASE_URL: "postgresql://owner@localhost/isp",
+      }),
+    ).toThrow(MissingAppDatabaseUrlError);
+    expect(
+      requireDatabaseUrl({
+        ISP_ENV: "production",
+        NODE_ENV: "production",
+        APP_DATABASE_URL: "postgresql://app_user@localhost/isp",
+        DATABASE_URL: "postgresql://owner@localhost/isp",
+      }),
+    ).toBe("postgresql://app_user@localhost/isp");
+  });
+
+  it("requires WORKER_DATABASE_URL on hosted runtimes and does not fall back", () => {
+    expect(() =>
+      requireWorkerDatabaseUrl({
+        ISP_ENV: "staging",
+        NODE_ENV: "production",
+        DATABASE_URL: "postgresql://owner@localhost/isp",
+        APP_DATABASE_URL: "postgresql://app_user@localhost/isp",
+      }),
+    ).toThrow(MissingWorkerDatabaseUrlError);
+    expect(
+      requireWorkerDatabaseUrl({
+        ISP_ENV: "staging",
+        NODE_ENV: "production",
+        WORKER_DATABASE_URL: "postgresql://app_worker@localhost/isp",
+        DATABASE_URL: "postgresql://owner@localhost/isp",
+      }),
+    ).toBe("postgresql://app_worker@localhost/isp");
+  });
+
+  it("treats a missing hosted APP_DATABASE_URL as a database URL config error", () => {
+    try {
+      requireDatabaseUrl({ NODE_ENV: "production", DATABASE_URL: "postgresql://owner@localhost/isp" });
+      throw new Error("expected hosted runtime to fail closed");
+    } catch (error) {
+      expect(isMissingDatabaseUrlError(error)).toBe(true);
+      expect(error).toBeInstanceOf(MissingAppDatabaseUrlError);
+    }
   });
 });
 
@@ -193,6 +276,7 @@ describe("committed env example", () => {
     const example = readFileSync(path.join(repoRoot, ".env.example"), "utf8");
     expect(example).toMatch(/^BETTER_AUTH_SECRET=$/m);
     expect(example).toMatch(/^DATABASE_URL=$/m);
+    expect(example).toMatch(/^APP_DATABASE_URL=$/m);
     expect(example).toMatch(/^DATABASE_ADMIN_URL=$/m);
     expect(example).toMatch(/^REDIS_URL=$/m);
     expect(example).toMatch(/^QUEUE_PREFIX=$/m);

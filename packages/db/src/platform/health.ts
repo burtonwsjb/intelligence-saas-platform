@@ -81,7 +81,7 @@ export function describePlatformConfig(env: NodeJS.ProcessEnv = process.env) {
     emailMode: env.AUTH_EMAIL_MODE?.trim() || "file",
     predictionsCustomerVisible: env.PREDICTIONS_CUSTOMER_VISIBLE === "true",
     trialDurationDays: env.TRIAL_DURATION_DAYS?.trim() || "14",
-    databaseConfigured: Boolean(env.DATABASE_URL?.trim()),
+    databaseConfigured: Boolean(env.APP_DATABASE_URL?.trim() || env.DATABASE_URL?.trim()),
     adminRolePasswordConfigured: Boolean(env.APP_ADMIN_PASSWORD?.trim()),
     databaseAdminUrlConfigured: Boolean(env.DATABASE_ADMIN_URL?.trim()),
     redisConfigured: Boolean(env.REDIS_URL?.trim()),
