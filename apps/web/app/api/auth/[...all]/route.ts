@@ -1,10 +1,12 @@
 import { toNextJsHandler } from "better-auth/next-js";
 import { consumeBetaInvite } from "@isp/db";
+import { logAuthConfigError } from "@/lib/auth-diagnostics";
 import { getAuth, getDb, isAuthConfigError } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
-function unavailable() {
+function unavailable(error: unknown) {
+  logAuthConfigError(error);
   return Response.json(
     { error: "Authentication is not configured." },
     { status: 503 },
@@ -16,7 +18,7 @@ export async function GET(request: Request) {
     return toNextJsHandler(getAuth()).GET(request);
   } catch (error) {
     if (isAuthConfigError(error)) {
-      return unavailable();
+      return unavailable(error);
     }
     throw error;
   }
@@ -36,7 +38,7 @@ export async function POST(request: Request) {
     return toNextJsHandler(getAuth()).POST(request);
   } catch (error) {
     if (isAuthConfigError(error)) {
-      return unavailable();
+      return unavailable(error);
     }
     const message = error instanceof Error ? error.message : "Signup is not allowed.";
     if (process.env.BETA_INVITE_ONLY === "true") {
