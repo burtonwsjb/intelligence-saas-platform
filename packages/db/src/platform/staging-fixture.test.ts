@@ -5,9 +5,12 @@ import { fileURLToPath } from "node:url";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import {
+  ingestTcgMarketRecord,
   member,
   platformAdmins,
   readMigrationSql,
+  seedTcgIdentityFixtures,
+  tcgMarketFixtureRecords,
   tenant,
   user,
   type Database,
@@ -85,6 +88,25 @@ describe("staging fixture pipeline", () => {
     expect(grants[0]?.note).toBe("keep");
     expect(await db.select().from(tenant)).toEqual([]);
     expect(await db.select().from(member)).toEqual([]);
+  });
+
+  it("resumes after a mid-run stop without duplicating fixture rows", async () => {
+    const { db } = await setup();
+    await seedTcgIdentityFixtures(db);
+    for (const record of tcgMarketFixtureRecords()) {
+      await ingestTcgMarketRecord(db, record);
+    }
+    const partial = await collectStagingFixtureVerification(db);
+    expect(partial.marketSnapshots).toBeGreaterThan(0);
+    expect(partial.scores).toBe(0);
+    expect(partial.indexLevels).toBe(0);
+    expect(partial.predictions).toBe(0);
+
+    const first = await runStagingFixturePipeline(db);
+    expect(first.marketSnapshots).toBe(partial.marketSnapshots);
+    const second = await runStagingFixturePipeline(db);
+    expect(second).toEqual(first);
+    expect(second.customers).toBe(0);
   });
 
   it("keeps predictions in shadow and does not enqueue tenant outbox jobs", async () => {

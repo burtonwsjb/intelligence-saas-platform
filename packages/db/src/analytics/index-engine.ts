@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNull, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNull, lte, sql } from "drizzle-orm";
 import type { Database } from "../client.js";
 import { tcgIndexDefinition, tcgIndexLevel, tcgIndexMembership } from "../schema/analytics.js";
 import { tcgMarketSnapshot } from "../schema/tcg-market.js";
@@ -140,7 +140,7 @@ async function salesCountAsOf(db: Database, printingId: string, asOf: Date, days
         eq(tcgMarketSnapshot.priceType, "sold"),
         eq(tcgMarketSnapshot.condition, condition),
         lte(tcgMarketSnapshot.observedAt, asOf),
-        sql`${tcgMarketSnapshot.observedAt} > ${from}`,
+        gt(tcgMarketSnapshot.observedAt, from),
         isNull(tcgMarketSnapshot.gradingCompany),
       ),
     );
