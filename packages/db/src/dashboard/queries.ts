@@ -97,14 +97,24 @@ export async function listLatestOpportunities(db: Database, filter: OpportunityF
   const identities = await listPrintingCatalog(db);
   const identityById = new Map(identities.map((row) => [row.printingId, row]));
   const snapshots = await db.select().from(tcgMarketSnapshot).orderBy(desc(tcgMarketSnapshot.observedAt));
-  const latestPrice = new Map<string, { price: string | null; sourceKey: string; observedAt: Date; currency: string }>();
+  const latestPrice = new Map<
+    string,
+    { price: string | null; sourceKey: string; observedAt: Date; currency: string; outlierFlag: boolean }
+  >();
   for (const snapshot of snapshots) {
-    if (!latestPrice.has(snapshot.printingId) && snapshot.price) {
+    if (
+      !latestPrice.has(snapshot.printingId) &&
+      snapshot.price &&
+      snapshot.priceType === "sold" &&
+      snapshot.outlierFlag === false &&
+      snapshot.gradingCompany == null
+    ) {
       latestPrice.set(snapshot.printingId, {
         price: snapshot.price,
         sourceKey: snapshot.sourceKey,
         observedAt: snapshot.observedAt,
         currency: snapshot.currency,
+        outlierFlag: snapshot.outlierFlag,
       });
     }
   }
@@ -118,7 +128,13 @@ export async function listLatestOpportunities(db: Database, filter: OpportunityF
       (row): row is {
         score: (typeof scores)[number];
         identity: PrintingIdentity;
-        market: { price: string | null; sourceKey: string; observedAt: Date; currency: string } | null;
+        market: {
+          price: string | null;
+          sourceKey: string;
+          observedAt: Date;
+          currency: string;
+          outlierFlag: boolean;
+        } | null;
       } => row !== null,
     )
     .filter((row) => {
@@ -151,11 +167,14 @@ export async function getPrintingWorkspace(db: Database, printingId: string) {
     db.select().from(tcgPrediction).where(eq(tcgPrediction.printingId, printingId)).orderBy(desc(tcgPrediction.issuedAt)),
     getTcgAskSoldSpread(db, { printingId }),
   ]);
-  const latestSold = sold[0] ?? null;
+  const latestObservedSold = sold[0] ?? null;
+  const latestSold =
+    sold.find((row) => row.price != null && row.outlierFlag === false && row.gradingCompany == null) ?? null;
   return {
     identity,
     sold,
     latestSold,
+    latestObservedSold,
     listing,
     reference,
     score,

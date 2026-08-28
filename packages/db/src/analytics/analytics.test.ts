@@ -129,6 +129,7 @@ describe("market feature formulas", () => {
           lowPrice: 39,
           medianPrice: 44,
           sourceKey: "tcgplayer",
+          currency: "USD",
         },
       ],
       outlierPolicy: "exclude_flagged.v1",
@@ -215,6 +216,7 @@ describe("market feature formulas", () => {
         lowPrice: 41,
         medianPrice: 42,
         sourceKey: "tcgplayer",
+        currency: "USD",
       },
       {
         observedAt: new Date("2026-01-10T00:00:00.000Z"),
@@ -223,6 +225,7 @@ describe("market feature formulas", () => {
         lowPrice: 39,
         medianPrice: 40,
         sourceKey: "tcgplayer",
+        currency: "USD",
       },
     ];
     const excluded = computeFeaturesFromSeries({
@@ -244,6 +247,22 @@ describe("market feature formulas", () => {
     expect(included.latest_sold_price).toBe(400);
     const flags = excluded.manipulation_foundation as { outlier_driven: boolean };
     expect(flags.outlier_driven).toBe(true);
+  });
+
+  it("fails closed when sold prices mix currencies", () => {
+    const asOf = new Date("2026-01-03T00:00:00.000Z");
+    const features = computeFeaturesFromSeries({
+      asOf,
+      sold: [
+        { id: "usd", observedAt: new Date("2026-01-01T00:00:00.000Z"), price: 40, quantity: 1, sourceKey: "fixture", outlierFlag: false, currency: "USD" },
+        { id: "jpy", observedAt: new Date("2026-01-02T00:00:00.000Z"), price: 8000, quantity: 1, sourceKey: "fixture", outlierFlag: false, currency: "JPY" },
+      ],
+      listings: [],
+      outlierPolicy: "exclude_flagged.v1",
+    });
+    const returns = features.returns as Record<string, { status: string; value: number | null }>;
+    expect(returns["1d"].status).toBe("insufficient_data");
+    expect(features.latest_sold_price).toBeNull();
   });
 });
 

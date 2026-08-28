@@ -107,12 +107,13 @@ export async function listIndexDefinitions(db: Database, filter?: { gameKey?: st
 async function soldPriceAsOf(
   db: Database,
   input: { printingId: string; asOf: Date; condition: string; rawGraded: IndexMembershipRule["raw_graded"] },
-): Promise<number | null> {
+): Promise<{ price: number; currency: string } | null> {
   const clauses = [
     eq(tcgMarketSnapshot.printingId, input.printingId),
     eq(tcgMarketSnapshot.priceType, "sold"),
     eq(tcgMarketSnapshot.condition, input.condition),
     lte(tcgMarketSnapshot.observedAt, input.asOf),
+    eq(tcgMarketSnapshot.outlierFlag, false),
   ];
   if (input.rawGraded === "raw") {
     clauses.push(isNull(tcgMarketSnapshot.gradingCompany));
@@ -126,7 +127,7 @@ async function soldPriceAsOf(
     .where(and(...clauses))
     .orderBy(desc(tcgMarketSnapshot.observedAt))
     .limit(1);
-  return row?.price == null ? null : Number(row.price);
+  return row?.price == null ? null : { price: Number(row.price), currency: row.currency };
 }
 
 async function salesCountAsOf(db: Database, printingId: string, asOf: Date, days: number, condition: string) {
@@ -335,10 +336,13 @@ export async function computeIndexLevel(db: Database, indexKey: string, asOf: Da
       condition: rule.condition ?? "nm",
       rawGraded: rule.raw_graded ?? "raw",
     });
-    if (base == null || current == null || base <= 0) {
+    if (base == null || current == null || base.price <= 0) {
       continue;
     }
-    priced.push({ weight: Number(member.weight), rel: current / base });
+    if (base.currency !== current.currency) {
+      continue;
+    }
+    priced.push({ weight: Number(member.weight), rel: current.price / base.price });
   }
   const weightSum = priced.reduce((sum, row) => sum + row.weight, 0);
   const weighted =

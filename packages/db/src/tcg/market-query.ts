@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, isNull, lte, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, isNotNull, isNull, lte, type SQL } from "drizzle-orm";
 import { tcgMarketSnapshot } from "../schema/tcg-market.js";
 import type { Database } from "../client.js";
 import { computeTcgAskSoldSpread, resolveWindow, rollingMedian } from "./market-identity.js";
@@ -14,6 +14,8 @@ export type TcgMarketQueryFilter = {
   currency?: string;
   from?: Date;
   to?: Date;
+  outlierFlag?: boolean;
+  hasPrice?: boolean;
 };
 
 function filters(input: TcgMarketQueryFilter): SQL[] {
@@ -40,6 +42,14 @@ function filters(input: TcgMarketQueryFilter): SQL[] {
   }
   if (input.gradeLabel) {
     clauses.push(eq(tcgMarketSnapshot.gradeLabel, input.gradeLabel));
+  }
+  if (input.outlierFlag === false) {
+    clauses.push(eq(tcgMarketSnapshot.outlierFlag, false));
+  } else if (input.outlierFlag === true) {
+    clauses.push(eq(tcgMarketSnapshot.outlierFlag, true));
+  }
+  if (input.hasPrice) {
+    clauses.push(isNotNull(tcgMarketSnapshot.price));
   }
   if (input.from) {
     clauses.push(gte(tcgMarketSnapshot.observedAt, input.from));
@@ -77,18 +87,38 @@ export async function listTcgListingHistory(db: Database, input: TcgMarketQueryF
 }
 
 export async function getTcgAskSoldSpread(db: Database, input: TcgMarketQueryFilter) {
-  const latestSold = await getLatestTcgMarketSnapshot(db, { ...input, priceType: "sold" });
+  const latestSold = await getLatestTcgMarketSnapshot(db, {
+    ...input,
+    priceType: "sold",
+    outlierFlag: false,
+    hasPrice: true,
+    gradingCompany: input.gradingCompany === undefined ? null : input.gradingCompany,
+  });
   const latestAsk = await getLatestTcgMarketSnapshot(db, {
     ...input,
     marketType: "marketplace_listing",
     priceType: "asking",
   });
   const sold = latestSold?.price == null ? null : Number(latestSold.price);
-  const ask = latestAsk?.lowPrice != null ? Number(latestAsk.lowPrice) : latestAsk?.price == null ? null : Number(latestAsk.price);
+  const ask =
+    latestAsk?.lowPrice != null
+      ? Number(latestAsk.lowPrice)
+      : latestAsk?.price == null
+        ? null
+        : Number(latestAsk.price);
   if (sold == null || ask == null) {
-    return computeTcgAskSoldSpread({ lowestAsk: Number.NaN, latestSold: Number.NaN });
+    return {
+      ...computeTcgAskSoldSpread({ lowestAsk: Number.NaN, latestSold: Number.NaN }),
+      currency: null as string | null,
+    };
   }
-  return computeTcgAskSoldSpread({ lowestAsk: ask, latestSold: sold });
+  const spread = computeTcgAskSoldSpread({
+    lowestAsk: ask,
+    latestSold: sold,
+    askCurrency: latestAsk?.currency,
+    soldCurrency: latestSold?.currency,
+  });
+  return { ...spread, currency: spread.spread_abs == null ? null : latestSold?.currency ?? null };
 }
 
 export function summarizeTcgLiquidityInputs(rows: { observedAt: Date; salesCount: number | null; listingCount: number | null; sellerCount: number | null; bidCount: number | null }[]) {

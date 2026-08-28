@@ -1,6 +1,7 @@
 import { IdentityLine } from "@/components/IdentityLine";
 import { Sparkline } from "@/components/Sparkline";
 import type { getPrintingWorkspace } from "@isp/db";
+import { formatMoney } from "@isp/shared";
 
 type Workspace = NonNullable<Awaited<ReturnType<typeof getPrintingWorkspace>>>;
 
@@ -20,11 +21,14 @@ export function PrintingWorkspaceView({
   predictionLocked?: string | null;
 }) {
   const soldPrices = workspace.sold
+    .filter((row) => row.outlierFlag === false)
     .map((row) => Number(row.price))
     .filter((value) => Number.isFinite(value));
   const explanations = Array.isArray(workspace.score?.explanations) ? workspace.score.explanations : [];
   const components = workspace.score?.components ?? {};
   const features = workspace.features?.features ?? {};
+  const priceCurrency =
+    workspace.features?.currency ?? workspace.latestSold?.currency ?? workspace.reference?.currency ?? null;
 
   return (
     <article className="workspace">
@@ -38,12 +42,28 @@ export function PrintingWorkspaceView({
       </p>
       <section>
         <h2>Market</h2>
-        <p>Latest sold: {num(workspace.latestSold?.price)} {workspace.latestSold?.currency ?? ""}</p>
-        <p>Reference: {num(workspace.reference?.price)} {workspace.reference?.currency ?? ""}</p>
+        <p>
+          Latest sold:{" "}
+          {workspace.latestSold ? formatMoney(workspace.latestSold.price, workspace.latestSold.currency) : "—"}
+        </p>
+        <p>
+          Reference: {workspace.reference ? formatMoney(workspace.reference.price, workspace.reference.currency) : "—"}
+        </p>
         <p>
           Listing supply: {workspace.listing?.listingCount ?? "—"} · sellers {workspace.listing?.sellerCount ?? "—"}
         </p>
-        <p>Spread: {num(workspace.spread?.spread_abs)}</p>
+        <p>
+          Spread:{" "}
+          {workspace.spread?.spread_abs == null || workspace.spread.currency == null
+            ? "—"
+            : formatMoney(workspace.spread.spread_abs, workspace.spread.currency)}
+        </p>
+        {workspace.latestObservedSold?.outlierFlag ? (
+          <p className="muted">
+            Latest print {formatMoney(workspace.latestObservedSold.price, workspace.latestObservedSold.currency)} is
+            flagged as an outlier and is excluded from the displayed market price.
+          </p>
+        ) : null}
         <Sparkline values={soldPrices} label="sold history" />
       </section>
       <section>
@@ -110,7 +130,11 @@ export function PrintingWorkspaceView({
           <ul>
             {predictions.map((row) => (
               <li key={row.id}>
-                {row.horizon} · expected {num(row.expectedReturn)} · confidence {num(row.confidence)} · issued{" "}
+                {row.horizon} · expected {num(row.expectedReturn)}
+                {row.priceAtIssue && priceCurrency
+                  ? ` · price at issue ${formatMoney(row.priceAtIssue, priceCurrency)}`
+                  : ""}{" "}
+                · confidence {num(row.confidence)} · issued{" "}
                 {row.issuedAt.toISOString()}
               </li>
             ))}

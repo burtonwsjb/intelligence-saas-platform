@@ -4,6 +4,7 @@ import { IdentityLine } from "@/components/IdentityLine";
 import { loadAppAccess } from "@/lib/app-access";
 import { getDb } from "@/lib/auth";
 import { listLatestOpportunities, listTcgGames, listTcgLanguages } from "@isp/db";
+import { formatMoney } from "@isp/shared";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -104,7 +105,7 @@ export default async function OpportunitiesPage({
                   </Link>
                 </td>
                 <td>
-                  {row.market?.price ?? "—"} {row.market?.currency ?? ""}
+                  {row.market ? formatMoney(row.market.price, row.market.currency) : "—"}
                 </td>
                 <td>{Number(row.score.opportunityScore).toFixed(1)}</td>
                 <td>{Number(row.score.riskScore).toFixed(1)}</td>

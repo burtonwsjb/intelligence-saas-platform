@@ -46,6 +46,7 @@ import { requireScope, type MachinePrincipal } from "./machine-auth.js";
 import { CommercialFilterError, decodeCursor, encodeCursor, parseCommercialQuery } from "./pagination.js";
 import { resolveRequestId } from "./request-id.js";
 import { requireApiKeyPepper } from "@isp/auth";
+import { majorMoneyFields, moneyToFiniteNumber } from "@isp/shared";
 
 type App = Hono<{ Variables: { db: Database; machine: MachinePrincipal } }>;
 
@@ -273,14 +274,20 @@ export function registerCommercialRoutes(
         priceType: "sold",
         condition: "nm",
         gradingCompany: null,
+        outlierFlag: false,
+        hasPrice: true,
       });
+      const money = majorMoneyFields(latest?.price ?? null, latest?.currency ?? null);
       return c.json({
         printing: exactPrinting(row),
         as_of: latest?.observedAt.toISOString() ?? null,
-        price: latest?.price == null ? null : Number(latest.price),
-        currency: latest?.currency ?? null,
+        price: money.amount == null ? null : moneyToFiniteNumber(money.amount),
+        amount: money.amount,
+        currency: money.currency,
+        unit: money.unit,
         condition: "nm",
         source: latest?.sourceKey ?? null,
+        outlier: false,
       });
     } catch (error) {
       return commercialError(error, requestId);
@@ -320,18 +327,30 @@ export function registerCommercialRoutes(
       });
       return c.json({
         printing: exactPrinting(row),
-        sold: sold.map((item) => ({
-          observed_at: item.observedAt.toISOString(),
-          price: item.price == null ? null : Number(item.price),
-          currency: item.currency,
-          source: item.sourceKey,
-        })),
-        listings: listings.map((item) => ({
-          observed_at: item.observedAt.toISOString(),
-          listing_count: item.listingCount,
-          seller_count: item.sellerCount,
-          low_price: item.lowPrice == null ? null : Number(item.lowPrice),
-        })),
+        sold: sold.map((item) => {
+          const money = majorMoneyFields(item.price ?? null, item.currency);
+          return {
+            observed_at: item.observedAt.toISOString(),
+            price: money.amount == null ? null : moneyToFiniteNumber(money.amount),
+            amount: money.amount,
+            currency: money.currency,
+            unit: money.unit,
+            source: item.sourceKey,
+            outlier: item.outlierFlag,
+          };
+        }),
+        listings: listings.map((item) => {
+          const money = majorMoneyFields(item.lowPrice ?? item.price ?? null, item.currency);
+          return {
+            observed_at: item.observedAt.toISOString(),
+            listing_count: item.listingCount,
+            seller_count: item.sellerCount,
+            low_price: money.amount == null ? null : moneyToFiniteNumber(money.amount),
+            amount: money.amount,
+            currency: money.currency,
+            unit: money.unit,
+          };
+        }),
       });
     } catch (error) {
       return commercialError(error, requestId);

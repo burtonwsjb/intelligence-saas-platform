@@ -96,6 +96,6 @@ export function tcgMarketFixtureRecords(): TcgMarketRecordInput[] {
       price: 43,
       printing: printing("en"),
     },
-    sold("sold_en_nm_outlier", "en", "normal", "nm", 4000, "2026-01-05T00:00:00.000Z"),
+    sold("sold_en_nm_outlier", "en", "normal", "nm", 4000, "2026-01-05T00:00:00.000Z"), // $4,000.00 USD major units; intentional 100x outlier, not cents
   ];
 }

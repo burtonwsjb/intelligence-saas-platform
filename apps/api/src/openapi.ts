@@ -19,8 +19,22 @@ export function commercialOpenApi() {
       "/v1/printings": { get: { summary: "List exact printings", security: [{ bearerAuth: [] }] } },
       "/v1/printings/{id}": { get: { summary: "Get an exact printing", security: [{ bearerAuth: [] }] } },
       "/v1/sets": { get: { summary: "List sets", security: [{ bearerAuth: [] }] } },
-      "/v1/printings/{id}/prices": { get: { summary: "Latest sold price", security: [{ bearerAuth: [] }] } },
-      "/v1/printings/{id}/market-history": { get: { summary: "Sold and listing history", security: [{ bearerAuth: [] }] } },
+      "/v1/printings/{id}/prices": {
+        get: {
+          summary: "Latest non-outlier sold price",
+          description:
+            "Monetary fields are major currency units (USD 40.00 is 40, not 4000 cents). `amount` is a decimal string; `price` is the same value as JSON number for compatibility; `unit` is always `major`; `currency` is ISO 4217.",
+          security: [{ bearerAuth: [] }],
+        },
+      },
+      "/v1/printings/{id}/market-history": {
+        get: {
+          summary: "Sold and listing history",
+          description:
+            "Sold `amount`/`price` and listing `amount`/`low_price` are major currency units with an explicit `currency` and `unit=major`. Outlier solds are included in history with `outlier=true`.",
+          security: [{ bearerAuth: [] }],
+        },
+      },
       "/v1/printings/{id}/signals": { get: { summary: "Market signal flags", security: [{ bearerAuth: [] }] } },
       "/v1/printings/{id}/opportunity": { get: { summary: "Opportunity scores", security: [{ bearerAuth: [] }] } },
       "/v1/printings/{id}/predictions": { get: { summary: "Predictions (shadow-disabled)", security: [{ bearerAuth: [] }] } },

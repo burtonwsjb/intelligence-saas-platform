@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { moneyToFiniteNumber, persistMoneyDecimal, MoneyError } from "@isp/shared";
 
 export const TCG_MARKET_SOURCES = [
   "tcg_card_central",
@@ -128,10 +129,21 @@ export function parsePositiveAmount(value: unknown, label: string): string | nul
   if (value == null) {
     return null;
   }
-  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
-    throw new TcgMarketValidationError(`${label} must be a positive finite number.`);
+  try {
+    const amount = persistMoneyDecimal(value);
+    if (moneyToFiniteNumber(amount) <= 0) {
+      throw new TcgMarketValidationError(`${label} must be a positive finite number.`);
+    }
+    return amount;
+  } catch (error) {
+    if (error instanceof TcgMarketValidationError) {
+      throw error;
+    }
+    if (error instanceof MoneyError) {
+      throw new TcgMarketValidationError(`${label} must be a positive finite decimal in major currency units.`);
+    }
+    throw error;
   }
-  return value.toString();
 }
 
 export function parseNonNegativeInt(value: unknown, label: string): number | null {
@@ -179,7 +191,24 @@ export function stableMarketId(prefix: string, parts: string[]): string {
   return `${prefix}_${createHash("sha256").update(parts.join("|")).digest("hex").slice(0, 32)}`;
 }
 
-export function computeTcgAskSoldSpread(input: { lowestAsk: number; latestSold: number }) {
+export function computeTcgAskSoldSpread(input: {
+  lowestAsk: number;
+  latestSold: number;
+  askCurrency?: string;
+  soldCurrency?: string;
+}) {
+  if (
+    input.askCurrency != null &&
+    input.soldCurrency != null &&
+    input.askCurrency !== input.soldCurrency
+  ) {
+    return {
+      spread_abs: null as number | null,
+      spread_ratio: null as number | null,
+      formula: TCG_SPREAD_FORMULA,
+      version: TCG_SPREAD_VERSION,
+    };
+  }
   if (!Number.isFinite(input.lowestAsk) || !Number.isFinite(input.latestSold) || input.latestSold <= 0) {
     return {
       spread_abs: null as number | null,

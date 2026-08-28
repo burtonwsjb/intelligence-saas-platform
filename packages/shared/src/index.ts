@@ -1,5 +1,17 @@
 export { isNonEmptyString } from "./string.js";
 export {
+  MONEY_UNIT_MAJOR,
+  MoneyError,
+  assertSameCurrency,
+  displayFractionDigits,
+  formatMoney,
+  majorMoneyFields,
+  moneyToFiniteNumber,
+  normalizeCurrencyCode,
+  parseMoneyDecimal,
+  persistMoneyDecimal,
+} from "./money.js";
+export {
   ISP_ENVIRONMENTS,
   InvalidRuntimeEnvError,
   assertHostedSecrets,

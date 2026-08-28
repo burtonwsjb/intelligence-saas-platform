@@ -186,7 +186,8 @@ describe("TCG market history", () => {
 
     const spread = await getTcgAskSoldSpread(db, { printingId: en, condition: "nm", currency: "USD" });
     expect(spread.formula).toBe("lowest_ask_minus_latest_sold");
-    expect(spread.spread_abs).toBe(39 - 4000);
+    expect(spread.spread_abs).toBe(39 - 41);
+    expect(spread.currency).toBe("USD");
     expect(spread.version).toBe("spread.v1");
 
     const window = listWindow("7d", new Date("2026-01-06T00:00:00.000Z"));

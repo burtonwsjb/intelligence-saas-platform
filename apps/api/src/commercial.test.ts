@@ -185,6 +185,13 @@ describe("commercial API and webhooks", () => {
       headers: { ...auth, "x-request-id": "req_price_1" },
     });
     expect(prices.status).toBe(200);
+    const priceBody = (await prices.json()) as {
+      price: number | null;
+      amount: string | null;
+      currency: string | null;
+      unit: string;
+    };
+    expect(priceBody).toMatchObject({ amount: "41", currency: "USD", unit: "major", price: 41 });
     const replay = await app.request(`/v1/printings/${printingId}/prices`, {
       headers: { ...auth, "x-request-id": "req_price_1" },
     });

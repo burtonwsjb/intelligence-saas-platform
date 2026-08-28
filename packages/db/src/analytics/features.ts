@@ -1,4 +1,5 @@
 import { and, asc, eq, isNull, lte } from "drizzle-orm";
+import { moneyToFiniteNumber } from "@isp/shared";
 import { printingBenchmarkContext, resolveBenchmark } from "./benchmark.js";
 import { getIndexLevelAsOf, indexReturn } from "./index-engine.js";
 import type { Database } from "../client.js";
@@ -53,6 +54,7 @@ type ListingPoint = {
   lowPrice: number | null;
   medianPrice: number | null;
   sourceKey: string;
+  currency: string;
 };
 
 function metric(
@@ -101,6 +103,14 @@ function applyOutliers(points: SoldPoint[], policy: MarketOutlierPolicy): SoldPo
     return points;
   }
   return points.filter((point) => !point.outlierFlag);
+}
+
+function sameCurrencyOrEmpty<T extends { currency: string }>(points: T[]): T[] {
+  const codes = new Set(points.map((point) => point.currency));
+  if (codes.size > 1) {
+    return [];
+  }
+  return points;
 }
 
 function periodSlack(days: number): number {
@@ -211,7 +221,7 @@ async function loadSold(
     .map((row) => ({
       id: row.id,
       observedAt: row.observedAt,
-      price: Number(row.price),
+      price: moneyToFiniteNumber(row.price),
       quantity: row.quantity,
       sourceKey: row.sourceKey,
       outlierFlag: row.outlierFlag,
@@ -236,9 +246,10 @@ async function loadListings(db: Database, printingId: string, asOf: Date, condit
     observedAt: row.observedAt,
     listingCount: row.listingCount,
     sellerCount: row.sellerCount,
-    lowPrice: row.lowPrice == null ? null : Number(row.lowPrice),
-    medianPrice: row.medianPrice == null ? null : Number(row.medianPrice),
+    lowPrice: row.lowPrice == null ? null : moneyToFiniteNumber(row.lowPrice),
+    medianPrice: row.medianPrice == null ? null : moneyToFiniteNumber(row.medianPrice),
     sourceKey: row.sourceKey,
+    currency: row.currency,
   }));
 }
 
@@ -249,9 +260,11 @@ export function computeFeaturesFromSeries(input: {
   outlierPolicy: MarketOutlierPolicy;
   benchmarkReturn30d?: number | null;
 }): Record<string, unknown> {
-  const usable = applyOutliers(input.sold, input.outlierPolicy);
+  const usable = sameCurrencyOrEmpty(applyOutliers(input.sold, input.outlierPolicy));
   const included = usable.filter((point) => point.observedAt.getTime() <= input.asOf.getTime());
-  const listings = input.listings.filter((point) => point.observedAt.getTime() <= input.asOf.getTime());
+  const listings = sameCurrencyOrEmpty(
+    input.listings.filter((point) => point.observedAt.getTime() <= input.asOf.getTime()),
+  );
   const latest = included.at(-1) ?? null;
   const returns = Object.fromEntries(
     MARKET_RETURN_PERIODS.map((period) => [period, priceReturn(included, input.asOf, period)]),
@@ -519,7 +532,7 @@ export async function computeMarketFeatures(db: Database, input: ComputeFeatures
     printingId: input.printingId,
     asOf: input.asOf,
     languageCode: identity.languageCode,
-    currency: sold.at(-1)?.currency ?? "USD",
+    currency: sold.at(-1)?.currency ?? listings.at(-1)?.currency ?? "USD",
     condition: input.condition ?? "nm",
     gradingCompany: input.gradingCompany ?? null,
     gradeLabel: input.gradeLabel ?? null,

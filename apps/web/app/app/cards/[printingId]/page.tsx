@@ -25,9 +25,9 @@ export default async function PrintingDetailPage({
   return (
     <>
       <h1>Printing</h1>
-      {workspace.latestSold ? null : (
+      {workspace.sold.length === 0 ? (
         <EmptyState title="No sold history yet" body="Identity remains visible. Market jobs fill price series." />
-      )}
+      ) : null}
       <PrintingWorkspaceView
         workspace={workspace}
         predictions={visible}

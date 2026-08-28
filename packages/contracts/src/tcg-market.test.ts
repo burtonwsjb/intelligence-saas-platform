@@ -30,6 +30,9 @@ describe("TCG market contracts", () => {
     });
     expect(computeTcgAskSoldSpread({ lowestAsk: 10, latestSold: 0 }).spread_abs).toBeNull();
     expect(
+      computeTcgAskSoldSpread({ lowestAsk: 39, latestSold: 8000, askCurrency: "USD", soldCurrency: "JPY" }).spread_abs,
+    ).toBeNull();
+    expect(
       parseTcgMarketRecord({
         provider: "fixture",
         provider_record_id: "sold_1",

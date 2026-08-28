@@ -127,7 +127,21 @@ export function defaultPriceType(marketType: TcgMarketType): TcgPriceType {
 export function computeTcgAskSoldSpread(input: {
   lowestAsk: number;
   latestSold: number;
+  askCurrency?: string;
+  soldCurrency?: string;
 }): { spread_abs: number | null; spread_ratio: number | null; formula: typeof TCG_SPREAD_FORMULA; version: typeof TCG_SPREAD_VERSION } {
+  if (
+    input.askCurrency != null &&
+    input.soldCurrency != null &&
+    input.askCurrency !== input.soldCurrency
+  ) {
+    return {
+      spread_abs: null,
+      spread_ratio: null,
+      formula: TCG_SPREAD_FORMULA,
+      version: TCG_SPREAD_VERSION,
+    };
+  }
   if (!Number.isFinite(input.lowestAsk) || !Number.isFinite(input.latestSold) || input.latestSold <= 0) {
     return {
       spread_abs: null,
