@@ -85,3 +85,19 @@ export {
   TenantNotFoundError,
   type TenantStatus,
 } from "./tenant-access.js";
+export {
+  MemoryVerificationResendLimiter,
+  VERIFICATION_RESEND_CALLBACK_URL,
+  VERIFICATION_RESEND_MAX_ATTEMPTS,
+  VERIFICATION_RESEND_WINDOW_MS,
+  clientIpFromHeaders,
+  getVerificationResendLimiter,
+  hashVerificationResendValue,
+  normalizeVerificationEmail,
+  resendVerificationEmail,
+  resetVerificationResendLimiterForTests,
+  type VerificationEmailSender,
+  type VerificationResendLimiter,
+  type VerificationResendOutcome,
+  type VerificationResendResult,
+} from "./verification-resend.js";

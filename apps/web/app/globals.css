@@ -200,3 +200,25 @@ a {
 .form-error {
   color: #8a1f1f;
 }
+
+.verify-email-actions {
+  display: grid;
+  gap: 0.75rem;
+  margin: 1.25rem 0;
+  justify-items: start;
+}
+
+.verify-email-actions button {
+  font: inherit;
+  padding: 0.5rem 0.65rem;
+}
+
+.verify-email-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.verify-email-slot {
+  min-height: 1.5em;
+  margin: 0;
+}

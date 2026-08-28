@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { persistVerificationResendState } from "@/lib/verification-cooldown";
 import { authClient } from "@/lib/auth-client";
 
 type Mode = "login" | "signup";
@@ -46,6 +47,7 @@ export function AuthForm({
           setError(result.error.message ?? "Unable to sign up.");
           return;
         }
+        persistVerificationResendState(email);
         window.location.href = "/verify-email";
         return;
       }

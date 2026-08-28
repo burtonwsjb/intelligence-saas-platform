@@ -1,7 +1,15 @@
 import { toNextJsHandler } from "better-auth/next-js";
 import { consumeBetaInvite } from "@isp/db";
+import {
+  getVerificationResendLimiter,
+  resendVerificationEmail,
+} from "@isp/auth";
 import { logAuthConfigError } from "@/lib/auth-diagnostics";
 import { getAuth, getDb, isAuthConfigError } from "@/lib/auth";
+import {
+  handleVerificationResendRequest,
+  isSendVerificationEmailPath,
+} from "@/lib/verification-resend";
 
 export const runtime = "nodejs";
 
@@ -26,8 +34,17 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const url = new URL(request.url);
+    if (isSendVerificationEmailPath(url.pathname)) {
+      return handleVerificationResendRequest(request, {
+        getAuth,
+        limiter: getVerificationResendLimiter(),
+        send: resendVerificationEmail,
+        env: process.env,
+        isAuthConfigError,
+      });
+    }
     if (process.env.BETA_INVITE_ONLY === "true") {
-      const url = new URL(request.url);
       if (url.pathname.endsWith("/sign-up/email")) {
         const token = request.headers.get("x-beta-invite") ?? "";
         const copy = await request.clone().json().catch(() => ({}));
