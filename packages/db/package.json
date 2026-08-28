@@ -19,7 +19,8 @@
     "generate": "drizzle-kit generate",
     "migrate": "tsx src/migrate.ts",
     "bootstrap": "tsx src/bootstrap.ts",
-    "status": "tsx src/status.ts"
+    "status": "tsx src/status.ts",
+    "grant-platform-admin": "tsx src/grant-platform-admin.ts"
   },
   "dependencies": {
     "@isp/shared": "workspace:*",

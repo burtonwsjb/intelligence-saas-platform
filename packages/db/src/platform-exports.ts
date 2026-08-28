@@ -23,6 +23,15 @@ export {
   hasPlatformAdminGrant,
 } from "./platform/grants.js";
 export {
+  PlatformAdminGrantError,
+  formatGrantPlatformAdminReport,
+  grantPlatformAdminByEmail,
+  parseGrantPlatformAdminArgs,
+  sanitizePlatformAdminCliMessage,
+  type GrantPlatformAdminByEmailResult,
+  type PlatformAdminGrantErrorCode,
+} from "./platform/grant-by-email.js";
+export {
   UnknownBreakGlassActionError,
   insertBreakGlassAudit,
   listBreakGlassAudit,

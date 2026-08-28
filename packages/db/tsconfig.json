@@ -10,6 +10,7 @@
     "src/**/*.pg.test.ts",
     "src/migrate.ts",
     "src/bootstrap.ts",
-    "src/status.ts"
+    "src/status.ts",
+    "src/grant-platform-admin.ts"
   ]
 }
