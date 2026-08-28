@@ -22,7 +22,7 @@ Do not use TCG Card Central auth, Facebook login, Lovable auth, or any other pro
 4. Session carries `user_id` and selected `tenant_id`
 5. Web and API session routes refuse to run without both, except signup/join routes
 
-Invites: an admin adds an email via Resend; the invited user signs in; membership becomes `active`. Phase 17 provides the provider interface; production Resend remains unconfigured and fail-closed.
+Invites: an admin adds an email via Resend; the invited user signs in; membership becomes `active`. Hosted verification email uses Resend when `RESEND_API_KEY` and `RESEND_FROM_EMAIL` are configured.
 
 ## Machine identity
 

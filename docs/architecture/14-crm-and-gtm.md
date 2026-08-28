@@ -24,7 +24,7 @@ v1 is first-party. Later optional Attio/HubSpot sync. Not Salesforce.
 
 ## Email (Resend)
 
-Provider-neutral `EmailProvider` is implemented. Local/fixture adapters are the default. Resend is fail-closed without `RESEND_API_KEY` and does not send live mail in this phase.
+Provider-neutral `EmailProvider` is implemented. Local/fixture adapters are the default for development. Hosted staging/production use `AUTH_EMAIL_MODE=resend` and send through the Resend HTTP API when `RESEND_API_KEY` and `RESEND_FROM_EMAIL` are set. Missing key or sender fails closed. Verification mail uses the `verify_email` template and preserves the Better Auth verification URL. Do not log API keys or verification URLs in hosted environments.
 
 ### Transactional (no marketing unsubscribe)
 

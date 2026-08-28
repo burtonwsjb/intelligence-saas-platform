@@ -7,6 +7,13 @@ describe("email delivery", () => {
     await expect(
       delivery.send({ to: "a@example.com", url: "https://example.invalid" }),
     ).rejects.toThrow(/Resend/);
+    await expect(
+      createEmailDelivery({
+        nodeEnv: "production",
+        mode: "resend",
+        resendApiKey: "re_test_not_a_real_key",
+      }).send({ to: "a@example.com", url: "https://example.invalid" }),
+    ).rejects.toThrow(/Resend/);
   });
 
   it("does not use memory mode from env", () => {

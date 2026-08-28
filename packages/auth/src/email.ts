@@ -29,6 +29,8 @@ export function createEmailDelivery(options: {
   nodeEnv: string;
   mode?: string;
   resendApiKey?: string;
+  resendFromEmail?: string;
+  resendFetch?: typeof fetch;
   provider?: EmailProvider;
 }): EmailDelivery {
   const mode =
@@ -44,11 +46,13 @@ export function createEmailDelivery(options: {
       nodeEnv: options.nodeEnv,
       mode,
       resendApiKey: options.resendApiKey,
+      resendFromEmail: options.resendFromEmail,
+      resendFetch: options.resendFetch,
     });
 
   return {
     async send(message) {
-      if (options.nodeEnv === "production") {
+      if (options.nodeEnv === "production" || mode === "resend") {
         const health = await provider.healthCheck();
         if (!health.ok) {
           throw new Error(

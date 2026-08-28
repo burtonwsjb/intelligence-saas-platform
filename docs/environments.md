@@ -13,7 +13,7 @@ No hosted environment may fall back to local billing simulation, `PLATFORM_ADMIN
 | Redis | `redis://localhost:6379` | CI Redis | Managed Redis; `rediss://` preferred | `rediss://` unless `REDIS_TLS=optional` on a private network |
 | Auth cookies | insecure HTTP ok | test | Secure + HTTPS `APP_URL` | Secure + HTTPS |
 | Billing | `local_simulation` default | simulation | `stripe_test` only | `stripe_test` until live is explicitly authorized (still forbidden in code) |
-| Email | file/log/fixture | fixture | `AUTH_EMAIL_MODE=resend` | Resend |
+| Email | file/log/fixture | fixture | `AUTH_EMAIL_MODE=resend` plus `RESEND_API_KEY` and `RESEND_FROM_EMAIL` | Resend |
 | Webhooks | public URLs only; SSRF on | same | same; tenant HTTPS recommended | same |
 | Predictions | env flag may enable | tests | platform flag **required** | platform flag **required** |
 | Content generation | local fixtures | tests | beta caps disable generation | legal/ops gated |
@@ -28,7 +28,7 @@ No hosted environment may fall back to local billing simulation, `PLATFORM_ADMIN
 | Process | Required (hosted) | Must never reach the client bundle |
 |---|---|---|
 | Web public | `APP_URL`, `API_URL` (if used) | secrets |
-| Web server | `APP_DATABASE_URL` (hosted) or `DATABASE_URL` (local/test), `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `API_KEY_PEPPER` (if issuing keys), `DATABASE_ADMIN_URL` + `APP_ADMIN_PASSWORD` for `/admin` | all of the above |
+| Web server | `APP_DATABASE_URL` (hosted) or `DATABASE_URL` (local/test), `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `API_KEY_PEPPER` (if issuing keys), `DATABASE_ADMIN_URL` + `APP_ADMIN_PASSWORD` for `/admin`, `RESEND_API_KEY` + `RESEND_FROM_EMAIL` when `AUTH_EMAIL_MODE=resend` | all of the above |
 | API | `APP_DATABASE_URL` (hosted) or `DATABASE_URL` (local/test), `REDIS_URL`, `API_KEY_PEPPER`, `APP_URL`, `PORT` from the platform | same |
 | Worker | `WORKER_DATABASE_URL` (hosted required; local/test may fall back to runtime URL), `REDIS_URL`, `QUEUE_PREFIX` | same |
 | Migrate/bootstrap | `DATABASE_ADMIN_URL` (unpooled), `APP_*_PASSWORD` | same |

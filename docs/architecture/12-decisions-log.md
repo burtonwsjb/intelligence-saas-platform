@@ -86,7 +86,7 @@ Change only with an explicit new decision.
 | D80 | Commercial API | Tenant API keys + scopes + entitlements on `/v1` contracts | Do not expose raw DB models |
 | D81 | Webhook SSRF | Reject loopback, RFC1918, link-local, metadata, non-http(s) | Tenant URLs are untrusted |
 | D83 | CRM vs auth identity | Application CRM profile around Better Auth org/user; no duplicate login identity | Tenant-owned profile + operator-only notes |
-| D84 | Email providers | `EmailProvider` with Local/Fixture now; Resend fail-closed without a key | Tests must not require `RESEND_API_KEY` |
+| D84 | Email providers | `EmailProvider` with Local/Fixture; Resend HTTP send when `RESEND_API_KEY` and `RESEND_FROM_EMAIL` are set | Tests must not require a live `RESEND_API_KEY` |
 | D85 | Lifecycle vs billing | Explicit lifecycle graph; billing status only suggests transitions | Do not treat Stripe/local status as CRM stage |
 | D86 | Activation rules | Versioned `activation.v1`: org created plus any one product-use signal | Do not hard-code a single activation event |
 | D87 | Operator CRM | Notes/tags/segments use deny-all tenant RLS; `app_admin` BYPASSRLS | Tenants must not see operator notes |

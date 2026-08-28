@@ -61,7 +61,7 @@ Channels: `in_app`, `email`, `webhook`. Categories include account, billing, sec
 - Alert **rule foundation** exists (threshold, recommendation change, price move, creator, prediction, usage, webhook failure). Customer alert UI is Phase 18
 - Usage warnings at 50/80/90/100% are idempotent per organization/meter/period/threshold
 
-`EmailProvider`: `sendTransactional`, `sendTemplate`, `healthCheck`. Local and fixture providers do not need `RESEND_API_KEY`. `ResendEmailProvider` fails closed without a key. Production auth mail still fails closed until Resend is actually configured. Templates escape HTML, include text fallbacks, and never embed API keys.
+`EmailProvider`: `sendTransactional`, `sendTemplate`, `healthCheck`. Local and fixture providers do not need `RESEND_API_KEY`. `ResendEmailProvider` sends via the Resend HTTP API and fails closed without `RESEND_API_KEY` and `RESEND_FROM_EMAIL`. Templates escape HTML, include text fallbacks, and never embed API keys.
 
 Delivery log stores template/provider/status/attempt/failure category only — not full HTML bodies.
 

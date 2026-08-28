@@ -31,6 +31,8 @@ export type AuthEnv = {
   QUEUE_PREFIX?: string;
   REDIS_URL?: string;
   REDIS_TLS?: string;
+  RESEND_API_KEY?: string;
+  RESEND_FROM_EMAIL?: string;
 };
 
 export class MissingAuthSecretError extends Error {
@@ -72,6 +74,8 @@ export function createAuth(options: {
     createEmailDelivery({
       nodeEnv: options.env.NODE_ENV,
       mode: options.env.AUTH_EMAIL_MODE,
+      resendApiKey: options.env.RESEND_API_KEY,
+      resendFromEmail: options.env.RESEND_FROM_EMAIL,
     });
 
   return betterAuth({

@@ -46,6 +46,7 @@ Local development does not require Vercel or Railway. Phase 05 uses disposable D
 - `API_KEY_PEPPER`
 - `R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_BUCKET`
 - `RESEND_API_KEY`
+- `RESEND_FROM_EMAIL` (verified sender, not a placeholder domain)
 - `STRIPE_SECRET_KEY` (Phase 07+)
 - `STRIPE_WEBHOOK_SECRET` (Phase 07+)
 - `APP_URL`

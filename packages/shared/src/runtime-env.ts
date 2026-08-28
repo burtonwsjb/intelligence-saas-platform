@@ -85,6 +85,14 @@ export function assertHostedSecrets(env: NodeJS.ProcessEnv = process.env): void 
   if (emailMode && emailMode !== "resend") {
     throw new InvalidRuntimeEnvError("Hosted environments must use AUTH_EMAIL_MODE=resend.");
   }
+  if (emailMode === "resend") {
+    if (!env.RESEND_API_KEY?.trim()) {
+      throw new InvalidRuntimeEnvError("RESEND_API_KEY is required when AUTH_EMAIL_MODE=resend.");
+    }
+    if (!env.RESEND_FROM_EMAIL?.trim()) {
+      throw new InvalidRuntimeEnvError("RESEND_FROM_EMAIL is required when AUTH_EMAIL_MODE=resend.");
+    }
+  }
   if (env.QUEUE_PREFIX?.trim() && /^(local|test|ci|dev)$/i.test(env.QUEUE_PREFIX.trim())) {
     throw new InvalidRuntimeEnvError("QUEUE_PREFIX must not reuse local/test identifiers in hosted environments.");
   }

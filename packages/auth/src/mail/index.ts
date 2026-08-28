@@ -7,6 +7,8 @@ export function createEmailProvider(options: {
   nodeEnv: string;
   mode?: string;
   resendApiKey?: string;
+  resendFromEmail?: string;
+  resendFetch?: typeof fetch;
 }): EmailProvider {
   const mode = options.mode ?? (options.nodeEnv === "production" ? "resend" : "file");
 
@@ -14,7 +16,9 @@ export function createEmailProvider(options: {
     if (mode !== "resend") {
       return new ResendEmailProvider(undefined);
     }
-    return new ResendEmailProvider(options.resendApiKey);
+    return new ResendEmailProvider(options.resendApiKey, options.resendFromEmail, {
+      fetch: options.resendFetch,
+    });
   }
 
   if (mode === "memory" || mode === "fixture") {
@@ -27,7 +31,9 @@ export function createEmailProvider(options: {
     return new LocalEmailProvider();
   }
   if (mode === "resend") {
-    return new ResendEmailProvider(options.resendApiKey);
+    return new ResendEmailProvider(options.resendApiKey, options.resendFromEmail, {
+      fetch: options.resendFetch,
+    });
   }
   throw new EmailNotConfiguredError();
 }
@@ -42,6 +48,6 @@ export {
 } from "./provider.js";
 export { FixtureEmailProvider } from "./fixture.js";
 export { LocalEmailProvider, LogEmailProvider } from "./local.js";
-export { ResendEmailProvider } from "./resend.js";
+export { ResendEmailProvider, sanitizeResendError } from "./resend.js";
 export { renderEmailTemplate, EMAIL_TEMPLATE_KEYS, type EmailTemplateKey } from "./templates.js";
 export { escapeHtml } from "./escape.js";

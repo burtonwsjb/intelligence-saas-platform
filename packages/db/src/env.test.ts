@@ -288,7 +288,8 @@ describe("committed env example", () => {
     expect(example).toMatch(/^PREDICTIONS_CUSTOMER_VISIBLE=$/m);
     expect(example).toMatch(/^BETA_INVITE_ONLY=$/m);
     expect(example).toMatch(/^PLATFORM_ADMIN_EMAILS=$/m);
-    expect(example).toMatch(/^TRIAL_DURATION_DAYS=$/m);
+    expect(example).toMatch(/^RESEND_API_KEY=$/m);
+    expect(example).toMatch(/^RESEND_FROM_EMAIL=$/m);
     expect(example).not.toMatch(/tcgcardcentral\.com/i);
     expect(example).not.toMatch(/postgresql:\/\/[^:]+:[^@]+@/);
   });

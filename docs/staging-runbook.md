@@ -35,6 +35,8 @@ Shared:
 - `QUEUE_PREFIX=staging`
 - `BILLING_MODE=stripe_test`
 - `AUTH_EMAIL_MODE=resend`
+- `RESEND_API_KEY` (secret; Vercel web)
+- `RESEND_FROM_EMAIL` (verified Resend sender, e.g. `Intelligence SaaS <verify@YOUR_VERIFIED_DOMAIN>`)
 - `PREDICTIONS_CUSTOMER_VISIBLE` unset or `false`
 - Do **not** set `PLATFORM_ADMIN_EMAILS`
 
@@ -59,6 +61,9 @@ Web:
 - `DATABASE_ADMIN_URL` + `APP_ADMIN_PASSWORD` for `/admin` break-glass
 - `BETTER_AUTH_SECRET` (≥32 chars)
 - `API_KEY_PEPPER`
+- `AUTH_EMAIL_MODE=resend`
+- `RESEND_API_KEY`
+- `RESEND_FROM_EMAIL` using a sender on a domain verified in Resend
 
 Billing stays Stripe **test**. Email is Resend (staging key). Predictions remain shadow until `/admin/beta` enables `predictions_customer_visible`.
 

@@ -50,6 +50,23 @@ describe("runtime environment", () => {
       }),
     ).toBe(true);
     expect(() =>
+      assertHostedSecrets({
+        ISP_ENV: "staging",
+        NODE_ENV: "production",
+        APP_URL: "https://app.example.invalid",
+        AUTH_EMAIL_MODE: "resend",
+      }),
+    ).toThrow(/RESEND_API_KEY/);
+    expect(() =>
+      assertHostedSecrets({
+        ISP_ENV: "staging",
+        NODE_ENV: "production",
+        APP_URL: "https://app.example.invalid",
+        AUTH_EMAIL_MODE: "resend",
+        RESEND_API_KEY: "re_test_not_a_real_key",
+      }),
+    ).toThrow(/RESEND_FROM_EMAIL/);
+    expect(() =>
       assertProductionIdentifiers({
         ISP_ENV: "production",
         APP_URL: "https://staging.example.invalid",
