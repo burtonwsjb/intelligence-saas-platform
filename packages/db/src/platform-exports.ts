@@ -32,6 +32,16 @@ export {
   type PlatformAdminGrantErrorCode,
 } from "./platform/grant-by-email.js";
 export {
+  STAGING_FIXTURE_AS_OF,
+  STAGING_FIXTURE_PROVENANCE,
+  StagingFixtureError,
+  assertStagingFixtureAllowed,
+  collectStagingFixtureVerification,
+  formatStagingFixtureReport,
+  runStagingFixturePipeline,
+  type StagingFixtureVerification,
+} from "./platform/staging-fixture.js";
+export {
   UnknownBreakGlassActionError,
   insertBreakGlassAudit,
   listBreakGlassAudit,
