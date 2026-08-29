@@ -60,6 +60,13 @@ export {
   describePlatformConfig,
 } from "./platform/health.js";
 export {
+  collectLiveDatabaseIdentity,
+  fingerprintConnectionTarget,
+  formatDatabaseIdentityReport,
+  inspectDatabaseIdentity,
+  sameDatabaseIdentity,
+} from "./platform/db-identity.js";
+export {
   PROVIDER_KEYS,
   PROVIDER_MODES,
   assertStagingSourceCommandAllowed,
@@ -67,6 +74,7 @@ export {
   applyProviderModeFromEnv,
   backoffMs,
   classifyHttpStatus,
+  collectStagingDatabaseIdentities,
   createFetchTransport,
   createLiveMarketProvider,
   createLiveRedditProvider,
@@ -75,6 +83,7 @@ export {
   enqueueDueProviderSyncs,
   enqueuePlatformJob,
   formatCredentialReadinessReport,
+  formatStagingDatabaseIdentityReport,
   formatStagingSourceSmokeReport,
   getProviderRuntime,
   getWorkerHeartbeat,

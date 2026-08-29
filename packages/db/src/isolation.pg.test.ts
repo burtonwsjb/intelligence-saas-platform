@@ -87,6 +87,8 @@ import {
   getWorkerHeartbeat,
   collectSystemHealth,
   enqueueDueProviderSyncs,
+  inspectDatabaseIdentity,
+  sameDatabaseIdentity,
 } from "./index.js";
 
 const passwords = testRolePasswords();
@@ -1554,6 +1556,7 @@ describe("PostgreSQL RLS isolation", () => {
     const workerConn = createDbConnection(
       replaceConnectionRole(adminUrl, DB_ROLES.worker, passwords.worker),
     );
+    const adminInspect = createDbConnection(adminUrl);
     try {
       await withPlatformContext(workerConn.db, async (db) => {
         await enqueueDueProviderSyncs(db, { ISP_ENV: "staging" });
@@ -1569,6 +1572,20 @@ describe("PostgreSQL RLS isolation", () => {
       expect(health.operations.workerHeartbeatStatus).toBe("healthy");
       expect(health.providers.every((item) => item.mode === "disabled")).toBe(true);
       expect(health.catalogs.predictions).toBeGreaterThanOrEqual(0);
+      const adminIdentity = await inspectDatabaseIdentity({
+        label: "admin",
+        url: adminUrl,
+        db: adminInspect.db,
+      });
+      const workerIdentity = await inspectDatabaseIdentity({
+        label: "worker",
+        url: replaceConnectionRole(adminUrl, DB_ROLES.worker, passwords.worker),
+        db: workerConn.db,
+      });
+      expect(sameDatabaseIdentity(adminIdentity, workerIdentity)).toBe(true);
+      expect(adminIdentity.worker_heartbeat_count).toBeGreaterThan(0);
+      expect(workerIdentity.worker_heartbeat_count).toBeGreaterThan(0);
+      expect(JSON.stringify({ adminIdentity, workerIdentity })).not.toMatch(/postgresql:\/\//);
 
       const raw = postgres(replaceConnectionRole(adminUrl, DB_ROLES.user, passwords.user), {
         max: 1,
@@ -1586,6 +1603,7 @@ describe("PostgreSQL RLS isolation", () => {
       }
     } finally {
       await workerConn.end();
+      await adminInspect.end();
     }
   });
 });

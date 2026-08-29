@@ -47,4 +47,33 @@ describe("worker operational loops", () => {
     expect(blob).not.toContain("postgresql://");
     spy.mockRestore();
   });
+
+  it("logs a sanitized startup heartbeat success once", async () => {
+    const db = {
+      transaction: async (run: (tx: { execute: () => Promise<unknown>; insert: () => unknown }) => Promise<unknown>) =>
+        run({
+          execute: async () => [],
+          insert: () => ({
+            values: () => ({
+              onConflictDoUpdate: async () => undefined,
+            }),
+          }),
+        }),
+    };
+    const queue = {
+      getJobCounts: async () => ({ wait: 1, active: 0, failed: 2 }),
+    };
+    const lines: string[] = [];
+    const spy = vi.spyOn(console, "log").mockImplementation((line) => {
+      lines.push(String(line));
+    });
+    await runWorkerHeartbeat(db as never, queue, { startup: true });
+    await runWorkerHeartbeat(db as never, queue);
+    const blob = lines.join("\n");
+    expect(blob).toContain("worker.heartbeat_ok");
+    expect(blob).toContain("queue_depth");
+    expect(blob).toContain("failed_jobs");
+    expect(blob.match(/worker\.heartbeat_ok/g)?.length).toBe(1);
+    spy.mockRestore();
+  });
 });

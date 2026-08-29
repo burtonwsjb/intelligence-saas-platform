@@ -26,6 +26,7 @@ import {
 
 export const WORKER_HEARTBEAT_INTERVAL_MS = 15_000;
 export const WORKER_SWEEP_INTERVAL_MS = 5_000;
+export const QUEUE_METRICS_TIMEOUT_MS = 2_500;
 
 type QueueCounts = Pick<IngestQueue, "getJobCounts">;
 
@@ -48,12 +49,28 @@ export async function runProviderSchedule(
   }
 }
 
+async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("queue_metrics_timeout")), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
+}
+
 export async function collectQueueCounts(queue: QueueCounts): Promise<{
   queueDepth: number | null;
   failedJobs: number | null;
 }> {
   try {
-    const counts = await queue.getJobCounts("wait", "active", "failed");
+    const counts = await withTimeout(queue.getJobCounts("wait", "active", "failed"), QUEUE_METRICS_TIMEOUT_MS);
     return {
       queueDepth: (counts.wait ?? 0) + (counts.active ?? 0),
       failedJobs: counts.failed ?? 0,
@@ -67,6 +84,7 @@ export async function collectQueueCounts(queue: QueueCounts): Promise<{
 export async function runWorkerHeartbeat(
   db: Database,
   queue: QueueCounts,
+  options?: { startup?: boolean },
 ): Promise<void> {
   try {
     const counts = await collectQueueCounts(queue);
@@ -76,6 +94,13 @@ export async function runWorkerHeartbeat(
         failedJobs: counts.failedJobs,
       }),
     );
+    if (options?.startup) {
+      logQueueEvent("info", "worker.heartbeat_ok", {
+        queue_depth: counts.queueDepth,
+        failed_jobs: counts.failedJobs,
+        status: "ok",
+      });
+    }
   } catch (error) {
     logLoopFailure("worker.heartbeat_failed", "worker_heartbeat", error);
   }
@@ -140,7 +165,7 @@ export function startWorker(options?: {
     void runWorkerHeartbeat(db, queue);
   }, WORKER_HEARTBEAT_INTERVAL_MS);
 
-  void runWorkerHeartbeat(db, queue);
+  void runWorkerHeartbeat(db, queue, { startup: true });
 
   logQueueEvent("info", "worker.started", {
     job_type: "source_event.normalize",

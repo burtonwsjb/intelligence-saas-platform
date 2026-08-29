@@ -35,4 +35,8 @@ export {
   runStagingIngest,
   runStagingSourceSmoke,
 } from "./staging.js";
+export {
+  collectStagingDatabaseIdentities,
+  formatStagingDatabaseIdentityReport,
+} from "./staging-db-identity.js";
 export { processCreatorExtractJob, processIntelligenceRecomputeJob } from "./recompute.js";
