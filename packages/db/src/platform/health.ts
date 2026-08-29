@@ -19,6 +19,24 @@ import {
 import { entityResolutionAttempt } from "../schema/resolution.js";
 import { tcgScoreSnapshot } from "../schema/scoring.js";
 
+export const WORKER_HEARTBEAT_STALE_MS = 60_000;
+export type WorkerHeartbeatStatus = "healthy" | "stale" | "missing";
+
+export function classifyWorkerHeartbeat(
+  lastSeenAt: Date | string | null | undefined,
+  now = new Date(),
+  staleAfterMs = WORKER_HEARTBEAT_STALE_MS,
+): WorkerHeartbeatStatus {
+  if (!lastSeenAt) {
+    return "missing";
+  }
+  const seen = lastSeenAt instanceof Date ? lastSeenAt : new Date(lastSeenAt);
+  if (Number.isNaN(seen.getTime())) {
+    return "missing";
+  }
+  return now.getTime() - seen.getTime() > staleAfterMs ? "stale" : "healthy";
+}
+
 export async function collectSystemHealth(db: Database) {
   const [
     games,
@@ -95,7 +113,8 @@ export async function collectSystemHealth(db: Database) {
 
   const platforms = await db.select().from(sourcePlatform);
   const sources = await db.select().from(sourceDefinition);
-  const worker = heartbeat[0] ?? null;
+  const worker = heartbeat.find((row) => row.workerKey === "ingest") ?? heartbeat[0] ?? null;
+  const workerHeartbeatStatus = classifyWorkerHeartbeat(worker?.lastSeenAt);
 
   return {
     version: "health.v2" as const,
@@ -117,8 +136,9 @@ export async function collectSystemHealth(db: Database) {
       database: "ok",
       redis: process.env.REDIS_URL?.trim() ? "configured" : "missing",
       workerHeartbeatAt: worker?.lastSeenAt?.toISOString() ?? null,
+      workerHeartbeatStatus,
       queueDepth: worker?.queueDepth ?? null,
-      failedJobs: Number(failedJobs[0]?.count ?? 0),
+      failedJobs: worker?.failedJobs ?? null,
       normalizationFailures: Number(failedMarket[0]?.count ?? 0) + Number(failedSource[0]?.count ?? 0),
       resolutionFailures: Number(failedResolution[0]?.count ?? 0),
       scoringSnapshots: Number(failedScores[0]?.count ?? 0),

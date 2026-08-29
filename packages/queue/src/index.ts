@@ -30,4 +30,4 @@ export { createIngestQueue, publishOutboxJob, publishPlatformOutboxJob, type Ing
 export { dispatchPendingOutbox, dispatchPendingPlatformOutbox } from "./dispatcher.js";
 export { markJobPermanentlyFailed, processNormalizeJob } from "./process.js";
 export { getIngestJobStatus } from "./status.js";
-export { logQueueEvent } from "./logger.js";
+export { logQueueEvent, safeLoopErrorFields } from "./logger.js";

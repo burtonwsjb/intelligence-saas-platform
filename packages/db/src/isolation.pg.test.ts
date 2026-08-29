@@ -83,6 +83,10 @@ import {
   hasPlatformAdminGrant,
   listCrmCustomers,
   runStagingSourceSmoke,
+  upsertWorkerHeartbeat,
+  getWorkerHeartbeat,
+  collectSystemHealth,
+  enqueueDueProviderSyncs,
 } from "./index.js";
 
 const passwords = testRolePasswords();
@@ -1543,6 +1547,45 @@ describe("PostgreSQL RLS isolation", () => {
       }
     } finally {
       await adminConn.end();
+    }
+  });
+
+  it("persists worker heartbeat as app_worker and rejects app_user writes", async () => {
+    const workerConn = createDbConnection(
+      replaceConnectionRole(adminUrl, DB_ROLES.worker, passwords.worker),
+    );
+    try {
+      await withPlatformContext(workerConn.db, async (db) => {
+        await enqueueDueProviderSyncs(db, { ISP_ENV: "staging" });
+        await upsertWorkerHeartbeat(db, { queueDepth: 6, failedJobs: 3 });
+      });
+      const row = await getWorkerHeartbeat(workerConn.db);
+      expect(row?.queueDepth).toBe(6);
+      expect(row?.failedJobs).toBe(3);
+      expect(row?.lastSeenAt).toBeInstanceOf(Date);
+      const health = await collectSystemHealth(workerConn.db);
+      expect(health.operations.queueDepth).toBe(6);
+      expect(health.operations.failedJobs).toBe(3);
+      expect(health.operations.workerHeartbeatStatus).toBe("healthy");
+      expect(health.providers.every((item) => item.mode === "disabled")).toBe(true);
+      expect(health.catalogs.predictions).toBeGreaterThanOrEqual(0);
+
+      const raw = postgres(replaceConnectionRole(adminUrl, DB_ROLES.user, passwords.user), {
+        max: 1,
+        prepare: false,
+      });
+      try {
+        await expect(
+          raw`insert into worker_heartbeat (worker_key, last_seen_at, queue_depth, failed_jobs) values ('probe_user', now(), 1, 1)`,
+        ).rejects.toThrow();
+        await expect(
+          raw`update worker_heartbeat set failed_jobs = 99 where worker_key = 'ingest'`,
+        ).rejects.toThrow();
+      } finally {
+        await raw.end({ timeout: 5 });
+      }
+    } finally {
+      await workerConn.end();
     }
   });
 });

@@ -53,7 +53,12 @@ export {
   listSupportCases,
   setSupportCaseStatus,
 } from "./platform/support.js";
-export { collectSystemHealth, describePlatformConfig } from "./platform/health.js";
+export {
+  WORKER_HEARTBEAT_STALE_MS,
+  classifyWorkerHeartbeat,
+  collectSystemHealth,
+  describePlatformConfig,
+} from "./platform/health.js";
 export {
   PROVIDER_KEYS,
   PROVIDER_MODES,

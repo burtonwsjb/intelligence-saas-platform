@@ -19,9 +19,83 @@ import {
   parseJobEnvelope,
   processNormalizeJob,
   requireRedisUrl,
+  safeLoopErrorFields,
   type IngestQueue,
   type JobEnvelope,
 } from "@isp/queue";
+
+export const WORKER_HEARTBEAT_INTERVAL_MS = 15_000;
+export const WORKER_SWEEP_INTERVAL_MS = 5_000;
+
+type QueueCounts = Pick<IngestQueue, "getJobCounts">;
+
+function logLoopFailure(event: string, operation: string, error: unknown) {
+  logQueueEvent("error", event, {
+    operation,
+    ...safeLoopErrorFields(error),
+    retry: "next_cycle",
+  });
+}
+
+export async function runProviderSchedule(
+  db: Database,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<void> {
+  try {
+    await withPlatformContext(db, (scoped) => enqueueDueProviderSyncs(scoped, env));
+  } catch (error) {
+    logLoopFailure("worker.scheduler_failed", "provider_scheduler", error);
+  }
+}
+
+export async function collectQueueCounts(queue: QueueCounts): Promise<{
+  queueDepth: number | null;
+  failedJobs: number | null;
+}> {
+  try {
+    const counts = await queue.getJobCounts("wait", "active", "failed");
+    return {
+      queueDepth: (counts.wait ?? 0) + (counts.active ?? 0),
+      failedJobs: counts.failed ?? 0,
+    };
+  } catch (error) {
+    logLoopFailure("worker.queue_metrics_failed", "queue_metrics", error);
+    return { queueDepth: null, failedJobs: null };
+  }
+}
+
+export async function runWorkerHeartbeat(
+  db: Database,
+  queue: QueueCounts,
+): Promise<void> {
+  try {
+    const counts = await collectQueueCounts(queue);
+    await withPlatformContext(db, (scoped) =>
+      upsertWorkerHeartbeat(scoped, {
+        queueDepth: counts.queueDepth,
+        failedJobs: counts.failedJobs,
+      }),
+    );
+  } catch (error) {
+    logLoopFailure("worker.heartbeat_failed", "worker_heartbeat", error);
+  }
+}
+
+export async function runOutboxSweep(
+  db: Database,
+  input: { queue: IngestQueue; env?: NodeJS.ProcessEnv },
+): Promise<void> {
+  try {
+    await dispatchPendingOutbox(db, input);
+  } catch (error) {
+    logLoopFailure("worker.outbox_dispatch_failed", "outbox_dispatch", error);
+  }
+  try {
+    await dispatchPendingPlatformOutbox(db, input);
+  } catch (error) {
+    logLoopFailure("worker.platform_outbox_dispatch_failed", "platform_outbox_dispatch", error);
+  }
+}
 
 export function startWorker(options?: {
   db?: Database;
@@ -29,11 +103,12 @@ export function startWorker(options?: {
   queue?: IngestQueue;
 }): { stop: () => Promise<void> } {
   requireRedisUrl(options?.env);
-  const db = options?.db ?? createDbFromWorkerEnv(options?.env);
-  const connection = createRedisConnection(options?.env);
-  const queue = options?.queue ?? createIngestQueue(options?.env);
+  const env = options?.env ?? process.env;
+  const db = options?.db ?? createDbFromWorkerEnv(env);
+  const connection = createRedisConnection(env);
+  const queue = options?.queue ?? createIngestQueue(env);
   const worker = new Worker<JobEnvelope>(
-    ingestQueueName(options?.env),
+    ingestQueueName(env),
     async (job) => {
       try {
         await processNormalizeJob(db, job.data, job.attemptsMade + 1);
@@ -57,20 +132,15 @@ export function startWorker(options?: {
   );
 
   const sweep = setInterval(() => {
-    void dispatchPendingOutbox(db, { queue, env: options?.env }).catch(() => undefined);
-    void dispatchPendingPlatformOutbox(db, { queue, env: options?.env }).catch(() => undefined);
-  }, 5_000);
+    void runOutboxSweep(db, { queue, env });
+  }, WORKER_SWEEP_INTERVAL_MS);
 
   const schedule = setInterval(() => {
-    void withPlatformContext(db, async (scoped) => {
-      await enqueueDueProviderSyncs(scoped, options?.env ?? process.env).catch(() => undefined);
-      const counts = await queue.getJobCounts("wait", "active", "failed").catch(() => null);
-      await upsertWorkerHeartbeat(scoped, {
-        queueDepth: counts ? (counts.wait ?? 0) + (counts.active ?? 0) : null,
-        failedJobs: counts?.failed ?? null,
-      });
-    }).catch(() => undefined);
-  }, 15_000);
+    void runProviderSchedule(db, env);
+    void runWorkerHeartbeat(db, queue);
+  }, WORKER_HEARTBEAT_INTERVAL_MS);
+
+  void runWorkerHeartbeat(db, queue);
 
   logQueueEvent("info", "worker.started", {
     job_type: "source_event.normalize",

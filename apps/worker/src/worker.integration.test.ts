@@ -46,6 +46,7 @@ async function waitUntil<T>(fn: () => Promise<T | null | undefined | false>, tim
 describe("BullMQ worker", () => {
   let adminConn: ReturnType<typeof createDbConnection>;
   let appConn: ReturnType<typeof createDbConnection>;
+  let workerConn: ReturnType<typeof createDbConnection>;
   let db: Database;
   let handle: { stop: () => Promise<void> };
   let orgId = "";
@@ -59,6 +60,7 @@ describe("BullMQ worker", () => {
     await bootstrapRoles(adminUrl, passwords);
     adminConn = createDbConnection(adminUrl);
     appConn = createDbConnection(replaceConnectionRole(adminUrl, DB_ROLES.user, passwords.user));
+    workerConn = createDbConnection(replaceConnectionRole(adminUrl, DB_ROLES.worker, passwords.worker));
     db = appConn.db;
     orgId = `org_${crypto.randomUUID()}`;
     userId = `user_${crypto.randomUUID()}`;
@@ -84,11 +86,12 @@ describe("BullMQ worker", () => {
       status: "active",
       createdByUserId: userId,
     });
-    handle = startWorker({ db, env });
+    handle = startWorker({ db: workerConn.db, env });
   }, 60_000);
 
   afterAll(async () => {
     await handle?.stop();
+    await workerConn?.end();
     await appConn?.end();
     await adminConn?.end();
   });
