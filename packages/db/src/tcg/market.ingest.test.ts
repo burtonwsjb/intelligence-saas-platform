@@ -22,6 +22,7 @@ import {
   getLatestTcgMarketSnapshot,
   getTcgAskSoldSpread,
   ingestTcgMarketRecord,
+  IMPOSSIBLE_OBSERVED_AT_SKEW_MS,
   listObservationMetrics,
   listTcgListingHistory,
   listTcgMarketQuarantine,
@@ -187,6 +188,8 @@ describe("TCG market history", () => {
     const spread = await getTcgAskSoldSpread(db, { printingId: en, condition: "nm", currency: "USD" });
     expect(spread.formula).toBe("lowest_ask_minus_latest_sold");
     expect(spread.spread_abs).toBe(39 - 41);
+    expect(spread.spread_amount).toBe(spread.spread_abs);
+    expect(spread.sign).toBe("lowest_ask_minus_latest_valid_sold");
     expect(spread.currency).toBe("USD");
     expect(spread.version).toBe("spread.v1");
 
@@ -290,5 +293,65 @@ describe("TCG market history", () => {
     expect(src).not.toMatch(/https?:\/\/(api\.)?tcgplayer\.com/i);
     expect(src).not.toMatch(/https?:\/\/.*ebay\.com/i);
     expect(src).not.toMatch(/https?:\/\/tcgcardcentral\.com/i);
+  });
+
+  it("quarantines impossible timestamps without rejecting near-future backfill", async () => {
+    const client = new PGlite();
+    await client.exec(await readMigrationSql());
+    const db = drizzle(client) as unknown as Database;
+    await seedTcgIdentityFixtures(db);
+    const near = new Date(Date.now() + 60 * 86_400_000).toISOString();
+    const far = new Date(Date.now() + IMPOSSIBLE_OBSERVED_AT_SKEW_MS + 86_400_000).toISOString();
+    const nearResult = await ingestTcgMarketRecord(db, sold({ provider_record_id: "near_future", observed_at: near }));
+    expect(nearResult.status).toBe("processed");
+    const farResult = await ingestTcgMarketRecord(db, sold({ provider_record_id: "far_future", observed_at: far }));
+    expect(farResult.status).toBe("quarantined");
+    expect((await listTcgMarketQuarantine(db)).some((row) => row.reason === "impossible_timestamp")).toBe(true);
+  });
+
+  it("does not let flagged outliers poison later rolling-median comps", async () => {
+    const client = new PGlite();
+    await client.exec(await readMigrationSql());
+    const db = drizzle(client) as unknown as Database;
+    const seeded = await seedTcgIdentityFixtures(db);
+    await ingestTcgMarketRecord(db, sold({ provider_record_id: "p1", price: 40, observed_at: "2026-01-01T00:00:00.000Z" }));
+    await ingestTcgMarketRecord(db, sold({ provider_record_id: "p2", price: 42, observed_at: "2026-01-02T00:00:00.000Z" }));
+    await ingestTcgMarketRecord(db, sold({ provider_record_id: "p3", price: 41, observed_at: "2026-01-03T00:00:00.000Z" }));
+    const spike = await ingestTcgMarketRecord(
+      db,
+      sold({ provider_record_id: "spike", price: 4000, observed_at: "2026-01-04T00:00:00.000Z" }),
+    );
+    expect(spike.status).toBe("processed");
+    const cheap = await ingestTcgMarketRecord(
+      db,
+      sold({ provider_record_id: "cheap_valid", price: 8.25, observed_at: "2026-01-05T00:00:00.000Z" }),
+    );
+    expect(cheap.status).toBe("processed");
+    const history = await listTcgSoldHistory(db, { printingId: seeded.printings.greninjaEnNormal.id });
+    const cheapRow = history.find((item) => Number(item.price) === 8.25);
+    expect(cheapRow?.outlierFlag).toBe(false);
+    expect(cheapRow?.outlierReason).toBeNull();
+    const psaPeer = await ingestTcgMarketRecord(
+      db,
+      sold({
+        provider_record_id: "psa_peer",
+        price: 250,
+        observed_at: "2026-01-06T00:00:00.000Z",
+        grading_company: "psa",
+        grade_label: "10",
+        grade_numeric: 10,
+      }),
+    );
+    expect(psaPeer.status).toBe("processed");
+    const ungraded = await ingestTcgMarketRecord(
+      db,
+      sold({ provider_record_id: "ungraded_after_psa", price: 36, observed_at: "2026-01-07T00:00:00.000Z" }),
+    );
+    expect(ungraded.status).toBe("processed");
+    const ungradedRow = (await listTcgSoldHistory(db, { printingId: seeded.printings.greninjaEnNormal.id })).find(
+      (item) => Number(item.price) === 36,
+    );
+    expect(ungradedRow?.outlierFlag).toBe(false);
+    expect(ungradedRow?.outlierReason).not.toBe("source_disagreement");
   });
 });

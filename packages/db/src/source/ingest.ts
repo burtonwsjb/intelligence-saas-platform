@@ -7,6 +7,9 @@ import {
   sourceIngest,
   sourceMention,
 } from "../schema/source.js";
+import { sourceSentiment } from "../schema/provider.js";
+import { analyzeSourceSentiment } from "../providers/sentiment.js";
+import { resolveSourceMention } from "../resolution/resolve.js";
 import type { Database } from "../client.js";
 import {
   SOURCE_EXTRACTOR_VERSION,
@@ -202,6 +205,37 @@ export async function ingestSourceContentRecord(
         metadata: { printing_id: null, resolution_status: "unresolved" },
       })
       .onConflictDoNothing();
+    const analysis = analyzeSourceSentiment({
+      text: `${input.content.title ?? ""} ${input.content.excerpt ?? ""} ${mention.raw_entity_text}`,
+      mention_context: mention.mention_context,
+      candidate_direction: mention.candidate_direction,
+    });
+    await db
+      .insert(sourceSentiment)
+      .values({
+        id: stableSourceId("sst", [mentionId, analysis.analyzer_version]),
+        mentionId,
+        analyzerVersion: analysis.analyzer_version,
+        direction: analysis.direction,
+        strength: analysis.strength,
+        confidence: analysis.confidence == null ? null : String(analysis.confidence),
+        subject: analysis.subject,
+        entityKind: analysis.entity_kind,
+        timeHorizon: analysis.time_horizon,
+        marketRelevance: analysis.market_relevance,
+        excitement: analysis.excitement,
+        purchaseIntent: analysis.purchase_intent,
+        priceExpectation: analysis.price_expectation,
+        creatorRecommendation: analysis.creator_recommendation,
+        marketConcern: analysis.market_concern,
+        evidence: analysis.evidence,
+      })
+      .onConflictDoNothing();
+    try {
+      await resolveSourceMention(db, mentionId);
+    } catch {
+      // Resolution stays in entity_resolution_attempt; mention extract metadata is unchanged.
+    }
   }
 
   if (input.engagement) {
@@ -253,6 +287,20 @@ export async function receiveSourceContentRecord(db: Database, raw: SourceConten
       processingStatus: "received",
     })
     .onConflictDoNothing();
+  const { enqueuePlatformJob, PLATFORM_JOB_VERSION, platformJobCreatedAt } = await import(
+    "../providers/outbox.js"
+  );
+  await enqueuePlatformJob(db, {
+    id: `source.intelligence.normalize.v1:${ingestId}`,
+    jobType: "source.intelligence.normalize.v1",
+    payload: {
+      job_version: PLATFORM_JOB_VERSION,
+      job_type: "source.intelligence.normalize.v1",
+      job_id: `source.intelligence.normalize.v1:${ingestId}`,
+      source_ingest_id: ingestId,
+      created_at: platformJobCreatedAt(),
+    },
+  });
   return { ingestId };
 }
 

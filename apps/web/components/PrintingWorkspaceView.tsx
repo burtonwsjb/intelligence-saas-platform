@@ -47,17 +47,35 @@ export function PrintingWorkspaceView({
           {workspace.latestSold ? formatMoney(workspace.latestSold.price, workspace.latestSold.currency) : "—"}
         </p>
         <p>
-          Reference: {workspace.reference ? formatMoney(workspace.reference.price, workspace.reference.currency) : "—"}
+          Reference price (not an ask):{" "}
+          {workspace.reference ? formatMoney(workspace.reference.price, workspace.reference.currency) : "—"}
+        </p>
+        <p>
+          Lowest ask:{" "}
+          {workspace.listing
+            ? formatMoney(workspace.listing.lowPrice ?? workspace.listing.price, workspace.listing.currency)
+            : "—"}
         </p>
         <p>
           Listing supply: {workspace.listing?.listingCount ?? "—"} · sellers {workspace.listing?.sellerCount ?? "—"}
         </p>
         <p>
-          Spread:{" "}
+          Spread (lowest ask − latest valid sold):{" "}
           {workspace.spread?.spread_abs == null || workspace.spread.currency == null
             ? "—"
             : formatMoney(workspace.spread.spread_abs, workspace.spread.currency)}
+          {workspace.spread?.spread_abs != null && workspace.spread.spread_abs < 0
+            ? " (ask below last sold)"
+            : ""}
         </p>
+        {workspace.freshness ? (
+          <p className="muted">
+            Market updated {workspace.freshness.marketUpdatedMinutesAgo ?? "—"}m ago · social{" "}
+            {workspace.freshness.socialUpdatedMinutesAgo ?? "—"}m ago · creator evidence{" "}
+            {workspace.freshness.creatorEvidenceUpdatedMinutesAgo ?? "—"}m ago
+            {workspace.freshness.stale ? " · stale" : ""}
+          </p>
+        ) : null}
         {workspace.latestObservedSold?.outlierFlag ? (
           <p className="muted">
             Latest print {formatMoney(workspace.latestObservedSold.price, workspace.latestObservedSold.currency)} is

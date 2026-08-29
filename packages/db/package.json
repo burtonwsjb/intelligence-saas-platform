@@ -21,7 +21,9 @@
     "bootstrap": "tsx src/bootstrap.ts",
     "status": "tsx src/status.ts",
     "grant-platform-admin": "tsx src/grant-platform-admin.ts",
-    "staging-fixture": "tsx src/staging-fixture.ts"
+    "staging-fixture": "tsx src/staging-fixture.ts",
+    "staging-source-smoke": "tsx src/staging-source-smoke.ts",
+    "staging-ingest": "tsx src/staging-ingest.ts"
   },
   "dependencies": {
     "@isp/shared": "workspace:*",

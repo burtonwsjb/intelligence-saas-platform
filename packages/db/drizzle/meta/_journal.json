@@ -148,6 +148,13 @@
       "when": 20,
       "tag": "0021_phase22_beta",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 21,
+      "tag": "0022_phase24_providers",
+      "breakpoints": true
     }
   ]
 }

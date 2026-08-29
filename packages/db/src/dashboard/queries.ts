@@ -1,4 +1,6 @@
 import { desc, eq, sql } from "drizzle-orm";
+import { entityResolutionAttempt } from "../schema/resolution.js";
+import { sourceContent, sourceMention } from "../schema/source.js";
 import type { Database } from "../client.js";
 import { tcgCardConcept, tcgPrinting, tcgSet } from "../schema/tcg.js";
 import { tcgScoreSnapshot } from "../schema/scoring.js";
@@ -157,7 +159,7 @@ export async function getPrintingWorkspace(db: Database, printingId: string) {
   if (!identity) {
     return null;
   }
-  const [sold, listing, reference, score, features, calls, predictions, spread] = await Promise.all([
+  const [sold, listing, reference, score, features, calls, predictions, spread, social] = await Promise.all([
     listTcgSoldHistory(db, { printingId }),
     getLatestTcgMarketSnapshot(db, { printingId, marketType: "marketplace_listing" }),
     getLatestTcgMarketSnapshot(db, { printingId, priceType: "reference" }),
@@ -166,10 +168,22 @@ export async function getPrintingWorkspace(db: Database, printingId: string) {
     listCallsByPrinting(db, printingId),
     db.select().from(tcgPrediction).where(eq(tcgPrediction.printingId, printingId)).orderBy(desc(tcgPrediction.issuedAt)),
     getTcgAskSoldSpread(db, { printingId }),
+    db
+      .select({ publishedAt: sourceContent.publishedAt })
+      .from(entityResolutionAttempt)
+      .innerJoin(sourceMention, eq(sourceMention.id, entityResolutionAttempt.mentionId))
+      .innerJoin(sourceContent, eq(sourceContent.id, sourceMention.contentId))
+      .where(eq(entityResolutionAttempt.chosenPrintingId, printingId))
+      .orderBy(desc(sourceContent.publishedAt))
+      .limit(1),
   ]);
   const latestObservedSold = sold[0] ?? null;
   const latestSold =
     sold.find((row) => row.price != null && row.outlierFlag === false && row.gradingCompany == null) ?? null;
+  const now = Date.now();
+  const ageMinutes = (value: Date | null | undefined) =>
+    value ? Math.max(0, Math.round((now - value.getTime()) / 60_000)) : null;
+  const socialUpdatedAt = social[0]?.publishedAt ?? null;
   return {
     identity,
     sold,
@@ -182,6 +196,15 @@ export async function getPrintingWorkspace(db: Database, printingId: string) {
     calls,
     predictions,
     spread,
+    freshness: {
+      marketUpdatedMinutesAgo: ageMinutes(latestSold?.observedAt ?? listing?.observedAt),
+      socialUpdatedMinutesAgo: ageMinutes(socialUpdatedAt),
+      creatorEvidenceUpdatedMinutesAgo: ageMinutes(calls[0]?.publishedAt),
+      scoreAsOf: score?.asOf?.toISOString() ?? null,
+      stale:
+        (ageMinutes(latestSold?.observedAt ?? listing?.observedAt) ?? 9999) > 24 * 60 ||
+        score?.dataQuality === "stale",
+    },
   };
 }
 

@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull } from "drizzle-orm";
 import {
   tcgMarketIngest,
   tcgMarketQuarantine,
@@ -26,6 +26,9 @@ export type TcgMarketIngestResult = {
   quarantineId: string | null;
   ingestId: string;
 };
+
+/** Far-future garbage only. Fixture and backfill timestamps within a year of ingest stay valid. */
+export const IMPOSSIBLE_OBSERVED_AT_SKEW_MS = 365 * 86_400_000;
 
 function materialFingerprint(input: TcgMarketRecordInput) {
   return marketFingerprint({
@@ -103,6 +106,8 @@ export async function listRecentSoldPrices(
         eq(tcgMarketSnapshot.priceType, "sold"),
         eq(tcgMarketSnapshot.condition, input.condition),
         eq(tcgMarketSnapshot.currency, input.currency),
+        eq(tcgMarketSnapshot.outlierFlag, false),
+        isNotNull(tcgMarketSnapshot.price),
         ...gradeClauses,
       ),
     )
@@ -206,6 +211,16 @@ export async function ingestTcgMarketRecord(
     throw error;
   }
 
+  const observedMs = Date.parse(input.observed_at);
+  if (Number.isFinite(observedMs) && observedMs > Date.now() + IMPOSSIBLE_OBSERVED_AT_SKEW_MS) {
+    const quarantineId = await insertQuarantine(db, input, "impossible_timestamp", fingerprint);
+    await db
+      .update(tcgMarketIngest)
+      .set({ processingStatus: "quarantined", quarantineId, updatedAt: new Date() })
+      .where(eq(tcgMarketIngest.id, ingestId));
+    return { status: "quarantined", snapshotId: null, quarantineId, ingestId };
+  }
+
   if (resolved.status !== "exact" || !resolved.printingId) {
     const reason =
       resolved.status === "ambiguous"
@@ -223,6 +238,13 @@ export async function ingestTcgMarketRecord(
 
   const boundFingerprint = fingerprint;
   const snapshotId = stableMarketId("msn", [input.provider, input.provider_record_id]);
+  const gradeClauses =
+    input.grading_company == null
+      ? [isNull(tcgMarketSnapshot.gradingCompany)]
+      : [
+          eq(tcgMarketSnapshot.gradingCompany, input.grading_company),
+          ...(input.grade_label ? [eq(tcgMarketSnapshot.gradeLabel, input.grade_label)] : []),
+        ];
   const prior = await listRecentSoldPrices(db, {
     printingId: resolved.printingId,
     condition: input.condition,
@@ -230,17 +252,55 @@ export async function ingestTcgMarketRecord(
     gradingCompany: input.grading_company ?? null,
     gradeLabel: input.grade_label ?? null,
   });
-  const outlier = flagOutlierV1({
-    price: input.price ?? input.low_price ?? null,
+  const otherSource = await db
+    .select({ price: tcgMarketSnapshot.price, sourceKey: tcgMarketSnapshot.sourceKey })
+    .from(tcgMarketSnapshot)
+    .where(
+      and(
+        eq(tcgMarketSnapshot.printingId, resolved.printingId),
+        eq(tcgMarketSnapshot.priceType, "sold"),
+        eq(tcgMarketSnapshot.condition, input.condition),
+        eq(tcgMarketSnapshot.currency, input.currency),
+        eq(tcgMarketSnapshot.outlierFlag, false),
+        ...gradeClauses,
+      ),
+    )
+    .orderBy(desc(tcgMarketSnapshot.observedAt))
+    .limit(8);
+  const peer = otherSource.find((row) => row.sourceKey !== input.provider && row.price != null);
+  const price = input.price ?? input.low_price ?? null;
+  let outlier = flagOutlierV1({
+    price,
     priorPrices: prior,
     quantity: input.quantity ?? null,
   });
+  if (
+    !outlier.outlier_flag &&
+    price != null &&
+    peer?.price != null &&
+    Number(peer.price) > 0 &&
+    (price > Number(peer.price) * 5 || price < Number(peer.price) * 0.2)
+  ) {
+    outlier = {
+      outlier_flag: true,
+      outlier_reason: "source_disagreement",
+      outlier_algorithm_version: outlier.outlier_algorithm_version,
+    };
+  }
   const incomplete =
     input.market_type === "marketplace_listing" &&
     input.listing_count == null &&
     input.low_price == null &&
     input.price == null;
-  const qualityLabel = outlier.outlier_flag ? "outlier" : incomplete ? "incomplete" : "normal";
+  const staleListing =
+    input.market_type === "marketplace_listing" && Date.now() - observedMs > 7 * 86_400_000;
+  const qualityLabel = outlier.outlier_flag
+    ? "outlier"
+    : incomplete
+      ? "incomplete"
+      : staleListing
+        ? "stale"
+        : "normal";
 
   await db
     .insert(tcgMarketSnapshot)
@@ -283,6 +343,14 @@ export async function ingestTcgMarketRecord(
       attributes: {
         ...(input.attributes ?? {}),
         ...(input.raw_condition ? { raw_condition: input.raw_condition } : {}),
+        provenance: {
+          provider: input.provider,
+          external_record_id: input.provider_record_id,
+          source_url: input.source_reference ?? null,
+          source_timestamp: input.observed_at,
+          ingested_at: new Date().toISOString(),
+          normalizer_version: "tcg.market.normalize.v1",
+        },
       },
     })
     .onConflictDoNothing();
@@ -318,6 +386,20 @@ export async function receiveTcgMarketRecord(
       processingStatus: "received",
     })
     .onConflictDoNothing();
+  const { enqueuePlatformJob, PLATFORM_JOB_VERSION, platformJobCreatedAt } = await import(
+    "../providers/outbox.js"
+  );
+  await enqueuePlatformJob(db, {
+    id: `tcg.market.normalize.v1:${ingestId}`,
+    jobType: "tcg.market.normalize.v1",
+    payload: {
+      job_version: PLATFORM_JOB_VERSION,
+      job_type: "tcg.market.normalize.v1",
+      job_id: `tcg.market.normalize.v1:${ingestId}`,
+      market_ingest_id: ingestId,
+      created_at: platformJobCreatedAt(),
+    },
+  });
   return { ingestId };
 }
 

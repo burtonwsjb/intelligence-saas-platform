@@ -24,10 +24,13 @@ describe("TCG market contracts", () => {
       computeTcgAskSoldSpread({ lowestAsk: 120, latestSold: 100 }),
     ).toEqual({
       spread_abs: 20,
+      spread_amount: 20,
       spread_ratio: 1.2,
       formula: "lowest_ask_minus_latest_sold",
       version: "spread.v1",
+      sign: "lowest_ask_minus_latest_valid_sold",
     });
+    expect(computeTcgAskSoldSpread({ lowestAsk: 90, latestSold: 100 }).spread_amount).toBe(-10);
     expect(computeTcgAskSoldSpread({ lowestAsk: 10, latestSold: 0 }).spread_abs).toBeNull();
     expect(
       computeTcgAskSoldSpread({ lowestAsk: 39, latestSold: 8000, askCurrency: "USD", soldCurrency: "JPY" }).spread_abs,

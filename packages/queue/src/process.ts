@@ -16,6 +16,13 @@ import {
   normalizeSourceEvent,
   normalizeSourceIntelligenceIngest,
   normalizeTcgMarketIngest,
+  processCreatorExtractJob,
+  processIntelligenceRecomputeJob,
+  syncProvider,
+  markPlatformOutboxFailed,
+  markPlatformOutboxProcessed,
+  enqueueCreatorExtractJob,
+  enqueueRecomputeForSnapshot,
   updateSourceEventStatus,
   withPlatformContext,
   withSystemContext,
@@ -63,6 +70,11 @@ async function processMarketNormalizeJob(
     const result = await withPlatformContext(db, (scoped) =>
       normalizeTcgMarketIngest(scoped, envelope.market_ingest_id),
     );
+    if (result.status === "processed" && result.snapshotId) {
+      await withPlatformContext(db, (scoped) => enqueueRecomputeForSnapshot(scoped, result.snapshotId!)).catch(
+        () => undefined,
+      );
+    }
     const status = result.status === "duplicate" ? ("duplicate" as const) : ("processed" as const);
     logQueueEvent("info", "job.processed", {
       job_id: envelope.job_id,
@@ -94,6 +106,11 @@ async function processSourceNormalizeJob(
     const result = await withPlatformContext(db, (scoped) =>
       normalizeSourceIntelligenceIngest(scoped, envelope.source_ingest_id),
     );
+    if (result.status === "processed" && result.contentId) {
+      await withPlatformContext(db, (scoped) => enqueueCreatorExtractJob(scoped, result.contentId!)).catch(
+        () => undefined,
+      );
+    }
     const status = result.status === "duplicate" ? ("duplicate" as const) : ("processed" as const);
     logQueueEvent("info", "job.processed", {
       job_id: envelope.job_id,
@@ -103,6 +120,72 @@ async function processSourceNormalizeJob(
       status,
     });
     return { status };
+  } catch (error) {
+    toUnrecoverable(error);
+  }
+}
+
+async function processProviderSyncJob(
+  db: Database,
+  envelope: Extract<JobEnvelope, { job_type: "provider.sync.v1" }>,
+  attempt: number,
+): Promise<{ status: "processed" | "duplicate" }> {
+  logQueueEvent("info", "job.started", {
+    job_id: envelope.job_id,
+    job_type: envelope.job_type,
+    attempt,
+    status: "processing",
+  });
+  try {
+    const result = await withPlatformContext(db, (scoped) =>
+      syncProvider(scoped, {
+        providerKey: envelope.provider_key,
+        trigger: "schedule",
+        limit: envelope.limit,
+      }),
+    );
+    if (result.status === "failed") {
+      throw new Error(result.reason ?? "provider_sync_failed");
+    }
+    await withPlatformContext(db, (scoped) => markPlatformOutboxProcessed(scoped, envelope.job_id)).catch(
+      () => undefined,
+    );
+    return { status: result.status === "skipped" ? "duplicate" : "processed" };
+  } catch (error) {
+    toUnrecoverable(error);
+  }
+}
+
+async function processCreatorExtractQueueJob(
+  db: Database,
+  envelope: Extract<JobEnvelope, { job_type: "creator.extract.v1" }>,
+): Promise<{ status: "processed" | "duplicate" }> {
+  try {
+    await withPlatformContext(db, (scoped) => processCreatorExtractJob(scoped, envelope.content_id));
+    await withPlatformContext(db, (scoped) => markPlatformOutboxProcessed(scoped, envelope.job_id)).catch(
+      () => undefined,
+    );
+    return { status: "processed" };
+  } catch (error) {
+    toUnrecoverable(error);
+  }
+}
+
+async function processIntelligenceRecomputeQueueJob(
+  db: Database,
+  envelope: Extract<JobEnvelope, { job_type: "intelligence.recompute.v1" }>,
+): Promise<{ status: "processed" | "duplicate" }> {
+  try {
+    await withPlatformContext(db, (scoped) =>
+      processIntelligenceRecomputeJob(scoped, {
+        printingId: envelope.printing_id,
+        asOf: new Date(envelope.as_of),
+      }),
+    );
+    await withPlatformContext(db, (scoped) => markPlatformOutboxProcessed(scoped, envelope.job_id)).catch(
+      () => undefined,
+    );
+    return { status: "processed" };
   } catch (error) {
     toUnrecoverable(error);
   }
@@ -119,6 +202,15 @@ export async function processNormalizeJob(
   }
   if (envelope.job_type === "source.intelligence.normalize.v1") {
     return processSourceNormalizeJob(db, envelope, attempt);
+  }
+  if (envelope.job_type === "provider.sync.v1") {
+    return processProviderSyncJob(db, envelope, attempt);
+  }
+  if (envelope.job_type === "creator.extract.v1") {
+    return processCreatorExtractQueueJob(db, envelope);
+  }
+  if (envelope.job_type === "intelligence.recompute.v1") {
+    return processIntelligenceRecomputeQueueJob(db, envelope);
   }
   logQueueEvent("info", "job.started", {
     job_id: envelope.job_id,
@@ -209,6 +301,21 @@ export async function markJobPermanentlyFailed(
     logQueueEvent("error", "job.permanent_failure", {
       job_id: envelope.job_id,
       source_ingest_id: envelope.source_ingest_id,
+      job_type: envelope.job_type,
+      status: "failed",
+    });
+    return;
+  }
+  if (
+    envelope.job_type === "provider.sync.v1" ||
+    envelope.job_type === "creator.extract.v1" ||
+    envelope.job_type === "intelligence.recompute.v1"
+  ) {
+    await withPlatformContext(db, (scoped) =>
+      markPlatformOutboxFailed(scoped, envelope.job_id, safeFailureMessage(message)),
+    ).catch(() => undefined);
+    logQueueEvent("error", "job.permanent_failure", {
+      job_id: envelope.job_id,
       job_type: envelope.job_type,
       status: "failed",
     });

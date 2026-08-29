@@ -204,24 +204,31 @@ export function computeTcgAskSoldSpread(input: {
   ) {
     return {
       spread_abs: null as number | null,
+      spread_amount: null as number | null,
       spread_ratio: null as number | null,
       formula: TCG_SPREAD_FORMULA,
       version: TCG_SPREAD_VERSION,
+      sign: "lowest_ask_minus_latest_valid_sold",
     };
   }
   if (!Number.isFinite(input.lowestAsk) || !Number.isFinite(input.latestSold) || input.latestSold <= 0) {
     return {
       spread_abs: null as number | null,
+      spread_amount: null as number | null,
       spread_ratio: null as number | null,
       formula: TCG_SPREAD_FORMULA,
       version: TCG_SPREAD_VERSION,
+      sign: "lowest_ask_minus_latest_valid_sold",
     };
   }
+  const spread_abs = input.lowestAsk - input.latestSold;
   return {
-    spread_abs: input.lowestAsk - input.latestSold,
+    spread_abs,
+    spread_amount: spread_abs,
     spread_ratio: input.lowestAsk / input.latestSold,
     formula: TCG_SPREAD_FORMULA,
     version: TCG_SPREAD_VERSION,
+    sign: "lowest_ask_minus_latest_valid_sold",
   };
 }
 

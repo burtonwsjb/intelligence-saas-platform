@@ -10,6 +10,15 @@ export const BREAK_GLASS_ACTIONS = [
   "health.view",
   "beta.invite",
   "feature.flag",
+  "provider.enable",
+  "provider.disable",
+  "provider.pause",
+  "provider.resume",
+  "provider.sync",
+  "provider.retry",
+  "quarantine.retry",
+  "quarantine.resolve",
+  "quarantine.dismiss",
 ] as const;
 
 export type BreakGlassAction = (typeof BREAK_GLASS_ACTIONS)[number];

@@ -1,9 +1,13 @@
 import { Queue } from "bullmq";
 import {
   getOutboxJob,
+  getPlatformOutbox,
   markOutboxPublishFailed,
   markOutboxPublished,
+  markPlatformOutboxPublishFailed,
+  markPlatformOutboxPublished,
   updateSourceEventStatus,
+  withPlatformContext,
   withSystemContext,
   type Database,
 } from "@isp/db";
@@ -99,6 +103,50 @@ export async function publishOutboxJob(
       job_type: row.jobType,
       status: "pending",
     });
+    throw new QueueUnavailableError();
+  } finally {
+    if (!input.queue && owned) {
+      await owned.close();
+    }
+  }
+}
+
+export async function publishPlatformOutboxJob(
+  db: Database,
+  input: { outboxId: string; queue?: IngestQueue; env?: NodeJS.ProcessEnv },
+): Promise<{ published: boolean }> {
+  const row = await withPlatformContext(db, (scoped) => getPlatformOutbox(scoped, input.outboxId));
+  if (!row) {
+    return { published: false };
+  }
+  if (row.status === "published" || row.status === "processed") {
+    return { published: true };
+  }
+  let owned: IngestQueue | undefined;
+  try {
+    owned = input.queue ?? createIngestQueue(input.env, { failFast: true });
+    try {
+      await owned.add(row.jobType, row.payload as JobEnvelope, { jobId: row.id });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      if (!/already exists|duplicat/i.test(message)) {
+        throw error;
+      }
+    }
+    await withPlatformContext(db, (scoped) => markPlatformOutboxPublished(scoped, input.outboxId));
+    logQueueEvent("info", "outbox.published", {
+      job_id: row.id,
+      job_type: row.jobType,
+      status: "published",
+    });
+    return { published: true };
+  } catch (error) {
+    const message = (error instanceof Error ? error.message : "queue unavailable")
+      .replace(/redis:\/\/[^@\s]+@/gi, "redis://[redacted]@")
+      .replace(/postgresql:\/\/[^@\s]+@/gi, "postgresql://[redacted]@");
+    await withPlatformContext(db, (scoped) =>
+      markPlatformOutboxPublishFailed(scoped, input.outboxId, message),
+    );
     throw new QueueUnavailableError();
   } finally {
     if (!input.queue && owned) {

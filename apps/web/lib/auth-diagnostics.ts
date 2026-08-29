@@ -19,6 +19,11 @@ const SECRET_ENV_KEYS = [
   "STRIPE_SECRET_KEY",
   "STRIPE_WEBHOOK_SECRET",
   "TCC_API_TOKEN",
+  "TCGPLAYER_PRIVATE_KEY",
+  "EBAY_OAUTH_TOKEN",
+  "REDDIT_CLIENT_SECRET",
+  "YOUTUBE_API_KEY",
+  "CREATOR_LLM_API_KEY",
 ] as const;
 
 function present(value: string | undefined): boolean {

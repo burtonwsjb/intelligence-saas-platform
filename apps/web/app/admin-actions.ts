@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import {
   CreatorModerationError,
   OperatorNoteRejectedError,
+  ProviderAdminError,
   SupportCaseRejectedError,
   insertOperatorNote,
   insertSupportCase,
@@ -14,6 +15,12 @@ import {
   createBetaInvite,
   insertBreakGlassAudit,
   isFeatureFlagKey,
+  setProviderEnabled,
+  setProviderPaused,
+  triggerProviderSync,
+  retryProviderJob,
+  reviewMarketQuarantine,
+  resolveIntelligenceQuarantine,
 } from "@isp/db";
 import { requireGrantedOperator } from "@/lib/platform-admin";
 
@@ -166,4 +173,122 @@ export async function setFeatureFlagAction(formData: FormData) {
     metadata: { key },
   });
   redirect("/admin/beta");
+}
+
+export async function setProviderEnabledAction(formData: FormData) {
+  const operator = await requireGrantedOperator();
+  if (!operator.adminDb) {
+    redirect("/admin/sources?error=config");
+  }
+  try {
+    await setProviderEnabled(operator.adminDb, {
+      providerKey: String(formData.get("providerKey") ?? ""),
+      actorUserId: operator.session.user.id,
+      enabled: String(formData.get("enabled") ?? "") === "true",
+      reason: String(formData.get("reason") ?? ""),
+    });
+  } catch (error) {
+    if (error instanceof ProviderAdminError) {
+      redirect("/admin/sources?error=rejected");
+    }
+    throw error;
+  }
+  redirect("/admin/sources");
+}
+
+export async function setProviderPausedAction(formData: FormData) {
+  const operator = await requireGrantedOperator();
+  if (!operator.adminDb) {
+    redirect("/admin/sources?error=config");
+  }
+  try {
+    await setProviderPaused(operator.adminDb, {
+      providerKey: String(formData.get("providerKey") ?? ""),
+      actorUserId: operator.session.user.id,
+      paused: String(formData.get("paused") ?? "") === "true",
+      reason: String(formData.get("reason") ?? ""),
+    });
+  } catch (error) {
+    if (error instanceof ProviderAdminError) {
+      redirect("/admin/sources?error=rejected");
+    }
+    throw error;
+  }
+  redirect("/admin/sources");
+}
+
+export async function triggerProviderSyncAction(formData: FormData) {
+  const operator = await requireGrantedOperator();
+  if (!operator.adminDb) {
+    redirect("/admin/sources?error=config");
+  }
+  try {
+    await triggerProviderSync(operator.adminDb, {
+      providerKey: String(formData.get("providerKey") ?? ""),
+      actorUserId: operator.session.user.id,
+      limit: 10,
+      confirm: String(formData.get("confirm") ?? "") === "yes",
+    });
+  } catch (error) {
+    if (error instanceof ProviderAdminError) {
+      redirect("/admin/sources?error=rejected");
+    }
+    throw error;
+  }
+  redirect("/admin/sources");
+}
+
+export async function retryProviderJobAction(formData: FormData) {
+  const operator = await requireGrantedOperator();
+  if (!operator.adminDb) {
+    redirect("/admin/sources?error=config");
+  }
+  try {
+    await retryProviderJob(operator.adminDb, {
+      jobId: String(formData.get("jobId") ?? ""),
+      actorUserId: operator.session.user.id,
+      reason: String(formData.get("reason") ?? ""),
+    });
+  } catch (error) {
+    if (error instanceof ProviderAdminError) {
+      redirect("/admin/sources?error=rejected");
+    }
+    throw error;
+  }
+  redirect("/admin/sources");
+}
+
+export async function reviewQuarantineAction(formData: FormData) {
+  const operator = await requireGrantedOperator();
+  if (!operator.adminDb) {
+    redirect("/admin/quarantine?error=config");
+  }
+  const kind = String(formData.get("kind") ?? "");
+  try {
+    if (kind === "intelligence") {
+      await resolveIntelligenceQuarantine(operator.adminDb, {
+        id: String(formData.get("id") ?? ""),
+        actorUserId: operator.session.user.id,
+        state: String(formData.get("action") ?? "") as "retried" | "resolved" | "dismissed",
+        reason: String(formData.get("reason") ?? ""),
+      });
+    } else {
+      await reviewMarketQuarantine(operator.adminDb, {
+        quarantineId: String(formData.get("id") ?? ""),
+        actorUserId: operator.session.user.id,
+        action: String(formData.get("action") ?? "") as "retry" | "resolve_identity" | "dismiss",
+        reason: String(formData.get("reason") ?? ""),
+        printingId: String(formData.get("printingId") ?? "") || undefined,
+        sourceNamespace: String(formData.get("sourceNamespace") ?? "") || undefined,
+        identifierType: String(formData.get("identifierType") ?? "") || undefined,
+        identifierValue: String(formData.get("identifierValue") ?? "") || undefined,
+      });
+    }
+  } catch (error) {
+    if (error instanceof ProviderAdminError) {
+      redirect("/admin/quarantine?error=rejected");
+    }
+    throw error;
+  }
+  redirect("/admin/quarantine");
 }

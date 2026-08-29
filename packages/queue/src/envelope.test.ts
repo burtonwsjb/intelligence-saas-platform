@@ -37,6 +37,37 @@ describe("job envelope", () => {
     });
     expect(parseJobEnvelope(envelope).job_type).toBe("source.intelligence.normalize.v1");
   });
+
+  it("accepts provider sync, creator extract, and recompute envelopes", () => {
+    expect(
+      parseJobEnvelope({
+        job_version: 1,
+        job_type: "provider.sync.v1",
+        job_id: "provider.sync.v1:reddit:1",
+        provider_key: "reddit",
+        created_at: "2026-08-16T00:00:00.000Z",
+      }).job_type,
+    ).toBe("provider.sync.v1");
+    expect(
+      parseJobEnvelope({
+        job_version: 1,
+        job_type: "creator.extract.v1",
+        job_id: "creator.extract.v1:cnt_abcdef",
+        content_id: "cnt_abcdef",
+        created_at: "2026-08-16T00:00:00.000Z",
+      }).job_type,
+    ).toBe("creator.extract.v1");
+    expect(
+      parseJobEnvelope({
+        job_version: 1,
+        job_type: "intelligence.recompute.v1",
+        job_id: "intelligence.recompute.v1:prn_abcdef",
+        printing_id: "prn_abcdef",
+        as_of: "2026-01-04T12:00:00.000Z",
+        created_at: "2026-08-16T00:00:00.000Z",
+      }).job_type,
+    ).toBe("intelligence.recompute.v1");
+  });
 });
 
 describe("queue naming and redis env", () => {

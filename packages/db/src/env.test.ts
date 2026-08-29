@@ -258,7 +258,12 @@ describe("migrations", () => {
     expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "beta_invitation"/);
     expect(sql).toMatch(/app.consume_beta_invite/);
     expect(sql).toMatch(/app.forbid_platform_audit_mutate/);
-    expect(sql).toMatch(/app.install_operator_only_rls\('platform_break_glass_audit'\)/);
+    expect(sql).toMatch(/impossible_timestamp/);
+    expect(sql).toMatch(/'stale'/);
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "platform_outbox"/);
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "source_sentiment"/);
+    expect(sql).toMatch(/app.require_system_provider_write/);
+    expect(sql).toMatch(/app.list_pending_platform_outbox/);
   });
 
   it("does not add TCG identity columns to generic kernel tables", async () => {
@@ -282,6 +287,10 @@ describe("committed env example", () => {
     expect(example).toMatch(/^QUEUE_PREFIX=$/m);
     expect(example).toMatch(/^TCC_API_BASE_URL=$/m);
     expect(example).toMatch(/^TCC_API_TOKEN=$/m);
+    expect(example).toMatch(/^PROVIDER_DEFAULT_MODE=$/m);
+    expect(example).toMatch(/^YOUTUBE_API_KEY=$/m);
+    expect(example).toMatch(/^REDDIT_CLIENT_SECRET=$/m);
+    expect(example).not.toMatch(/sk_live_|ya29\.|Bearer /);
     expect(example).toMatch(/^ISP_ENV=$/m);
     expect(example).toMatch(/^WORKER_DATABASE_URL=$/m);
     expect(example).toMatch(/^REDIS_TLS=$/m);

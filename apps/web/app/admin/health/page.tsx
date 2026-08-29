@@ -11,11 +11,29 @@ export default async function AdminHealthPage() {
   return (
     <>
       <h1>System health</h1>
-      <p className="muted">Explainable catalog and ingest counts. No opaque scoring.</p>
+      <p className="muted">Operational states. Secrets are never displayed.</p>
+      <h2>Catalogs</h2>
       <ul>
         {Object.entries(health.catalogs).map(([key, value]) => (
           <li key={key}>
             {key}: {value}
+          </li>
+        ))}
+      </ul>
+      <h2>Operations</h2>
+      <ul>
+        {Object.entries(health.operations).map(([key, value]) => (
+          <li key={key}>
+            {key}: {String(value)}
+          </li>
+        ))}
+      </ul>
+      <h2>Providers</h2>
+      <ul>
+        {health.providers.map((row) => (
+          <li key={row.provider}>
+            {row.provider}: {row.mode}/{row.health} · last sync {row.lastSuccessAt ?? "—"} · rate{" "}
+            {row.rateLimitRemaining ?? "—"}
           </li>
         ))}
       </ul>

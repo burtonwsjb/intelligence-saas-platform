@@ -4,6 +4,9 @@ export const JOB_TYPES = [
   "source_event.normalize",
   "tcg.market.normalize.v1",
   "source.intelligence.normalize.v1",
+  "provider.sync.v1",
+  "creator.extract.v1",
+  "intelligence.recompute.v1",
 ] as const;
 export type JobType = (typeof JOB_TYPES)[number];
 

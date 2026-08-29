@@ -78,6 +78,7 @@ import {
   contentCandidate,
   platformAdmins,
   platformBreakGlassAudit,
+  providerRuntime,
   platformSupportCase,
   hasPlatformAdminGrant,
   listCrmCustomers,
@@ -1450,6 +1451,42 @@ describe("PostgreSQL RLS isolation", () => {
         .onConflictDoNothing();
       const customers = await listCrmCustomers(adminConn.db);
       expect(customers.map((row) => row.organizationId)).toEqual(expect.arrayContaining([ids.orgA]));
+    } finally {
+      await adminConn.end();
+    }
+  });
+
+  it("prevents tenants from mutating provider runtime and platform outbox", async () => {
+    const adminConn = createDbConnection(adminUrl);
+    try {
+      await withPlatformContext(adminConn.db, async (db) => {
+        await db
+          .insert(providerRuntime)
+          .values({
+            providerKey: "reddit",
+            providerType: "social",
+            mode: "disabled",
+          })
+          .onConflictDoNothing();
+      });
+      const raw = postgres(replaceConnectionRole(adminUrl, DB_ROLES.user, passwords.user), {
+        max: 1,
+        prepare: false,
+      });
+      try {
+        const rows = await raw`select provider_key from provider_runtime`;
+        expect(rows.length).toBeGreaterThan(0);
+        await expect(
+          raw`update provider_runtime set mode = 'live' where provider_key = 'reddit'`,
+        ).rejects.toThrow();
+        await expect(
+          raw`insert into platform_outbox (id, job_type, payload) values ('pob_hack', 'provider.sync.v1', '{}'::jsonb)`,
+        ).rejects.toThrow();
+        await expect(raw`select id from platform_outbox`).rejects.toThrow();
+        await expect(raw`select id from app.list_pending_platform_outbox(5)`).rejects.toThrow();
+      } finally {
+        await raw.end({ timeout: 5 });
+      }
     } finally {
       await adminConn.end();
     }

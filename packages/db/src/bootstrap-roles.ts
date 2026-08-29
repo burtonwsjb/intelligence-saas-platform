@@ -309,6 +309,13 @@ export async function bootstrapRoles(
       "product_feedback",
       "bug_report",
       "product_event",
+      "provider_runtime",
+      "provider_sync_run",
+      "platform_outbox",
+      "source_sentiment",
+      "intelligence_quarantine",
+      "tcg_market_quarantine_review",
+      "worker_heartbeat",
     ];
     for (const table of tables) {
       await transferOwnerIfAllowed(
@@ -350,6 +357,8 @@ export async function bootstrapRoles(
       "app.install_operator_only_rls(text)",
       "app.forbid_platform_audit_mutate()",
       "app.consume_beta_invite(text, text)",
+      "app.require_system_provider_write()",
+      "app.list_pending_platform_outbox(integer)",
     ];
     for (const fn of functions) {
       await transferOwnerIfAllowed(sql, `ALTER FUNCTION ${fn} OWNER TO ${DB_ROLES.migrate}`);
@@ -493,6 +502,31 @@ export async function bootstrapRoles(
       REVOKE INSERT, UPDATE, DELETE ON TABLE "platform_feature_flags" FROM ${DB_ROLES.user}, ${DB_ROLES.worker};
       GRANT SELECT ON TABLE "beta_invitation" TO ${DB_ROLES.user}, ${DB_ROLES.worker};
       REVOKE INSERT, UPDATE, DELETE ON TABLE "beta_invitation" FROM ${DB_ROLES.user}, ${DB_ROLES.worker};
+      GRANT SELECT ON TABLE
+        "provider_runtime", "provider_sync_run",
+        "source_sentiment", "intelligence_quarantine",
+        "tcg_market_quarantine_review", "worker_heartbeat"
+      TO ${DB_ROLES.user}, ${DB_ROLES.worker};
+      GRANT SELECT ON TABLE "platform_outbox" TO ${DB_ROLES.worker};
+      GRANT SELECT, INSERT, UPDATE ON TABLE
+        "provider_runtime", "provider_sync_run", "platform_outbox",
+        "intelligence_quarantine", "worker_heartbeat"
+      TO ${DB_ROLES.worker};
+      GRANT SELECT, INSERT ON TABLE
+        "source_sentiment", "tcg_market_quarantine_review"
+      TO ${DB_ROLES.worker};
+      REVOKE INSERT, UPDATE, DELETE ON TABLE
+        "provider_runtime", "provider_sync_run", "platform_outbox",
+        "source_sentiment", "intelligence_quarantine",
+        "tcg_market_quarantine_review", "worker_heartbeat"
+      FROM ${DB_ROLES.user};
+      REVOKE SELECT ON TABLE "platform_outbox" FROM ${DB_ROLES.user};
+      REVOKE DELETE ON TABLE
+        "provider_runtime", "provider_sync_run", "platform_outbox",
+        "source_sentiment", "intelligence_quarantine",
+        "tcg_market_quarantine_review", "worker_heartbeat"
+      FROM ${DB_ROLES.worker};
+      REVOKE UPDATE ON TABLE "source_sentiment", "tcg_market_quarantine_review" FROM ${DB_ROLES.worker};
       GRANT SELECT, INSERT, UPDATE ON TABLE "beta_organization", "product_feedback", "bug_report" TO ${DB_ROLES.user}, ${DB_ROLES.worker};
       GRANT SELECT, INSERT ON TABLE "product_event" TO ${DB_ROLES.user}, ${DB_ROLES.worker};
       REVOKE UPDATE, DELETE ON TABLE "product_event" FROM ${DB_ROLES.user}, ${DB_ROLES.worker};
@@ -520,6 +554,8 @@ export async function bootstrapRoles(
       GRANT EXECUTE ON FUNCTION app.lookup_organization_by_stripe_customer(text) TO ${DB_ROLES.user}, ${DB_ROLES.worker};
       GRANT EXECUTE ON FUNCTION app.list_pending_outbox(integer) TO ${DB_ROLES.user}, ${DB_ROLES.worker};
       GRANT EXECUTE ON FUNCTION app.consume_beta_invite(text, text) TO ${DB_ROLES.user}, ${DB_ROLES.worker}, ${DB_ROLES.migrate}, ${DB_ROLES.admin};
+      REVOKE EXECUTE ON FUNCTION app.list_pending_platform_outbox(integer) FROM ${DB_ROLES.user};
+      GRANT EXECUTE ON FUNCTION app.list_pending_platform_outbox(integer) TO ${DB_ROLES.worker};
     `);
   } finally {
     await sql.end({ timeout: 5 });

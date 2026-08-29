@@ -1,11 +1,18 @@
 import { Worker } from "bullmq";
 import { UnrecoverableError } from "bullmq";
-import { createDbFromWorkerEnv, type Database } from "@isp/db";
+import {
+  createDbFromWorkerEnv,
+  enqueueDueProviderSyncs,
+  upsertWorkerHeartbeat,
+  withPlatformContext,
+  type Database,
+} from "@isp/db";
 import {
   UnrecoverableJobError,
   createIngestQueue,
   createRedisConnection,
   dispatchPendingOutbox,
+  dispatchPendingPlatformOutbox,
   ingestQueueName,
   logQueueEvent,
   markJobPermanentlyFailed,
@@ -50,15 +57,20 @@ export function startWorker(options?: {
   );
 
   const sweep = setInterval(() => {
-    void dispatchPendingOutbox(db, { queue, env: options?.env }).catch((error) => {
-      logQueueEvent("warn", "outbox.sweep_failed", {
-        status: "pending",
-        job_type: "source_event.normalize",
-        attempt: 0,
-      });
-      void error;
-    });
+    void dispatchPendingOutbox(db, { queue, env: options?.env }).catch(() => undefined);
+    void dispatchPendingPlatformOutbox(db, { queue, env: options?.env }).catch(() => undefined);
   }, 5_000);
+
+  const schedule = setInterval(() => {
+    void withPlatformContext(db, async (scoped) => {
+      await enqueueDueProviderSyncs(scoped, options?.env ?? process.env).catch(() => undefined);
+      const counts = await queue.getJobCounts("wait", "active", "failed").catch(() => null);
+      await upsertWorkerHeartbeat(scoped, {
+        queueDepth: counts ? (counts.wait ?? 0) + (counts.active ?? 0) : null,
+        failedJobs: counts?.failed ?? null,
+      });
+    }).catch(() => undefined);
+  }, 15_000);
 
   logQueueEvent("info", "worker.started", {
     job_type: "source_event.normalize",
@@ -68,6 +80,7 @@ export function startWorker(options?: {
   return {
     stop: async () => {
       clearInterval(sweep);
+      clearInterval(schedule);
       await worker.close();
       if (!options?.queue) {
         await queue.close();

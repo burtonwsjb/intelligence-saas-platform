@@ -50,6 +50,7 @@ export const TCG_MARKET_QUALITY_LABELS = [
   "suspect",
   "outlier",
   "incomplete",
+  "stale",
 ] as const;
 
 export type TcgMarketQualityLabel = (typeof TCG_MARKET_QUALITY_LABELS)[number];
@@ -129,7 +130,14 @@ export function computeTcgAskSoldSpread(input: {
   latestSold: number;
   askCurrency?: string;
   soldCurrency?: string;
-}): { spread_abs: number | null; spread_ratio: number | null; formula: typeof TCG_SPREAD_FORMULA; version: typeof TCG_SPREAD_VERSION } {
+}): {
+  spread_abs: number | null;
+  spread_amount: number | null;
+  spread_ratio: number | null;
+  formula: typeof TCG_SPREAD_FORMULA;
+  version: typeof TCG_SPREAD_VERSION;
+  sign: "lowest_ask_minus_latest_valid_sold";
+} {
   if (
     input.askCurrency != null &&
     input.soldCurrency != null &&
@@ -137,24 +145,31 @@ export function computeTcgAskSoldSpread(input: {
   ) {
     return {
       spread_abs: null,
+      spread_amount: null,
       spread_ratio: null,
       formula: TCG_SPREAD_FORMULA,
       version: TCG_SPREAD_VERSION,
+      sign: "lowest_ask_minus_latest_valid_sold",
     };
   }
   if (!Number.isFinite(input.lowestAsk) || !Number.isFinite(input.latestSold) || input.latestSold <= 0) {
     return {
       spread_abs: null,
+      spread_amount: null,
       spread_ratio: null,
       formula: TCG_SPREAD_FORMULA,
       version: TCG_SPREAD_VERSION,
+      sign: "lowest_ask_minus_latest_valid_sold",
     };
   }
+  const spread_abs = input.lowestAsk - input.latestSold;
   return {
-    spread_abs: input.lowestAsk - input.latestSold,
+    spread_abs,
+    spread_amount: spread_abs,
     spread_ratio: input.lowestAsk / input.latestSold,
     formula: TCG_SPREAD_FORMULA,
     version: TCG_SPREAD_VERSION,
+    sign: "lowest_ask_minus_latest_valid_sold",
   };
 }
 

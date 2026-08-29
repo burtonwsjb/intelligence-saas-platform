@@ -21,6 +21,7 @@ const BULLISH = [
 ];
 const BEARISH = [/sell now/i, /\bsell\b/i, /overpriced/i, /going down/i, /will drop/i, /下がる/, /売る/];
 const WATCH = [/keep an eye/i, /\bwatch\b/i];
+const HOLD = [/\bhold\b/i, /\bholding\b/i];
 const AVOID = [/\bavoid\b/i, /stay away/i];
 const NON_CALL = [/i pulled/i, /this card exists/i, /price is \$/i, /just a pull/i];
 
@@ -121,6 +122,9 @@ export function extractCallDeterministic(input: CallExtractionInput): ExtractedC
   } else if (matches(AVOID, text)) {
     direction = "avoid";
     evidence.push("avoid_language");
+  } else if (matches(HOLD, text)) {
+    direction = "neutral";
+    evidence.push("hold_language");
   } else if (matches(WATCH, text)) {
     direction = "watch";
     evidence.push("watch_language");
@@ -170,5 +174,12 @@ export class FixtureLlmCreatorCallExtractor implements CreatorCallExtractor {
   constructor(private readonly raw: unknown) {}
   extract(_input: CallExtractionInput) {
     return validateExtractedCall(this.raw);
+  }
+}
+
+export class UnconfiguredLlmCreatorCallExtractor implements CreatorCallExtractor {
+  readonly version = "creator.llm.unconfigured.v1";
+  extract(input: CallExtractionInput) {
+    return extractCallDeterministic(input);
   }
 }

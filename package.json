@@ -25,6 +25,8 @@
     "db:status": "pnpm --filter @isp/db status",
     "db:grant-platform-admin": "pnpm --filter @isp/db grant-platform-admin",
     "db:staging-fixture": "pnpm --filter @isp/db staging-fixture",
+    "staging:source-smoke": "pnpm --filter @isp/db staging-source-smoke",
+    "staging:ingest": "pnpm --filter @isp/db staging-ingest",
     "test:load-smoke": "pnpm --filter @isp/api exec vitest run src/load.smoke.test.ts",
     "test:security-scan": "pnpm --filter @isp/web exec vitest run lib/security-scan.test.ts"
   },

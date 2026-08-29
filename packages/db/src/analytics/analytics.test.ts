@@ -70,7 +70,7 @@ async function sold(
     quantity?: number;
   },
 ) {
-  await ingestTcgMarketRecord(db, {
+  const result = await ingestTcgMarketRecord(db, {
     provider: "fixture",
     provider_record_id: input.id,
     event_type: "tcg.market.sold",
@@ -84,6 +84,9 @@ async function sold(
     aggregation_kind: "event",
     printing: input.conceptPrinting ?? printingRef(input.language ?? "en", input.variant ?? "normal"),
   });
+  if (result.status !== "processed" && result.status !== "duplicate") {
+    throw new Error(`sold ingest ${input.id} status=${result.status}`);
+  }
 }
 
 async function listing(

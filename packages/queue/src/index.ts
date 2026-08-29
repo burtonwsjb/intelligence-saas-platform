@@ -15,16 +15,19 @@ export {
 export { QueueUnavailableError, UnrecoverableJobError } from "./errors.js";
 export {
   JOB_ENVELOPE_VERSION,
+  createCreatorExtractEnvelope,
+  createIntelligenceRecomputeEnvelope,
   createMarketNormalizeEnvelope,
   createNormalizeEnvelope,
+  createProviderSyncEnvelope,
   createSourceNormalizeEnvelope,
   jobEnvelopeSchema,
   parseJobEnvelope,
   type JobEnvelope,
 } from "./envelope.js";
 export { assertRedisAvailable, createRedisConnection } from "./redis.js";
-export { createIngestQueue, publishOutboxJob, type IngestQueue } from "./publisher.js";
-export { dispatchPendingOutbox } from "./dispatcher.js";
+export { createIngestQueue, publishOutboxJob, publishPlatformOutboxJob, type IngestQueue } from "./publisher.js";
+export { dispatchPendingOutbox, dispatchPendingPlatformOutbox } from "./dispatcher.js";
 export { markJobPermanentlyFailed, processNormalizeJob } from "./process.js";
 export { getIngestJobStatus } from "./status.js";
 export { logQueueEvent } from "./logger.js";

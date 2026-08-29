@@ -48,7 +48,7 @@ async function sold(
   db: Database,
   input: { id: string; price: number; at: string; language?: string; currency?: string },
 ) {
-  await ingestTcgMarketRecord(db, {
+  const result = await ingestTcgMarketRecord(db, {
     provider: "fixture",
     provider_record_id: input.id,
     event_type: "tcg.market.sold",
@@ -62,6 +62,9 @@ async function sold(
     aggregation_kind: "event",
     printing: printingRef(input.language ?? "en") as TcgMarketRecordInput["printing"],
   });
+  if (result.status !== "processed" && result.status !== "duplicate") {
+    throw new Error(`sold ingest ${input.id} status=${result.status}`);
+  }
 }
 
 describe("prediction metrics", () => {

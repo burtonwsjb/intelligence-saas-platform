@@ -1,6 +1,7 @@
 import { and, desc, eq, lte } from "drizzle-orm";
 import type { Database } from "../client.js";
 import { creatorAuthoritySlice, creatorCall } from "../schema/creator.js";
+import { latestTrustState } from "../creator/authority.js";
 import { entityResolutionAttempt } from "../schema/resolution.js";
 import { sourceContent, sourceEngagementSnapshot, sourceMention } from "../schema/source.js";
 import { tcgPrinting } from "../schema/tcg.js";
@@ -30,6 +31,9 @@ async function creatorVotes(db: Database, printingId: string, languageCode: stri
       .from(creatorAuthoritySlice)
       .where(eq(creatorAuthoritySlice.creatorId, call.creatorId))
       .orderBy(desc(creatorAuthoritySlice.createdAt));
+    if ((await latestTrustState(db, call.creatorId)) === "excluded") {
+      continue;
+    }
     const slice =
       slices.find((row) => row.languageCode === languageCode) ??
       slices.find((row) => row.languageCode == null && row.priceTier === "all") ??

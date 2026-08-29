@@ -22,3 +22,4 @@ export * from "./notification.js";
 export * from "./content.js";
 export * from "./platform.js";
 export * from "./beta.js";
+export * from "./provider.js";
