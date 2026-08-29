@@ -2,6 +2,7 @@ import { isProductionRuntime, parseIspEnv } from "@isp/shared";
 import type { Database } from "../client.js";
 import { tcgPrediction } from "../schema/prediction.js";
 import { sql } from "drizzle-orm";
+import { withPlatformContext } from "../rls.js";
 import { credentialReadinessReport } from "./credentials.js";
 import { applyProviderModeFromEnv, listProviderRuntime } from "./runtime.js";
 import { enqueueDueProviderSyncs, syncProvider } from "./sync.js";
@@ -29,65 +30,67 @@ export async function runStagingSourceSmoke(
   env: NodeJS.ProcessEnv = process.env,
 ) {
   assertStagingSourceCommandAllowed(env);
-  await applyProviderModeFromEnv(db, env);
-  const providers = await listProviderRuntime(db);
-  const probeId = `smoke.queue.${Date.now()}`;
-  await enqueuePlatformJob(db, {
-    id: probeId,
-    jobType: "provider.sync.v1",
-    payload: {
-      job_version: PLATFORM_JOB_VERSION,
-      job_type: "provider.sync.v1",
-      job_id: probeId,
-      provider_key: "reddit",
-      created_at: platformJobCreatedAt(),
-    },
-  });
-  const pending = await listPendingPlatformOutbox(db, 20);
-  const [published] = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(tcgPrediction)
-    .where(sql`${tcgPrediction.visibility} <> 'shadow'`);
-  const liveSamples: Array<{ provider: string; received: number; status: string }> = [];
-  for (const row of providers) {
-    if (row.mode === "live" && row.enabled && !row.paused) {
-      const sample = await syncProvider(db, {
-        providerKey: row.providerKey,
-        trigger: "smoke",
-        limit: 1,
-        env,
-      });
-      liveSamples.push({ provider: row.providerKey, received: sample.received, status: sample.status });
+  return withPlatformContext(db, async (scoped) => {
+    await applyProviderModeFromEnv(scoped, env);
+    const providers = await listProviderRuntime(scoped);
+    const probeId = `smoke.queue.${Date.now()}`;
+    await enqueuePlatformJob(scoped, {
+      id: probeId,
+      jobType: "provider.sync.v1",
+      payload: {
+        job_version: PLATFORM_JOB_VERSION,
+        job_type: "provider.sync.v1",
+        job_id: probeId,
+        provider_key: "reddit",
+        created_at: platformJobCreatedAt(),
+      },
+    });
+    const pending = await listPendingPlatformOutbox(scoped, 20);
+    const [published] = await scoped
+      .select({ n: sql<number>`count(*)::int` })
+      .from(tcgPrediction)
+      .where(sql`${tcgPrediction.visibility} <> 'shadow'`);
+    const liveSamples: Array<{ provider: string; received: number; status: string }> = [];
+    for (const row of providers) {
+      if (row.mode === "live" && row.enabled && !row.paused) {
+        const sample = await syncProvider(scoped, {
+          providerKey: row.providerKey,
+          trigger: "smoke",
+          limit: 1,
+          env,
+        });
+        liveSamples.push({ provider: row.providerKey, received: sample.received, status: sample.status });
+      }
     }
-  }
-  return {
-    environment: "staging",
-    production_refused: false,
-    providers: providers.map((row) => ({
-      provider: row.providerKey,
-      type: row.providerType,
-      mode: row.mode,
-      enabled: row.enabled,
-      paused: row.paused,
-      credential_status: row.credentialStatus,
-      health: row.healthStatus,
-      last_success_at: row.lastSuccessAt?.toISOString() ?? null,
-      last_attempt_at: row.lastAttemptAt?.toISOString() ?? null,
-      last_error_class: row.lastErrorClass,
-      rate_limit_remaining: row.rateLimitRemaining,
-      checkpoint: row.lastSourceId ?? null,
-    })),
-    credentials: credentialReadinessReport(env).map((row) => ({
-      provider: row.provider,
-      variable: row.environment_variable,
-      configured: row.configured,
-      required: row.required,
-    })),
-    queue_probe_enqueued: pending.some((row) => row.id === probeId),
-    live_bounded_samples: liveSamples,
-    published_predictions: Number(published?.n ?? 0),
-    tenant_writes: 0,
-  };
+    return {
+      environment: "staging",
+      production_refused: false,
+      providers: providers.map((row) => ({
+        provider: row.providerKey,
+        type: row.providerType,
+        mode: row.mode,
+        enabled: row.enabled,
+        paused: row.paused,
+        credential_status: row.credentialStatus,
+        health: row.healthStatus,
+        last_success_at: row.lastSuccessAt?.toISOString() ?? null,
+        last_attempt_at: row.lastAttemptAt?.toISOString() ?? null,
+        last_error_class: row.lastErrorClass,
+        rate_limit_remaining: row.rateLimitRemaining,
+        checkpoint: row.lastSourceId ?? null,
+      })),
+      credentials: credentialReadinessReport(env).map((row) => ({
+        provider: row.provider,
+        variable: row.environment_variable,
+        configured: row.configured,
+        required: row.required,
+      })),
+      queue_probe_enqueued: pending.some((row) => row.id === probeId),
+      live_bounded_samples: liveSamples,
+      published_predictions: Number(published?.n ?? 0),
+      tenant_writes: 0,
+    };
+  });
 }
 
 export function formatStagingSourceSmokeReport(report: Awaited<ReturnType<typeof runStagingSourceSmoke>>): string {
@@ -110,29 +113,32 @@ export async function runStagingIngest(
   if (!isProviderKey(input.provider)) {
     throw new StagingSourceCommandError("An explicit known --provider is required.");
   }
+  const provider = input.provider;
   if (!Number.isFinite(input.limit) || input.limit < 1 || input.limit > 50) {
     throw new StagingSourceCommandError("--limit must be a small bound (1-50).");
   }
-  await applyProviderModeFromEnv(db, env);
-  const { getProviderRuntime } = await import("./runtime.js");
-  const runtime = await getProviderRuntime(db, input.provider);
-  if (runtime?.mode !== "live") {
-    throw new StagingSourceCommandError("Provider mode must be live for staging ingest.");
-  }
-  const result = await syncProvider(db, {
-    providerKey: input.provider,
-    trigger: "staging_ingest",
-    limit: input.limit,
-    env,
+  return withPlatformContext(db, async (scoped) => {
+    await applyProviderModeFromEnv(scoped, env);
+    const { getProviderRuntime } = await import("./runtime.js");
+    const runtime = await getProviderRuntime(scoped, provider);
+    if (runtime?.mode !== "live") {
+      throw new StagingSourceCommandError("Provider mode must be live for staging ingest.");
+    }
+    const result = await syncProvider(scoped, {
+      providerKey: provider,
+      trigger: "staging_ingest",
+      limit: input.limit,
+      env,
+    });
+    return {
+      provider,
+      limit: input.limit,
+      status: result.status,
+      received: result.received,
+      quarantined: result.quarantined,
+      reason: result.reason,
+    };
   });
-  return {
-    provider: input.provider,
-    limit: input.limit,
-    status: result.status,
-    received: result.received,
-    quarantined: result.quarantined,
-    reason: result.reason,
-  };
 }
 
 export function parseStagingIngestArgs(argv: string[]) {

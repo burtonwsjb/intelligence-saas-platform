@@ -82,6 +82,7 @@ import {
   platformSupportCase,
   hasPlatformAdminGrant,
   listCrmCustomers,
+  runStagingSourceSmoke,
 } from "./index.js";
 
 const passwords = testRolePasswords();
@@ -1484,6 +1485,59 @@ describe("PostgreSQL RLS isolation", () => {
         ).rejects.toThrow();
         await expect(raw`select id from platform_outbox`).rejects.toThrow();
         await expect(raw`select id from app.list_pending_platform_outbox(5)`).rejects.toThrow();
+      } finally {
+        await raw.end({ timeout: 5 });
+      }
+    } finally {
+      await adminConn.end();
+    }
+  });
+
+  it("bootstraps provider runtime as app_admin system principal and keeps unauthorized writes blocked", async () => {
+    const adminConn = createDbConnection(
+      replaceConnectionRole(adminUrl, DB_ROLES.admin, passwords.admin),
+    );
+    try {
+      const env = { ISP_ENV: "staging", TCC_API_TOKEN: "super-secret-token" };
+      const first = await runStagingSourceSmoke(adminConn.db, env);
+      const second = await runStagingSourceSmoke(adminConn.db, env);
+      expect(first.providers.some((row) => row.provider === "tcg_card_central" && row.mode === "disabled")).toBe(
+        true,
+      );
+      expect(second.providers.some((row) => row.provider === "tcg_card_central" && row.mode === "disabled")).toBe(
+        true,
+      );
+      expect(JSON.stringify(first)).not.toMatch(/super-secret-token/);
+
+      try {
+        await withOrganizationContext(
+          adminConn.db,
+          { organizationId: ids.orgA, userId: ids.userA },
+          (db) =>
+            db.insert(providerRuntime).values({
+              providerKey: "probe_user_principal",
+              providerType: "market",
+              mode: "disabled",
+            }),
+        );
+        throw new Error("expected system-principal rejection");
+      } catch (error) {
+        const cause = error instanceof Error && error.cause instanceof Error ? error.cause.message : "";
+        const blob = `${error instanceof Error ? error.message : String(error)} ${cause}`;
+        expect(blob).toMatch(/system principal/i);
+      }
+
+      const raw = postgres(replaceConnectionRole(adminUrl, DB_ROLES.user, passwords.user), {
+        max: 1,
+        prepare: false,
+      });
+      try {
+        await expect(
+          raw`insert into provider_runtime (provider_key, provider_type, mode) values ('probe_user', 'market', 'disabled')`,
+        ).rejects.toThrow();
+        await expect(
+          raw`update provider_runtime set mode = 'live' where provider_key = 'tcg_card_central'`,
+        ).rejects.toThrow();
       } finally {
         await raw.end({ timeout: 5 });
       }

@@ -264,6 +264,22 @@ describe("migrations", () => {
     expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "source_sentiment"/);
     expect(sql).toMatch(/app.require_system_provider_write/);
     expect(sql).toMatch(/app.list_pending_platform_outbox/);
+    expect(sql).toMatch(/GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE[\s\S]*"provider_runtime"[\s\S]*TO app_migrate, app_admin/);
+    expect(sql).toMatch(/REVOKE INSERT, UPDATE, DELETE ON TABLE[\s\S]*"provider_runtime"[\s\S]*FROM app_user/);
+    expect(sql).toMatch(/REVOKE SELECT ON TABLE "platform_outbox" FROM app_user/);
+  });
+
+  it("keeps 0023 forward-only and non-destructive", async () => {
+    const sql = readFileSync(path.join(repoRoot, "packages/db/drizzle/0023_phase24_provider_runtime_grants.sql"), "utf8");
+    expect(sql).toMatch(/GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE/);
+    expect(sql).toMatch(/"provider_runtime"/);
+    expect(sql).not.toMatch(/DROP TABLE/);
+    expect(sql).not.toMatch(/TRUNCATE/);
+    expect(sql).not.toMatch(/DELETE FROM/);
+    expect(sql).not.toMatch(/platform_admins/);
+    expect(sql).not.toMatch(/DROP TRIGGER/);
+    expect(sql).not.toMatch(/DISABLE TRIGGER/);
+    expect(sql).not.toMatch(/BYPASSRLS/);
   });
 
   it("does not add TCG identity columns to generic kernel tables", async () => {

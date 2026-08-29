@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import {
@@ -9,6 +12,7 @@ import {
   classifyHttpStatus,
   createLiveMarketProvider,
   credentialReadinessReport,
+  formatStagingSourceSmokeReport,
   ingestTcgMarketRecord,
   listProviderRuntime,
   listTcgMarketQuarantine,
@@ -23,6 +27,7 @@ import {
   receiveTcgMarketRecord,
   resolveEntity,
   resolveProviderMode,
+  runStagingSourceSmoke,
   seedTcgIdentityFixtures,
   StagingSourceCommandError,
   syncProvider,
@@ -72,6 +77,46 @@ describe("staging command guards", () => {
       provider: "reddit",
       limit: 3,
     });
+  });
+
+  it("uses the platform admin connection and system principal path", () => {
+    const dir = path.dirname(fileURLToPath(import.meta.url));
+    const staging = readFileSync(path.join(dir, "staging.ts"), "utf8");
+    const cli = readFileSync(path.join(dir, "../staging-source-smoke.ts"), "utf8");
+    expect(cli).toMatch(/requirePlatformAdminConnectionUrl/);
+    expect(cli).not.toMatch(/requireDatabaseUrl\(/);
+    expect(cli).not.toMatch(/APP_DATABASE_URL/);
+    expect(staging).toMatch(/withPlatformContext/);
+    expect(staging).not.toMatch(/current_principal_type', 'user'/);
+  });
+
+  it("bootstraps disabled provider runtime in staging mode without printing secrets", async () => {
+    const db = await memoryDb();
+    const env = {
+      ISP_ENV: "staging",
+      TCC_API_TOKEN: "super-secret-token",
+      TCC_API_BASE_URL: "https://example.invalid",
+    };
+    const first = await runStagingSourceSmoke(db, env);
+    expect(first.production_refused).toBe(false);
+    expect(first.tenant_writes).toBe(0);
+    expect(first.live_bounded_samples).toEqual([]);
+    const tcc = first.providers.find((row) => row.provider === "tcg_card_central");
+    expect(tcc).toMatchObject({
+      type: "market",
+      mode: "disabled",
+      enabled: false,
+      credential_status: "present",
+    });
+    const second = await runStagingSourceSmoke(db, env);
+    expect(second.providers.map((row) => row.provider).sort()).toEqual(
+      first.providers.map((row) => row.provider).sort(),
+    );
+    expect(second.providers.find((row) => row.provider === "tcg_card_central")?.mode).toBe("disabled");
+    const report = formatStagingSourceSmokeReport(first);
+    expect(report).not.toMatch(/super-secret-token/);
+    expect(JSON.stringify(first)).not.toMatch(/super-secret-token/);
+    expect(JSON.stringify(first.credentials)).not.toMatch(/super-secret-token/);
   });
 });
 

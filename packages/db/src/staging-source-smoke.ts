@@ -20,6 +20,7 @@ async function main() {
 
 void main().catch((error: unknown) => {
   const raw = error instanceof Error ? error.message : "Staging source smoke failed.";
-  console.error(sanitizePlatformAdminCliMessage(raw));
+  const cause = error instanceof Error && error.cause instanceof Error ? error.cause.message : "";
+  console.error(sanitizePlatformAdminCliMessage(cause ? `${raw}\n${cause}` : raw));
   process.exit(1);
 });

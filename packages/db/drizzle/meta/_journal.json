@@ -155,6 +155,13 @@
       "when": 21,
       "tag": "0022_phase24_providers",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 22,
+      "tag": "0023_phase24_provider_runtime_grants",
+      "breakpoints": true
     }
   ]
 }
