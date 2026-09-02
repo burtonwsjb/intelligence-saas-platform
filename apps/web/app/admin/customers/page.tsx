@@ -57,6 +57,7 @@ export default async function AdminCustomersPage({
         {" · "}
         <Link href="/admin/customers?view=recent">recent</Link>
       </p>
+      <div className="table-wrap">
       <table className="data-table">
         <thead>
           <tr>
@@ -66,17 +67,24 @@ export default async function AdminCustomersPage({
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
-            <tr key={row.organizationId}>
-              <td>
-                <Link href={`/admin/customers/${row.organizationId}`}>{row.displayName}</Link>
-              </td>
-              <td>{row.lifecycleStage}</td>
-              <td>{row.customerStatus}</td>
+          {rows.length === 0 ? (
+            <tr>
+              <td colSpan={3}>No customers in this view.</td>
             </tr>
-          ))}
+          ) : (
+            rows.map((row) => (
+              <tr key={row.organizationId}>
+                <td>
+                  <Link href={`/admin/customers/${row.organizationId}`}>{row.displayName}</Link>
+                </td>
+                <td>{row.lifecycleStage}</td>
+                <td>{row.customerStatus}</td>
+              </tr>
+            ))
+          )}
         </tbody>
       </table>
+      </div>
     </>
   );
 }

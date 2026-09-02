@@ -16,6 +16,7 @@ export default async function AdminAuditPage() {
       <p className="muted">
         Separate from tenant audit_event. Append-only. Metadata is sanitized of secrets.
       </p>
+      <div className="table-wrap">
       <table className="data-table">
         <thead>
           <tr>
@@ -26,18 +27,25 @@ export default async function AdminAuditPage() {
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
-            <tr key={row.id}>
-              <td>{row.createdAt.toISOString()}</td>
-              <td>{row.action}</td>
-              <td>{row.actorUserId}</td>
-              <td>
-                {row.targetType ?? ""} {row.targetId ?? row.organizationId ?? ""}
-              </td>
+          {rows.length === 0 ? (
+            <tr>
+              <td colSpan={4}>No break-glass events yet.</td>
             </tr>
-          ))}
+          ) : (
+            rows.map((row) => (
+              <tr key={row.id}>
+                <td>{row.createdAt.toISOString()}</td>
+                <td>{row.action}</td>
+                <td>{row.actorUserId}</td>
+                <td>
+                  {row.targetType ?? ""} {row.targetId ?? row.organizationId ?? ""}
+                </td>
+              </tr>
+            ))
+          )}
         </tbody>
       </table>
+      </div>
     </>
   );
 }
