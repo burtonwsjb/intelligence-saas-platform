@@ -30,7 +30,7 @@ import {
 } from "@isp/db";
 import { UnrecoverableJobError } from "./errors.js";
 import { parseJobEnvelope, type JobEnvelope } from "./envelope.js";
-import { logQueueEvent } from "./logger.js";
+import { logQueueEvent, safeLoopErrorFields } from "./logger.js";
 
 function safeFailureMessage(message: string): string {
   return message.replace(/isp_(?:test|live)_[A-Za-z0-9_-]+/g, "[redacted]").slice(0, 300);
@@ -285,7 +285,13 @@ export async function markJobPermanentlyFailed(
   if (envelope.job_type === "tcg.market.normalize.v1") {
     await withPlatformContext(db, (scoped) =>
       markTcgMarketIngestFailed(scoped, envelope.market_ingest_id),
-    ).catch(() => undefined);
+    ).catch((error) => {
+      logQueueEvent("warn", "job.permanent_failure_side_effect", {
+        job_id: envelope.job_id,
+        job_type: envelope.job_type,
+        ...safeLoopErrorFields(error),
+      });
+    });
     logQueueEvent("error", "job.permanent_failure", {
       job_id: envelope.job_id,
       market_ingest_id: envelope.market_ingest_id,
@@ -297,7 +303,13 @@ export async function markJobPermanentlyFailed(
   if (envelope.job_type === "source.intelligence.normalize.v1") {
     await withPlatformContext(db, (scoped) =>
       markSourceIngestFailed(scoped, envelope.source_ingest_id),
-    ).catch(() => undefined);
+    ).catch((error) => {
+      logQueueEvent("warn", "job.permanent_failure_side_effect", {
+        job_id: envelope.job_id,
+        job_type: envelope.job_type,
+        ...safeLoopErrorFields(error),
+      });
+    });
     logQueueEvent("error", "job.permanent_failure", {
       job_id: envelope.job_id,
       source_ingest_id: envelope.source_ingest_id,
@@ -313,7 +325,13 @@ export async function markJobPermanentlyFailed(
   ) {
     await withPlatformContext(db, (scoped) =>
       markPlatformOutboxFailed(scoped, envelope.job_id, safeFailureMessage(message)),
-    ).catch(() => undefined);
+    ).catch((error) => {
+      logQueueEvent("warn", "job.permanent_failure_side_effect", {
+        job_id: envelope.job_id,
+        job_type: envelope.job_type,
+        ...safeLoopErrorFields(error),
+      });
+    });
     logQueueEvent("error", "job.permanent_failure", {
       job_id: envelope.job_id,
       job_type: envelope.job_type,
@@ -328,7 +346,13 @@ export async function markJobPermanentlyFailed(
       status: "failed",
       failureCategory: "permanent",
       failureMessage: safeFailureMessage(message),
-    }).catch(() => undefined);
+    }).catch((error) => {
+      logQueueEvent("warn", "job.permanent_failure_side_effect", {
+        job_id: envelope.job_id,
+        job_type: envelope.job_type,
+        ...safeLoopErrorFields(error),
+      });
+    });
     await insertAuditEvent(scoped, {
       id: crypto.randomUUID(),
       organizationId: envelope.organization_id,
@@ -336,7 +360,13 @@ export async function markJobPermanentlyFailed(
       targetType: "source_event",
       targetId: envelope.source_event_id,
       metadata: { job_id: envelope.job_id },
-    }).catch(() => undefined);
+    }).catch((error) => {
+      logQueueEvent("warn", "job.permanent_failure_side_effect", {
+        job_id: envelope.job_id,
+        job_type: envelope.job_type,
+        ...safeLoopErrorFields(error),
+      });
+    });
   });
   logQueueEvent("error", "job.permanent_failure", {
     job_id: envelope.job_id,

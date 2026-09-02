@@ -195,7 +195,7 @@ export async function reviewMarketQuarantine(
     });
     if (input.action === "retry" || input.action === "resolve_identity") {
       const ingestId = stableMarketId("min", [row.sourceKey, row.sourceRecordId]);
-      await normalizeTcgMarketIngest(scoped, ingestId).catch(() => undefined);
+      await normalizeTcgMarketIngest(scoped, ingestId);
     }
     await insertBreakGlassAudit(scoped, {
       actorUserId: input.actorUserId,

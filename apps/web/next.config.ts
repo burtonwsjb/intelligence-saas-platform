@@ -1,6 +1,16 @@
 import type { NextConfig } from "next";
-import { isHostedRuntime } from "@isp/shared";
 import { securityHeaders } from "./lib/security-headers";
+
+function hostedRuntime(): boolean {
+  const explicit = process.env.ISP_ENV?.trim().toLowerCase();
+  if (explicit === "staging" || explicit === "production") {
+    return true;
+  }
+  if (explicit === "local" || explicit === "test") {
+    return false;
+  }
+  return process.env.NODE_ENV === "production";
+}
 
 const nextConfig: NextConfig = {
   transpilePackages: ["@isp/auth", "@isp/billing", "@isp/contracts", "@isp/db", "@isp/shared"],
@@ -8,7 +18,7 @@ const nextConfig: NextConfig = {
     return [
       {
         source: "/:path*",
-        headers: securityHeaders({ hosted: isHostedRuntime() }),
+        headers: securityHeaders({ hosted: hostedRuntime() }),
       },
     ];
   },

@@ -15,7 +15,7 @@ import { QueueUnavailableError } from "./errors.js";
 import { createRedisConnection } from "./redis.js";
 import { ingestQueueName } from "./names.js";
 import { defaultIngestJobOptions } from "./lifecycle.js";
-import { logQueueEvent } from "./logger.js";
+import { logQueueEvent, safeLoopErrorFields } from "./logger.js";
 import type { JobEnvelope } from "./envelope.js";
 
 export type IngestQueue = Queue<JobEnvelope>;
@@ -71,7 +71,14 @@ export async function publishOutboxJob(
         id: eventId,
         organizationId: input.organizationId,
         status: "queued",
-      }).catch(() => undefined);
+      }).catch((error) => {
+        logQueueEvent("warn", "outbox.source_event_status_update_failed", {
+          job_id: row.id,
+          source_event_id: eventId,
+          organization_id: input.organizationId,
+          ...safeLoopErrorFields(error),
+        });
+      });
     });
     logQueueEvent("info", "outbox.published", {
       job_id: row.id,

@@ -9,7 +9,7 @@ TCG Card Central is only a future external integration (optional reference-data 
 
 ## Current phase
 
-**Phase 25 reliability hardening is in-repo.** Staging hosting exists; live providers stay disabled. Phase 22 beta and Phase 23 production remain unauthorized. See [docs/PHASE_25.md](docs/PHASE_25.md), [docs/PHASE_21.md](docs/PHASE_21.md), [docs/PHASE_22.md](docs/PHASE_22.md), [docs/PHASE_23_READINESS.md](docs/PHASE_23_READINESS.md).
+**Phases 25–39 are complete in-repo.** Staging hosting exists; live providers stay disabled. Phase 22 beta and Phase 23 production remain unauthorized. See [docs/OPERATOR_RUNBOOK.md](docs/OPERATOR_RUNBOOK.md) and [docs/PHASE_39.md](docs/PHASE_39.md).
 
 ## Local commands
 
@@ -62,6 +62,16 @@ TypeScript, pnpm/Turborepo, Next.js, Hono, PostgreSQL/Neon, Drizzle, Better Auth
 - [Phase 28](docs/PHASE_28.md)
 - [Phase 29](docs/PHASE_29.md)
 - [Phase 30](docs/PHASE_30.md)
+- [Phase 31](docs/PHASE_31.md)
+- [Phase 32](docs/PHASE_32.md)
+- [Phase 33](docs/PHASE_33.md)
+- [Phase 34](docs/PHASE_34.md)
+- [Phase 35](docs/PHASE_35.md)
+- [Phase 36](docs/PHASE_36.md)
+- [Phase 37](docs/PHASE_37.md)
+- [Phase 38](docs/PHASE_38.md)
+- [Phase 39](docs/PHASE_39.md)
+- [Operator runbook](docs/OPERATOR_RUNBOOK.md)
 - [Environments](docs/environments.md)
 - [Staging runbook](docs/staging-runbook.md)
 - [CI](docs/CI.md)
@@ -106,4 +116,14 @@ TypeScript, pnpm/Turborepo, Next.js, Hono, PostgreSQL/Neon, Drizzle, Better Auth
 | Intelligence integrity | Phase 27 complete in-repo; predictions remain shadow |
 | Scoring / calibration | Phase 28 infrastructure only; weights unchanged; not statistically calibrated |
 | Shadow predictions | Phase 29 evaluation/backtest complete; customer publication still forbidden |
+| Public API contracts | Phase 30 complete in-repo |
+| Admin console | Phase 31 complete in-repo |
+| Customer application | Phase 32 complete in-repo |
+| Billing / entitlements | Phase 33 complete in-repo; Stripe test / simulation only |
+| Notifications / webhooks | Phase 34 complete in-repo; mocked delivery only |
+| Performance | Phase 35 SQL-bounded list routes; no new hosted indexes |
+| Accessibility / responsive QA | Phase 36 complete for the current design system |
+| CI / migrations / release | Phase 37 complete in-repo; `git diff --check` required |
+| Operator docs | Phase 38 complete; no secrets in docs |
+| Final audit | Phase 39 complete in-repo; hosted/external work remains |
 | Cloud / Stripe live / TCC production | Not created, not connected, not modified |

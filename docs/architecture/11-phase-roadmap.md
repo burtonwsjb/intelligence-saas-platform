@@ -302,6 +302,42 @@ Status: **complete in-repo** (see [PHASE_29.md](../PHASE_29.md)). Predictions re
 
 Status: **complete in-repo** (see [PHASE_30.md](../PHASE_30.md)).
 
+## Phase 31 — Admin console
+
+Status: **complete in-repo** (see [PHASE_31.md](../PHASE_31.md)).
+
+## Phase 32 — Customer application
+
+Status: **complete in-repo** (see [PHASE_32.md](../PHASE_32.md)). Predictions remain shadow-gated.
+
+## Phase 33 — Billing and entitlements
+
+Status: **complete in-repo** (see [PHASE_33.md](../PHASE_33.md)). Stripe test / local simulation only.
+
+## Phase 34 — Notifications and webhooks
+
+Status: **complete in-repo** (see [PHASE_34.md](../PHASE_34.md)). Mocked delivery only.
+
+## Phase 35 — Performance and scale readiness
+
+Status: **complete in-repo** (see [PHASE_35.md](../PHASE_35.md)). No new hosted indexes.
+
+## Phase 36 — Accessibility and responsive QA
+
+Status: **complete in-repo** (see [PHASE_36.md](../PHASE_36.md)).
+
+## Phase 37 — CI, migrations, and release
+
+Status: **complete in-repo** (see [PHASE_37.md](../PHASE_37.md)).
+
+## Phase 38 — Operator documentation
+
+Status: **complete** (see [PHASE_38.md](../PHASE_38.md) and [OPERATOR_RUNBOOK.md](../OPERATOR_RUNBOOK.md)).
+
+## Phase 39 — Final repository audit
+
+Status: **complete in-repo** (see [PHASE_39.md](../PHASE_39.md)). Hosted/external validation remains.
+
 ## Sequencing notes
 
 - Stripe/keys (04) sit before heavy TCG ingest so entitlements exist when data gets expensive
