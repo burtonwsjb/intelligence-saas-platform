@@ -290,6 +290,14 @@ Status: **complete in-repo** (see [PHASE_27.md](../PHASE_27.md)). Predictions re
 
 Exit: every required scenario has an expected output and scores stay explainable.
 
+## Phase 28 — Scoring validation and calibration infrastructure
+
+Status: **complete in-repo** (see [PHASE_28.md](../PHASE_28.md)). Weights unchanged. Not statistically calibrated.
+
+## Phase 29 — Shadow prediction evaluation
+
+Status: **complete in-repo** (see [PHASE_29.md](../PHASE_29.md)). Predictions remain shadow. No accuracy claims.
+
 ## Sequencing notes
 
 - Stripe/keys (04) sit before heavy TCG ingest so entitlements exist when data gets expensive

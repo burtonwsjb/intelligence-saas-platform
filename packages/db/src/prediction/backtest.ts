@@ -7,9 +7,11 @@ import {
   calibrationBuckets,
   directionAccuracy,
   meanAbsError,
+  meanAbsPercentError,
   rangeCoverage,
   rootMeanSquare,
 } from "./metrics.js";
+import { assertPredictionsRemainShadow } from "./compare.js";
 import { getModel } from "./model.js";
 
 export async function walkForwardBacktest(
@@ -52,6 +54,14 @@ export async function walkForwardBacktest(
       })),
     ),
     mae: meanAbsError(evaluated.map((row) => Number(row.outcome.forecastError)).filter(Number.isFinite)),
+    mape: meanAbsPercentError(
+      evaluated
+        .filter((row) => row.prediction.priceAtIssue != null && row.outcome.actualPrice != null)
+        .map((row) => ({
+          actual: Number(row.outcome.actualPrice),
+          predicted: Number(row.prediction.priceAtIssue) * (1 + Number(row.prediction.expectedReturn ?? 0)),
+        })),
+    ),
     rmse: rootMeanSquare(evaluated.map((row) => Number(row.outcome.forecastError)).filter(Number.isFinite)),
     range_coverage: rangeCoverage(evaluated.map((row) => row.outcome.rangeHit === "hit")),
     mean_brier:
@@ -68,7 +78,9 @@ export async function walkForwardBacktest(
     ),
     walk_forward: true,
     look_ahead: false,
+    customer_visible: false,
   };
+  assertPredictionsRemainShadow(outcomes.map((row) => row.prediction));
   const [run] = await db
     .insert(tcgBacktestRun)
     .values({

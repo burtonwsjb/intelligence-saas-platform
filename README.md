@@ -59,6 +59,8 @@ TypeScript, pnpm/Turborepo, Next.js, Hono, PostgreSQL/Neon, Drizzle, Better Auth
 - [Phase 25](docs/PHASE_25.md)
 - [Phase 26](docs/PHASE_26.md)
 - [Phase 27](docs/PHASE_27.md)
+- [Phase 28](docs/PHASE_28.md)
+- [Phase 29](docs/PHASE_29.md)
 - [Environments](docs/environments.md)
 - [Staging runbook](docs/staging-runbook.md)
 - [CI](docs/CI.md)
@@ -101,4 +103,6 @@ TypeScript, pnpm/Turborepo, Next.js, Hono, PostgreSQL/Neon, Drizzle, Better Auth
 | Reliability / recovery | Phase 25 complete in-repo; hosted heartbeat identity check left for the operator |
 | Security / isolation | Phase 26 complete in-repo; rotate any secrets previously shown in query strings |
 | Intelligence integrity | Phase 27 complete in-repo; predictions remain shadow |
+| Scoring / calibration | Phase 28 infrastructure only; weights unchanged; not statistically calibrated |
+| Shadow predictions | Phase 29 evaluation/backtest complete; customer publication still forbidden |
 | Cloud / Stripe live / TCC production | Not created, not connected, not modified |
