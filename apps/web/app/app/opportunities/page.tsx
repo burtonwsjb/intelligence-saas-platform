@@ -83,6 +83,7 @@ export default async function OpportunitiesPage({
       {rows.length === 0 ? (
         <EmptyState title="No opportunities match" body="Ingest and score printings locally to populate this list." />
       ) : (
+        <div className="table-wrap">
         <table className="data-table">
           <thead>
             <tr>
@@ -117,6 +118,7 @@ export default async function OpportunitiesPage({
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </>
   );

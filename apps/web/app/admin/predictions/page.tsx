@@ -17,6 +17,7 @@ export default async function AdminPredictionsPage() {
         Internal only. Customer UI stays gated on entitlement plus PREDICTIONS_CUSTOMER_VISIBLE.
         Shadow rows are listed here and never published by this page.
       </p>
+      <div className="table-wrap">
       <table className="data-table">
         <thead>
           <tr>
@@ -39,6 +40,7 @@ export default async function AdminPredictionsPage() {
           ))}
         </tbody>
       </table>
+      </div>
     </>
   );
 }

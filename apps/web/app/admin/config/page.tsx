@@ -14,6 +14,7 @@ export default async function AdminConfigPage() {
         Display-only flags. Connection strings, API keys, webhook secrets, and Stripe IDs are never
         shown.
       </p>
+      <div className="table-wrap">
       <table className="data-table">
         <tbody>
           {Object.entries(config).map(([key, value]) => (
@@ -24,6 +25,7 @@ export default async function AdminConfigPage() {
           ))}
         </tbody>
       </table>
+      </div>
     </>
   );
 }

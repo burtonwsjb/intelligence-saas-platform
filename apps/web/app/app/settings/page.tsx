@@ -1,5 +1,6 @@
 import { updateOrgProfileAction, updatePreferenceAction, updateUserProfileAction } from "@/app/settings-actions";
 import { loadAppAccess } from "@/lib/app-access";
+import { preferenceControlLabel } from "@/lib/a11y";
 import { getDb } from "@/lib/auth";
 import {
   NOTIFICATION_CATEGORIES,
@@ -76,7 +77,9 @@ export default async function SettingsPage({
       </form>
       <h2>Notification preferences</h2>
       <p className="muted">Account and security email/in-app cannot be disabled. Marketing is opt-in.</p>
+      <div className="table-wrap">
       <table className="data-table">
+        <caption className="muted">Notification opt-in by category and channel</caption>
         <thead>
           <tr>
             <th>Category</th>
@@ -97,7 +100,13 @@ export default async function SettingsPage({
                     <form action={updatePreferenceAction}>
                       <input type="hidden" name="category" value={category} />
                       <input type="hidden" name="channel" value={channel} />
-                      <input type="checkbox" name="optedIn" defaultChecked={row?.optedIn ?? false} disabled={required} />
+                      <input
+                        type="checkbox"
+                        name="optedIn"
+                        aria-label={preferenceControlLabel(category, channel)}
+                        defaultChecked={row?.optedIn ?? false}
+                        disabled={required}
+                      />
                       {required ? null : <button className="link-button" type="submit">Save</button>}
                     </form>
                   </td>
@@ -107,6 +116,7 @@ export default async function SettingsPage({
           )}
         </tbody>
       </table>
+      </div>
     </>
   );
 }
