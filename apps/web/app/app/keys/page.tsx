@@ -4,16 +4,13 @@ import { listApiKeys, member, withOrganizationContext } from "@isp/db";
 import { ISSUABLE_SCOPES, hasPermission } from "@isp/auth";
 import { and, eq } from "drizzle-orm";
 import { createApiKeyAction, revokeApiKeyAction, rotateApiKeyAction } from "@/app/key-actions";
+import { readSecretFlash } from "@/lib/secret-flash";
 
 export const dynamic = "force-dynamic";
 
-export default async function ApiKeysPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ created?: string }>;
-}) {
+export default async function ApiKeysPage() {
   const { session, organizationId } = await requirePageOrganization();
-  const query = await searchParams;
+  const created = await readSecretFlash("api_key");
   const [membership] = await getDb()
     .select({ role: member.role })
     .from(member)
@@ -33,9 +30,9 @@ export default async function ApiKeysPage({
         Tenant-bound test credentials. The full secret is shown once on create or rotate. Prefix, last used, and
         expiration remain visible.
       </p>
-      {query.created ? (
+      {created ? (
         <p>
-          Secret (copy now): <code>{query.created}</code>
+          Secret (copy now): <code>{created}</code>
         </p>
       ) : null}
       {canManage ? (

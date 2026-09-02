@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { setSecretFlash } from "@/lib/secret-flash";
 import {
   CreatorModerationError,
   OperatorNoteRejectedError,
@@ -147,7 +148,8 @@ export async function createBetaInviteAction(formData: FormData) {
       action: "beta.invite",
       metadata: { inviteId: created.id },
     });
-    redirect(`/admin/beta?token=${encodeURIComponent(created.token)}`);
+    await setSecretFlash("beta_invite", created.token);
+    redirect("/admin/beta");
   } catch {
     redirect("/admin/beta?error=rejected");
   }

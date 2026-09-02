@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { persistVerificationResendState } from "@/lib/verification-cooldown";
+import { publicAuthErrorMessage } from "@/lib/auth-errors";
 import { authClient } from "@/lib/auth-client";
 
 type Mode = "login" | "signup";
@@ -44,7 +45,7 @@ export function AuthForm({
           },
         });
         if (result.error) {
-          setError(result.error.message ?? "Unable to sign up.");
+          setError(publicAuthErrorMessage("signup"));
           return;
         }
         persistVerificationResendState(email);
@@ -58,7 +59,7 @@ export function AuthForm({
         callbackURL: "/app",
       });
       if (result.error) {
-        setError(result.error.message ?? "Unable to sign in.");
+        setError(publicAuthErrorMessage("login"));
         return;
       }
       window.location.href = "/app";

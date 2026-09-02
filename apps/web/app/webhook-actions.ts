@@ -13,6 +13,7 @@ import {
 } from "@isp/db";
 import { requireApiKeyPepper } from "@isp/auth";
 import { tenantHasFeature } from "@isp/billing";
+import { setSecretFlash } from "@/lib/secret-flash";
 
 async function requireWebhookManager() {
   const actor = await requireAppActor("canManageApiKeys");
@@ -42,7 +43,8 @@ export async function createWebhookAction(formData: FormData) {
           pepper: requireApiKeyPepper(),
         }),
     );
-    redirect(`/app/webhooks?created=${encodeURIComponent(created.secret)}`);
+    await setSecretFlash("webhook_secret", created.secret);
+    redirect("/app/webhooks");
   } catch (error) {
     if (error instanceof WebhookUrlRejectedError) {
       redirect("/app/webhooks?error=rejected");
@@ -91,5 +93,6 @@ export async function rotateWebhookAction(formData: FormData) {
   if (!secret) {
     redirect("/app/webhooks?error=missing");
   }
-  redirect(`/app/webhooks?created=${encodeURIComponent(secret)}`);
+  await setSecretFlash("webhook_secret", secret);
+  redirect("/app/webhooks");
 }

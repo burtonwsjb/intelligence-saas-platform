@@ -61,6 +61,7 @@ export {
   KNOWN_SCOPES,
   MissingApiKeyPepperError,
   UnknownScopeError,
+  apiKeyScheme,
   createTenantApiKey,
   generateApiKeySecret,
   hasScope,

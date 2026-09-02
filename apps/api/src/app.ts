@@ -30,6 +30,7 @@ import {
   parseIngestBody,
 } from "./ingest.js";
 import { resolveRequestId } from "./request-id.js";
+import { allowApiRequest } from "./rate-limit.js";
 import { commercialOpenApi } from "./openapi.js";
 import { registerCommercialRoutes } from "./commercial.js";
 
@@ -48,6 +49,14 @@ export function createApiApp(options?: {
 
   app.use("*", async (c, next) => {
     const requestId = resolveRequestId(c.req.header("x-request-id"));
+    if (
+      !allowApiRequest({
+        path: c.req.path,
+        headers: { get: (name) => c.req.header(name) ?? null },
+      })
+    ) {
+      return jsonError("rate_limited", "Too many requests.", 429, requestId);
+    }
     const started = Date.now();
     await next();
     c.header("x-request-id", requestId);

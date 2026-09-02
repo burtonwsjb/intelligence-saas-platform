@@ -33,7 +33,7 @@ import { parseJobEnvelope, type JobEnvelope } from "./envelope.js";
 import { logQueueEvent } from "./logger.js";
 
 function safeFailureMessage(message: string): string {
-  return message.replace(/isp_test_[A-Za-z0-9_-]+/g, "[redacted]").slice(0, 300);
+  return message.replace(/isp_(?:test|live)_[A-Za-z0-9_-]+/g, "[redacted]").slice(0, 300);
 }
 
 function toUnrecoverable(error: unknown): never {

@@ -43,6 +43,7 @@ describe("static security scan", () => {
     const evalHits: string[] = [];
     const tlsHits: string[] = [];
     const htmlHits: string[] = [];
+    const querySecretHits: string[] = [];
     for (const file of files) {
       if (file.includes(`${path.sep}dist${path.sep}`) || file.endsWith(".test.ts")) {
         continue;
@@ -61,10 +62,14 @@ describe("static security scan", () => {
       if (/sk_live_[A-Za-z0-9]{8,}/.test(text) && !rel.endsWith("stripe-env.ts")) {
         liveKeyHits.push(rel);
       }
+      if (/redirect\([`'"][^`'"]*\?(created|token)=\$\{encodeURIComponent/.test(text)) {
+        querySecretHits.push(rel);
+      }
     }
     expect(evalHits).toEqual([]);
     expect(tlsHits).toEqual([]);
     expect(htmlHits).toEqual([]);
     expect(liveKeyHits).toEqual([]);
+    expect(querySecretHits).toEqual([]);
   });
 });

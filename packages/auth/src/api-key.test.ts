@@ -39,6 +39,9 @@ describe("API key format and scopes", () => {
     expect(generated.secretHash).toBe(hashApiKeySecret(generated.fullKey, pepper));
     expect(parsePresentedApiKey(generated.fullKey)?.prefix).toBe(generated.prefix);
     expect(parsePresentedApiKey("sk_live_not_a_key")).toBeNull();
+    const live = generateApiKeySecret(pepper, { ISP_ENV: "production" });
+    expect(live.fullKey.startsWith("isp_live_")).toBe(true);
+    expect(parsePresentedApiKey(live.fullKey)?.prefix).toBe(live.prefix);
   });
 
   it("fails closed for unknown scopes", () => {

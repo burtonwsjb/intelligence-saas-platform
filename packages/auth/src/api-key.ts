@@ -1,4 +1,5 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { isProductionRuntime } from "@isp/shared";
 import {
   countActiveApiKeys,
   insertApiKey,
@@ -115,26 +116,33 @@ function hashesEqual(left: string, right: string): boolean {
   return timingSafeEqual(a, b);
 }
 
+export function apiKeyScheme(env: NodeJS.ProcessEnv = process.env): "isp_test" | "isp_live" {
+  return isProductionRuntime(env) ? "isp_live" : "isp_test";
+}
+
 export function parsePresentedApiKey(value: string): {
   prefix: string;
   fullKey: string;
 } | null {
   const trimmed = value.trim();
-  const match = /^isp_test_([a-f0-9]{8})_[A-Za-z0-9_-]{16,}$/.exec(trimmed);
+  const match = /^(isp_(?:test|live))_([a-f0-9]{8})_([A-Za-z0-9_-]{16,})$/.exec(trimmed);
   if (!match) {
     return null;
   }
-  return { prefix: `isp_test_${match[1]}`, fullKey: trimmed };
+  return { prefix: `${match[1]}_${match[2]}`, fullKey: trimmed };
 }
 
-export function generateApiKeySecret(pepper: string): {
+export function generateApiKeySecret(
+  pepper: string,
+  env: NodeJS.ProcessEnv = process.env,
+): {
   fullKey: string;
   prefix: string;
   secretHash: string;
 } {
   const publicPrefix = randomBytes(4).toString("hex");
   const secret = randomBytes(24).toString("base64url");
-  const prefix = `isp_test_${publicPrefix}`;
+  const prefix = `${apiKeyScheme(env)}_${publicPrefix}`;
   const fullKey = `${prefix}_${secret}`;
   return { fullKey, prefix, secretHash: hashApiKeySecret(fullKey, pepper) };
 }

@@ -25,3 +25,4 @@ export {
   type IspEnvironment,
 } from "./runtime-env.js";
 export { redactLogValue, structuredLog, type LogLevel } from "./observe.js";
+export { MemoryWindowLimiter, clientIpFromRequestHeaders } from "./rate-limit.js";

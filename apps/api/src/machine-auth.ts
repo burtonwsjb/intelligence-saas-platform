@@ -16,6 +16,7 @@ import {
   verifyPresentedApiKey,
 } from "@isp/auth";
 import { jsonError } from "./errors.js";
+import { allowApiAuthAttempt } from "./rate-limit.js";
 
 export type MachinePrincipal = {
   organizationId: string;
@@ -41,6 +42,9 @@ export function createMachineAuth(options?: {
     }
     const token = bearerToken(c.req.header("authorization"));
     if (!token) {
+      if (!allowApiAuthAttempt({ get: (name) => c.req.header(name) ?? null })) {
+        return jsonError("rate_limited", "Too many requests.", 429);
+      }
       return jsonError("unauthorized", "Authentication required.", 401);
     }
     let db: Database;
@@ -59,6 +63,9 @@ export function createMachineAuth(options?: {
       verified = await verifyPresentedApiKey(db, token, pepper);
     } catch (error) {
       if (error instanceof ApiKeyDeniedError) {
+        if (!allowApiAuthAttempt({ get: (name) => c.req.header(name) ?? null })) {
+          return jsonError("rate_limited", "Too many requests.", 429);
+        }
         return jsonError("unauthorized", "Authentication required.", 401);
       }
       throw error;

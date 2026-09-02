@@ -6,6 +6,7 @@ import {
 } from "@/app/webhook-actions";
 import { EmptyState, LockedFeature } from "@/components/EmptyState";
 import { loadAppAccess } from "@/lib/app-access";
+import { readSecretFlash } from "@/lib/secret-flash";
 import { getDb } from "@/lib/auth";
 import { WEBHOOK_EVENT_TYPES, listWebhookDeliveries, listWebhookEndpoints, withOrganizationContext } from "@isp/db";
 
@@ -14,10 +15,11 @@ export const dynamic = "force-dynamic";
 export default async function WebhooksPage({
   searchParams,
 }: {
-  searchParams: Promise<{ created?: string; error?: string }>;
+  searchParams: Promise<{ error?: string }>;
 }) {
   const { organizationId, userId, access } = await loadAppAccess();
   const query = await searchParams;
+  const created = await readSecretFlash("webhook_secret");
   if (!access.hasWebhooks) {
     return (
       <LockedFeature
@@ -38,9 +40,9 @@ export default async function WebhooksPage({
       <p className="muted">
         Signing secrets are shown once at create/rotate. Stored ciphertext is never displayed again.
       </p>
-      {query.created ? (
+      {created ? (
         <p>
-          Signing secret (copy now): <code>{query.created}</code>
+          Signing secret (copy now): <code>{created}</code>
         </p>
       ) : null}
       {query.error ? <p className="form-error">Webhook action was rejected.</p> : null}

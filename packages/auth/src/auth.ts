@@ -81,7 +81,9 @@ export function createAuth(options: {
   return betterAuth({
     secret,
     baseURL: options.env.BETTER_AUTH_URL,
-    trustedOrigins: [options.env.APP_URL],
+    trustedOrigins: Array.from(
+      new Set([options.env.APP_URL, options.env.BETTER_AUTH_URL].filter(Boolean)),
+    ),
     database: drizzleAdapter(options.db, {
       provider: "pg",
       schema: {

@@ -5,13 +5,18 @@ import {
   resendVerificationEmail,
 } from "@isp/auth";
 import { logAuthConfigError } from "@/lib/auth-diagnostics";
+import { publicAuthRouteError } from "@/lib/auth-errors";
 import { getAuth, getDb, isAuthConfigError } from "@/lib/auth";
+import { MemoryWindowLimiter, clientIpFromRequestHeaders } from "@isp/shared";
 import {
   handleVerificationResendRequest,
   isSendVerificationEmailPath,
 } from "@/lib/verification-resend";
 
 export const runtime = "nodejs";
+
+const authLimiter = new MemoryWindowLimiter({ windowMs: 60_000 });
+const AUTH_SENSITIVE = /\/(sign-in|sign-up|forget-password|request-password-reset)(\/|$)/i;
 
 function unavailable(error: unknown) {
   logAuthConfigError(error);
@@ -35,6 +40,12 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const url = new URL(request.url);
+    if (AUTH_SENSITIVE.test(url.pathname)) {
+      const ip = clientIpFromRequestHeaders(request.headers);
+      if (!authLimiter.consume(`auth:${ip}`, 20)) {
+        return Response.json({ error: publicAuthRouteError() }, { status: 429 });
+      }
+    }
     if (isSendVerificationEmailPath(url.pathname)) {
       return handleVerificationResendRequest(request, {
         getAuth,
@@ -57,9 +68,8 @@ export async function POST(request: Request) {
     if (isAuthConfigError(error)) {
       return unavailable(error);
     }
-    const message = error instanceof Error ? error.message : "Signup is not allowed.";
     if (process.env.BETA_INVITE_ONLY === "true") {
-      return Response.json({ error: message }, { status: 403 });
+      return Response.json({ error: publicAuthRouteError() }, { status: 403 });
     }
     throw error;
   }

@@ -270,6 +270,17 @@ Status: **complete in-repo** (see [PHASE_25.md](../PHASE_25.md)). No hosted migr
 
 Exit: failure modes are classified, tested, and recoverable without silent hangs.
 
+## Phase 26 — Security, authorization, RLS, and secret audit
+
+Status: **complete in-repo** (see [PHASE_26.md](../PHASE_26.md)). No hosted migrations. Secrets were not rotated in hosted environments.
+
+- Secrets no longer travel in query strings
+- Web security headers + API/auth rate limits
+- Production API key scheme `isp_live_`
+- Generic auth errors (no account enumeration)
+
+Exit: confirmed repository-level security defects are fixed and covered by regression tests.
+
 ## Sequencing notes
 
 - Stripe/keys (04) sit before heavy TCG ingest so entitlements exist when data gets expensive

@@ -1,13 +1,14 @@
 import { BETA_COHORTS, FEATURE_FLAG_KEYS, listFeatureFlags } from "@isp/db";
 import { requireGrantedOperator } from "@/lib/platform-admin";
 import { createBetaInviteAction, setFeatureFlagAction } from "@/app/admin-actions";
+import { readSecretFlash } from "@/lib/secret-flash";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminBetaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; token?: string }>;
+  searchParams: Promise<{ error?: string }>;
 }) {
   const operator = await requireGrantedOperator();
   if (!operator.adminDb) {
@@ -15,6 +16,7 @@ export default async function AdminBetaPage({
   }
   const flags = await listFeatureFlags(operator.adminDb);
   const query = await searchParams;
+  const token = await readSecretFlash("beta_invite");
 
   return (
     <>
@@ -24,9 +26,9 @@ export default async function AdminBetaPage({
         Do not paste the one-time token into tickets or logs.
       </p>
       {query.error ? <p className="form-error">Beta action was rejected.</p> : null}
-      {query.token ? (
+      {token ? (
         <p className="form-error">
-          One-time invite token (shown once): <code>{query.token}</code>
+          One-time invite token (shown once): <code>{token}</code>
         </p>
       ) : null}
       <h2>Invitations</h2>

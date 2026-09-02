@@ -14,6 +14,7 @@ import {
   rotateTenantApiKey,
 } from "@isp/auth";
 import { and, eq } from "drizzle-orm";
+import { setSecretFlash } from "@/lib/secret-flash";
 
 async function requireKeyActor() {
   const requestHeaders = await headers();
@@ -53,7 +54,8 @@ export async function createApiKeyAction(formData: FormData) {
         expiresAt: expiresAt && Number.isFinite(expiresAt.getTime()) ? expiresAt : null,
       }),
   );
-  redirect(`/app/keys?created=${encodeURIComponent(created.fullKey)}`);
+  await setSecretFlash("api_key", created.fullKey);
+  redirect("/app/keys");
 }
 
 export async function revokeApiKeyAction(formData: FormData) {
@@ -95,5 +97,6 @@ export async function rotateApiKeyAction(formData: FormData) {
         pepper: requireApiKeyPepper(),
       }),
   );
-  redirect(`/app/keys?created=${encodeURIComponent(created.fullKey)}`);
+  await setSecretFlash("api_key", created.fullKey);
+  redirect("/app/keys");
 }
