@@ -391,6 +391,12 @@ export {
 } from "./prediction/model.js";
 export { freezeFeatures, issuePrediction } from "./prediction/issue.js";
 export {
+  INTELLIGENCE_INVARIANTS,
+  INTELLIGENCE_REGRESSION_SCENARIOS,
+  assertExplainableScore,
+  assertShadowPrediction,
+} from "./intelligence/integrity.js";
+export {
   evaluatePrediction,
   isPendingPredictionEvaluation,
   type PendingPredictionEvaluation,

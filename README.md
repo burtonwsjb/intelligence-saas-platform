@@ -58,6 +58,7 @@ TypeScript, pnpm/Turborepo, Next.js, Hono, PostgreSQL/Neon, Drizzle, Better Auth
 - [Phase 23 readiness](docs/PHASE_23_READINESS.md)
 - [Phase 25](docs/PHASE_25.md)
 - [Phase 26](docs/PHASE_26.md)
+- [Phase 27](docs/PHASE_27.md)
 - [Environments](docs/environments.md)
 - [Staging runbook](docs/staging-runbook.md)
 - [CI](docs/CI.md)
@@ -99,4 +100,5 @@ TypeScript, pnpm/Turborepo, Next.js, Hono, PostgreSQL/Neon, Drizzle, Better Auth
 | Production | Phase 23 readiness docs only; **not authorized** |
 | Reliability / recovery | Phase 25 complete in-repo; hosted heartbeat identity check left for the operator |
 | Security / isolation | Phase 26 complete in-repo; rotate any secrets previously shown in query strings |
+| Intelligence integrity | Phase 27 complete in-repo; predictions remain shadow |
 | Cloud / Stripe live / TCC production | Not created, not connected, not modified |

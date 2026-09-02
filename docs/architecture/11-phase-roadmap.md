@@ -281,6 +281,15 @@ Status: **complete in-repo** (see [PHASE_26.md](../PHASE_26.md)). No hosted migr
 
 Exit: confirmed repository-level security defects are fixed and covered by regression tests.
 
+## Phase 27 — Data integrity and intelligence correctness
+
+Status: **complete in-repo** (see [PHASE_27.md](../PHASE_27.md)). Predictions remain shadow.
+
+- Deterministic regression catalog for market, social, identity, and currency failure modes
+- Explainability and no-future-leakage invariants
+
+Exit: every required scenario has an expected output and scores stay explainable.
+
 ## Sequencing notes
 
 - Stripe/keys (04) sit before heavy TCG ingest so entitlements exist when data gets expensive
