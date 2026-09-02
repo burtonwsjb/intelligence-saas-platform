@@ -82,10 +82,14 @@ export async function tryAcquireProviderLease(
   providerKey: ProviderKey,
   leaseMs = 120_000,
 ): Promise<boolean> {
-  const until = new Date(Date.now() + leaseMs);
+  const seconds = Math.max(1, Math.ceil(leaseMs / 1000));
   const updated = await db
     .update(providerRuntime)
-    .set({ leaseUntil: until, lastAttemptAt: new Date(), updatedAt: new Date() })
+    .set({
+      leaseUntil: sql`now() + (${seconds} * interval '1 second')`,
+      lastAttemptAt: sql`now()`,
+      updatedAt: sql`now()`,
+    })
     .where(
       sql`${providerRuntime.providerKey} = ${providerKey}
         AND (${providerRuntime.leaseUntil} IS NULL OR ${providerRuntime.leaseUntil} < now())`,

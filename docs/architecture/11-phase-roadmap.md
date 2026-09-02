@@ -259,6 +259,17 @@ Status: **readiness documentation only** (see [PHASE_23_READINESS.md](../PHASE_2
 
 Exit: production TCG intelligence SaaS is live on this stack. **Not met.**
 
+## Phase 25 — Reliability, operations, and failure recovery
+
+Status: **complete in-repo** (see [PHASE_25.md](../PHASE_25.md)). No hosted migrations. Live providers remain disabled.
+
+- Worker SIGTERM drain, Redis/Postgres cleanup, 503 health during shutdown
+- Queue timeouts, stalled-job recovery, outbox dead-letter
+- Provider lease uses database `now()`; due-ness covers pause/retry-after/rate-limit
+- Health rollup: healthy / degraded / stale / missing / failed
+
+Exit: failure modes are classified, tested, and recoverable without silent hangs.
+
 ## Sequencing notes
 
 - Stripe/keys (04) sit before heavy TCG ingest so entitlements exist when data gets expensive

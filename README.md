@@ -9,7 +9,7 @@ TCG Card Central is only a future external integration (optional reference-data 
 
 ## Current phase
 
-**Phase 21 local readiness prepared (blocked on staging).** Independent Vercel/Railway/Neon staging is not hosted. Phase 22 beta readiness is in-repo and blocked on staging. Phase 23 is documentation only — production is not authorized. See [docs/PHASE_21.md](docs/PHASE_21.md), [docs/PHASE_22.md](docs/PHASE_22.md), [docs/PHASE_23_READINESS.md](docs/PHASE_23_READINESS.md).
+**Phase 25 reliability hardening is in-repo.** Staging hosting exists; live providers stay disabled. Phase 22 beta and Phase 23 production remain unauthorized. See [docs/PHASE_25.md](docs/PHASE_25.md), [docs/PHASE_21.md](docs/PHASE_21.md), [docs/PHASE_22.md](docs/PHASE_22.md), [docs/PHASE_23_READINESS.md](docs/PHASE_23_READINESS.md).
 
 ## Local commands
 
@@ -56,6 +56,7 @@ TypeScript, pnpm/Turborepo, Next.js, Hono, PostgreSQL/Neon, Drizzle, Better Auth
 - [Phase 21](docs/PHASE_21.md)
 - [Phase 22](docs/PHASE_22.md)
 - [Phase 23 readiness](docs/PHASE_23_READINESS.md)
+- [Phase 25](docs/PHASE_25.md)
 - [Environments](docs/environments.md)
 - [Staging runbook](docs/staging-runbook.md)
 - [CI](docs/CI.md)
@@ -95,4 +96,5 @@ TypeScript, pnpm/Turborepo, Next.js, Hono, PostgreSQL/Neon, Drizzle, Better Auth
 | Staging / security / load | Phase 21 **local** readiness; independent staging **not** hosted |
 | Controlled beta | Phase 22 readiness in-repo; blocked on staging; no external beta |
 | Production | Phase 23 readiness docs only; **not authorized** |
+| Reliability / recovery | Phase 25 complete in-repo; hosted heartbeat identity check left for the operator |
 | Cloud / Stripe live / TCC production | Not created, not connected, not modified |

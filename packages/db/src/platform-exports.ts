@@ -54,11 +54,22 @@ export {
   setSupportCaseStatus,
 } from "./platform/support.js";
 export {
+  QUEUE_FAILED_JOBS_DEGRADED,
   WORKER_HEARTBEAT_STALE_MS,
+  classifyPlatformHealth,
+  classifyQueueHealth,
   classifyWorkerHeartbeat,
   collectSystemHealth,
   describePlatformConfig,
+  operatorGuidanceForHealth,
 } from "./platform/health.js";
+export {
+  MAX_OUTBOX_PUBLISH_ATTEMPTS,
+  classifyDatabaseError,
+  classifyOutboxDelivery,
+  isTransientDatabaseError,
+  withDatabaseRetry,
+} from "./platform/recovery.js";
 export {
   collectLiveDatabaseIdentity,
   fingerprintConnectionTarget,
@@ -80,6 +91,7 @@ export {
   createLiveRedditProvider,
   createLiveYoutubeProvider,
   credentialReadinessReport,
+  decideProviderSyncDue,
   enqueueDueProviderSyncs,
   enqueuePlatformJob,
   formatCredentialReadinessReport,
@@ -97,6 +109,8 @@ export {
   normalizeYoutubeVideo,
   parseRetryAfterMs,
   parseStagingIngestArgs,
+  providerSyncBucketId,
+  releaseProviderLease,
   ProviderAdminError,
   ProviderHttpError,
   ProviderSyncError,
@@ -111,6 +125,7 @@ export {
   StagingSourceCommandError,
   syncProvider,
   triggerProviderSync,
+  tryAcquireProviderLease,
   upsertWorkerHeartbeat,
 } from "./providers/exports.js";
 export { TenantInspectError, inspectTenant } from "./platform/inspect.js";

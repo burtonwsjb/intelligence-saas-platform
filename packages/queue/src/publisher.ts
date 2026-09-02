@@ -13,7 +13,8 @@ import {
 } from "@isp/db";
 import { QueueUnavailableError } from "./errors.js";
 import { createRedisConnection } from "./redis.js";
-import { DEFAULT_BACKOFF_MS, DEFAULT_JOB_ATTEMPTS, ingestQueueName } from "./names.js";
+import { ingestQueueName } from "./names.js";
+import { defaultIngestJobOptions } from "./lifecycle.js";
 import { logQueueEvent } from "./logger.js";
 import type { JobEnvelope } from "./envelope.js";
 
@@ -25,12 +26,7 @@ export function createIngestQueue(
 ): IngestQueue {
   return new Queue<JobEnvelope>(ingestQueueName(env), {
     connection: createRedisConnection(env, options),
-    defaultJobOptions: {
-      attempts: DEFAULT_JOB_ATTEMPTS,
-      backoff: { type: "exponential", delay: DEFAULT_BACKOFF_MS },
-      removeOnComplete: 100,
-      removeOnFail: false,
-    },
+    defaultJobOptions: defaultIngestJobOptions(),
   });
 }
 

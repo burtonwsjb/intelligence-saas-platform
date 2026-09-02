@@ -12,6 +12,11 @@ export default async function AdminHealthPage() {
     <>
       <h1>System health</h1>
       <p className="muted">Operational states. Secrets are never displayed.</p>
+      <h2>Overall</h2>
+      <p>
+        <strong>{health.status}</strong>
+      </p>
+      <p className="muted">{health.guidance}</p>
       <h2>Catalogs</h2>
       <ul>
         {Object.entries(health.catalogs).map(([key, value]) => (
@@ -29,14 +34,20 @@ export default async function AdminHealthPage() {
         ))}
       </ul>
       <h2>Providers</h2>
-      <ul>
-        {health.providers.map((row) => (
-          <li key={row.provider}>
-            {row.provider}: {row.mode}/{row.health} · last sync {row.lastSuccessAt ?? "—"} · rate{" "}
-            {row.rateLimitRemaining ?? "—"}
-          </li>
-        ))}
-      </ul>
+      {health.providers.length === 0 ? (
+        <p className="muted">No provider runtime rows.</p>
+      ) : (
+        <ul>
+          {health.providers.map((row) => (
+            <li key={row.provider}>
+              {row.provider}: {row.mode}/{row.health}
+              {row.paused ? " · paused" : ""}
+              {row.enabled ? "" : " · disabled"} · last sync {row.lastSuccessAt ?? "—"} · retry-after{" "}
+              {row.retryAfterAt ?? "—"} · rate {row.rateLimitRemaining ?? "—"}
+            </li>
+          ))}
+        </ul>
+      )}
     </>
   );
 }

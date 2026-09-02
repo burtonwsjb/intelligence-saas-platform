@@ -7,6 +7,12 @@ import { drizzle } from "drizzle-orm/pglite";
 import {
   analyzeSourceSentiment,
   applyProviderModeFromEnv,
+  enqueuePlatformJob,
+  getPlatformOutbox,
+  markPlatformOutboxPublishFailed,
+  MAX_OUTBOX_PUBLISH_ATTEMPTS,
+  releaseProviderLease,
+  tryAcquireProviderLease,
   assertStagingSourceCommandAllowed,
   backoffMs,
   classifyHttpStatus,
@@ -342,5 +348,40 @@ describe("real ingest pipeline", () => {
     expect(resolved.attempt.chosenPrintingId).toBeNull();
     expect(resolved.attempt.status).not.toBe("exact");
     expect(resolved.attempt.chosenConceptId).toBe(seeded.concepts.pikachu.id);
+  });
+});
+
+describe("provider lease and outbox recovery", () => {
+  it("prevents overlapping leases until release, using database now()", async () => {
+    const db = await memoryDb();
+    await applyProviderModeFromEnv(db, { NODE_ENV: "test", PROVIDER_REDDIT_MODE: "fixture" });
+    expect(await tryAcquireProviderLease(db, "reddit")).toBe(true);
+    expect(await tryAcquireProviderLease(db, "reddit")).toBe(false);
+    await releaseProviderLease(db, "reddit");
+    expect(await tryAcquireProviderLease(db, "reddit")).toBe(true);
+  });
+
+  it("dead-letters platform outbox after repeated publish failures and ignores duplicate enqueue", async () => {
+    const db = await memoryDb();
+    const first = await enqueuePlatformJob(db, {
+      id: "provider.sync.v1:reddit:1",
+      jobType: "provider.sync.v1",
+      payload: { job_type: "provider.sync.v1" },
+    });
+    const replay = await enqueuePlatformJob(db, {
+      id: "provider.sync.v1:reddit:1",
+      jobType: "provider.sync.v1",
+      payload: { job_type: "provider.sync.v1" },
+    });
+    expect(first.enqueued).toBe(true);
+    expect(replay.enqueued).toBe(false);
+    for (let attempt = 0; attempt < MAX_OUTBOX_PUBLISH_ATTEMPTS - 1; attempt += 1) {
+      await markPlatformOutboxPublishFailed(db, "provider.sync.v1:reddit:1", "queue unavailable");
+    }
+    expect((await getPlatformOutbox(db, "provider.sync.v1:reddit:1"))?.status).toBe("pending");
+    await markPlatformOutboxPublishFailed(db, "provider.sync.v1:reddit:1", "queue unavailable");
+    const dead = await getPlatformOutbox(db, "provider.sync.v1:reddit:1");
+    expect(dead?.status).toBe("failed");
+    expect(dead?.attempts).toBe(MAX_OUTBOX_PUBLISH_ATTEMPTS);
   });
 });

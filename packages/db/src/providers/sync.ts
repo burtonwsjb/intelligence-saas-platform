@@ -24,6 +24,7 @@ import {
   resolveProviderMode,
   type ProviderKey,
 } from "./catalog.js";
+import { decideProviderSyncDue, providerSyncBucketId } from "./schedule.js";
 import { createLiveMarketProvider } from "./live-market.js";
 import { createLiveRedditProvider, createLiveYoutubeProvider } from "./live-social.js";
 import {
@@ -274,19 +275,14 @@ export async function enqueueDueProviderSyncs(db: Database, env: NodeJS.ProcessE
   const { listProviderRuntime } = await import("./runtime.js");
   const rows = await listProviderRuntime(db);
   const due: string[] = [];
+  const now = new Date();
   for (const row of rows) {
-    if (!row.enabled || row.paused || row.mode === "disabled") {
+    const decision = decideProviderSyncDue(row, now);
+    if (!decision.due) {
       continue;
     }
     const interval = (row.scheduleSeconds || DEFAULT_SCHEDULE_SECONDS[row.providerKey as ProviderKey]) * 1000;
-    const last = row.lastAttemptAt?.getTime() ?? 0;
-    if (Date.now() - last < interval) {
-      continue;
-    }
-    if (row.retryAfterAt && row.retryAfterAt.getTime() > Date.now()) {
-      continue;
-    }
-    const jobId = `provider.sync.v1:${row.providerKey}:${Math.floor(Date.now() / interval)}`;
+    const jobId = providerSyncBucketId(row.providerKey, interval, now);
     await enqueuePlatformJob(db, {
       id: jobId,
       jobType: "provider.sync.v1",

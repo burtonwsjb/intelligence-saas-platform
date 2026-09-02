@@ -25,6 +25,9 @@ export function createDbConnection(url: string): {
   const client = postgres(url, {
     max: 10,
     prepare: false,
+    connect_timeout: 10,
+    idle_timeout: 20,
+    max_lifetime: 60 * 30,
     ssl: shouldRequireSsl(url) ? true : undefined,
   });
   return {

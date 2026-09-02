@@ -27,6 +27,8 @@ export {
   triggerProviderSync,
 } from "./admin.js";
 export { enqueueDueProviderSyncs, ProviderSyncError, syncProvider } from "./sync.js";
+export { decideProviderSyncDue, providerSyncBucketId } from "./schedule.js";
+export { releaseProviderLease, tryAcquireProviderLease } from "./runtime.js";
 export {
   StagingSourceCommandError,
   assertStagingSourceCommandAllowed,

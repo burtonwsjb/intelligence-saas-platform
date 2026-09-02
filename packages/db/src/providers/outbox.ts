@@ -1,6 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import type { Database } from "../client.js";
 import { platformOutbox } from "../schema/provider.js";
+import { MAX_OUTBOX_PUBLISH_ATTEMPTS } from "../platform/recovery.js";
 
 export const PLATFORM_JOB_VERSION = 1;
 
@@ -78,7 +79,9 @@ export async function markPlatformOutboxPublishFailed(db: Database, id: string, 
     .set({
       attempts: sql`${platformOutbox.attempts} + 1`,
       lastError: error.slice(0, 300),
-      availableAt: new Date(Date.now() + 5_000),
+      availableAt: sql`CASE WHEN ${platformOutbox.attempts} + 1 >= ${MAX_OUTBOX_PUBLISH_ATTEMPTS} THEN ${platformOutbox.availableAt} ELSE now() + interval '5 seconds' END`,
+      status: sql`CASE WHEN ${platformOutbox.attempts} + 1 >= ${MAX_OUTBOX_PUBLISH_ATTEMPTS} THEN 'failed' ELSE ${platformOutbox.status} END`,
+      failedAt: sql`CASE WHEN ${platformOutbox.attempts} + 1 >= ${MAX_OUTBOX_PUBLISH_ATTEMPTS} THEN now() ELSE ${platformOutbox.failedAt} END`,
     })
     .where(eq(platformOutbox.id, id));
 }

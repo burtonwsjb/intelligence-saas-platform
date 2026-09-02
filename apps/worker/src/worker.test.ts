@@ -4,6 +4,7 @@ import {
   runProviderSchedule,
   runWorkerHeartbeat,
   startWorker,
+  workerHealthPayload,
 } from "./worker.js";
 
 describe("startWorker", () => {
@@ -75,5 +76,18 @@ describe("worker operational loops", () => {
     expect(blob).toContain("failed_jobs");
     expect(blob.match(/worker\.heartbeat_ok/g)?.length).toBe(1);
     spy.mockRestore();
+  });
+
+  it("reports shutting down as a 503-style health payload without secrets", () => {
+    const payload = workerHealthPayload({
+      status: "shutting_down",
+      started_at: "2026-09-02T00:00:00.000Z",
+      shutting_down: true,
+      last_heartbeat_at: "2026-09-02T00:00:10.000Z",
+      last_heartbeat_error_class: "permission_denied",
+    });
+    expect(payload.status).toBe("shutting_down");
+    expect(payload.worker).toBe("shutting_down");
+    expect(JSON.stringify(payload)).not.toMatch(/postgresql:\/\//);
   });
 });

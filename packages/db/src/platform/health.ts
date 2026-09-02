@@ -20,7 +20,62 @@ import { entityResolutionAttempt } from "../schema/resolution.js";
 import { tcgScoreSnapshot } from "../schema/scoring.js";
 
 export const WORKER_HEARTBEAT_STALE_MS = 60_000;
+export const QUEUE_FAILED_JOBS_DEGRADED = 25;
 export type WorkerHeartbeatStatus = "healthy" | "stale" | "missing";
+export type PlatformHealthStatus = "healthy" | "degraded" | "stale" | "missing" | "failed";
+export type QueueHealthStatus = "healthy" | "degraded" | "unknown";
+
+export function classifyQueueHealth(input: {
+  queueDepth: number | null;
+  failedJobs: number | null;
+  failedJobsHighWater?: number;
+}): QueueHealthStatus {
+  if (input.queueDepth == null && input.failedJobs == null) {
+    return "unknown";
+  }
+  const highWater = input.failedJobsHighWater ?? QUEUE_FAILED_JOBS_DEGRADED;
+  if ((input.failedJobs ?? 0) >= highWater) {
+    return "degraded";
+  }
+  return "healthy";
+}
+
+export function classifyPlatformHealth(input: {
+  worker: WorkerHeartbeatStatus;
+  queue: QueueHealthStatus;
+  database?: "ok" | "error";
+  redis?: "configured" | "missing" | "error";
+  providerFailed?: boolean;
+}): PlatformHealthStatus {
+  if (input.database === "error" || input.redis === "error") {
+    return "failed";
+  }
+  if (input.worker === "missing") {
+    return "missing";
+  }
+  if (input.worker === "stale") {
+    return "stale";
+  }
+  if (input.queue === "degraded" || input.providerFailed) {
+    return "degraded";
+  }
+  return "healthy";
+}
+
+export function operatorGuidanceForHealth(status: PlatformHealthStatus): string {
+  switch (status) {
+    case "failed":
+      return "Database or Redis is not answering. Check Neon compute and Redis before restarting the worker.";
+    case "missing":
+      return "No ingest heartbeat row. Confirm the Railway worker process is running and using APP_DATABASE_URL.";
+    case "stale":
+      return "Heartbeat is older than 60s. The worker loop may be blocked; inspect worker logs for the last error_class.";
+    case "degraded":
+      return "Worker is alive but failed jobs or provider health need operator review. Do not enable live providers to clear this.";
+    default:
+      return "Worker heartbeat is fresh and queue metrics are within bounds.";
+  }
+}
 
 export function classifyWorkerHeartbeat(
   lastSeenAt: Date | string | null | undefined,
@@ -115,9 +170,22 @@ export async function collectSystemHealth(db: Database) {
   const sources = await db.select().from(sourceDefinition);
   const worker = heartbeat.find((row) => row.workerKey === "ingest") ?? heartbeat[0] ?? null;
   const workerHeartbeatStatus = classifyWorkerHeartbeat(worker?.lastSeenAt);
+  const queueHealth = classifyQueueHealth({
+    queueDepth: worker?.queueDepth ?? null,
+    failedJobs: worker?.failedJobs ?? null,
+  });
+  const providerFailed = providers.some((row) => row.healthStatus === "failed");
+  const redis = process.env.REDIS_URL?.trim() ? "configured" : "missing";
+  const overall = classifyPlatformHealth({
+    worker: workerHeartbeatStatus,
+    queue: queueHealth,
+    database: "ok",
+    redis,
+    providerFailed,
+  });
 
   return {
-    version: "health.v2" as const,
+    version: "health.v3" as const,
     catalogs: {
       games: Number(games[0]?.count ?? 0),
       printings: Number(printings[0]?.count ?? 0),
@@ -132,11 +200,14 @@ export async function collectSystemHealth(db: Database) {
       intelligenceQuarantineOpen: Number(intelQuarantine[0]?.count ?? 0),
       failedJobs: Number(failedJobs[0]?.count ?? 0),
     },
+    status: overall,
+    guidance: operatorGuidanceForHealth(overall),
     operations: {
       database: "ok",
-      redis: process.env.REDIS_URL?.trim() ? "configured" : "missing",
+      redis,
       workerHeartbeatAt: worker?.lastSeenAt?.toISOString() ?? null,
       workerHeartbeatStatus,
+      queueHealth,
       queueDepth: worker?.queueDepth ?? null,
       failedJobs: worker?.failedJobs ?? null,
       normalizationFailures: Number(failedMarket[0]?.count ?? 0) + Number(failedSource[0]?.count ?? 0),

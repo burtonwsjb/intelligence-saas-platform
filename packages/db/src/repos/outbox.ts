@@ -2,6 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { assertTenantContext } from "../rls.js";
 import { outboxJob } from "../schema/ingest.js";
 import type { Database } from "../client.js";
+import { MAX_OUTBOX_PUBLISH_ATTEMPTS } from "../platform/recovery.js";
 
 export async function insertOutboxJob(
   scoped: Database,
@@ -80,7 +81,8 @@ export async function markOutboxPublishFailed(
     .set({
       attempts: sql`${outboxJob.attempts} + 1`,
       lastError: input.error.slice(0, 300),
-      availableAt: new Date(Date.now() + 5_000),
+      availableAt: sql`CASE WHEN ${outboxJob.attempts} + 1 >= ${MAX_OUTBOX_PUBLISH_ATTEMPTS} THEN ${outboxJob.availableAt} ELSE now() + interval '5 seconds' END`,
+      status: sql`CASE WHEN ${outboxJob.attempts} + 1 >= ${MAX_OUTBOX_PUBLISH_ATTEMPTS} THEN 'failed' ELSE ${outboxJob.status} END`,
     })
     .where(and(eq(outboxJob.id, input.id), eq(outboxJob.organizationId, input.organizationId)));
 }
