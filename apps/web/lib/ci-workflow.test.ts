@@ -22,6 +22,7 @@ describe("CI workflow", () => {
     expect(workflow).toMatch(/REDIS_URL: redis:\/\/localhost:6379/);
     expect(workflow).toMatch(/node-version: 22/);
     expect(workflow).toMatch(/pnpm build/);
+    expect(workflow).toMatch(/git diff --check/);
     expect(workflow).not.toMatch(/vercel/i);
     expect(workflow).not.toMatch(/railway/i);
     expect(workflow).not.toMatch(/secrets:/);

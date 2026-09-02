@@ -12,7 +12,7 @@ import {
   requireDatabaseUrl,
   requireWorkerDatabaseUrl,
 } from "./env.js";
-import { readMigrationSql } from "./migrations.js";
+import { listMigrationFiles, readMigrationSql } from "./migrations.js";
 import {
   account,
   auditEvent,
@@ -267,6 +267,15 @@ describe("migrations", () => {
     expect(sql).toMatch(/GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE[\s\S]*"provider_runtime"[\s\S]*TO app_migrate, app_admin/);
     expect(sql).toMatch(/REVOKE INSERT, UPDATE, DELETE ON TABLE[\s\S]*"provider_runtime"[\s\S]*FROM app_user/);
     expect(sql).toMatch(/REVOKE SELECT ON TABLE "platform_outbox" FROM app_user/);
+  });
+
+  it("keeps uniquely numbered forward-only drizzle files", async () => {
+    const files = await listMigrationFiles();
+    const numbers = files.map((file) => file.slice(0, 4));
+    expect(numbers).toEqual([...numbers].sort());
+    expect(new Set(numbers).size).toBe(numbers.length);
+    expect(files[0]).toBe("0001_phase02_identity.sql");
+    expect(files.at(-1)).toBe("0023_phase24_provider_runtime_grants.sql");
   });
 
   it("keeps 0023 forward-only and non-destructive", async () => {

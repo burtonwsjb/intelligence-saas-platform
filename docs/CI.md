@@ -20,6 +20,7 @@ Disposable `postgres:16-alpine` and `redis:7-alpine` services are started for RL
 5. `pnpm test:isolation` (includes migration smoke on disposable Postgres)
 6. `pnpm test:integration`
 7. `pnpm build`
+8. `git diff --check`
 
 Unit tests include bounded API load smoke and a static security scan. Heavy load is manual ([docs/load-testing.md](./load-testing.md)).
 
