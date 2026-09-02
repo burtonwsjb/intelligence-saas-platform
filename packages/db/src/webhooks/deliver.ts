@@ -3,6 +3,7 @@ import type { Database } from "../client.js";
 import { webhookDelivery, webhookEndpoint } from "../schema/webhook.js";
 import {
   MAX_WEBHOOK_ATTEMPTS,
+  WEBHOOK_DELIVERY_BATCH,
   WEBHOOK_DISABLE_AFTER_FAILURES,
   WEBHOOK_RESPONSE_EXCERPT_CHARS,
   WEBHOOK_RETRY_VERSION,
@@ -48,7 +49,8 @@ export async function processDueWebhookDeliveries(
         eq(webhookDelivery.status, "pending"),
         lte(webhookDelivery.nextRetryAt, now),
       ),
-    );
+    )
+    .limit(WEBHOOK_DELIVERY_BATCH);
   const results = [];
   for (const delivery of due) {
     results.push(await attemptWebhookDelivery(scoped, { ...input, delivery, now }));

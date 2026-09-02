@@ -17,3 +17,4 @@ export const WEBHOOK_RETRY_VERSION = "exp_backoff.v1" as const;
 export const MAX_WEBHOOK_ATTEMPTS = 8;
 export const WEBHOOK_DISABLE_AFTER_FAILURES = 8;
 export const WEBHOOK_RESPONSE_EXCERPT_CHARS = 200;
+export const WEBHOOK_DELIVERY_BATCH = 50;

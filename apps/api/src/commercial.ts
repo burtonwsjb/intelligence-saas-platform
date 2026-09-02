@@ -1,4 +1,4 @@
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq, gt } from "drizzle-orm";
 import type { Hono } from "hono";
 import {
   disableWebhookEndpoint,
@@ -156,11 +156,19 @@ export function registerCommercialRoutes(
       const filters = parseCommercialQuery(queryRecord(c));
       const after = decodeCursor(filters.cursor);
       await meter(c.get("db"), c.get("machine"), requestId);
-      const rows = await c.get("db").select().from(tcgCardConcept).orderBy(asc(tcgCardConcept.id));
-      const filtered = rows
-        .filter((row) => (filters.game ? row.gameKey === filters.game : true))
-        .filter((row) => (after ? row.id > after : true))
-        .slice(0, filters.limit + 1);
+      const rows = await c
+        .get("db")
+        .select()
+        .from(tcgCardConcept)
+        .where(
+          and(
+            after ? gt(tcgCardConcept.id, after) : undefined,
+            filters.game ? eq(tcgCardConcept.gameKey, filters.game) : undefined,
+          ),
+        )
+        .orderBy(asc(tcgCardConcept.id))
+        .limit(filters.limit + 1);
+      const filtered = rows;
       const page = filtered.slice(0, filters.limit);
       return c.json(
         pageEnvelope({
@@ -203,19 +211,35 @@ export function registerCommercialRoutes(
     const requestId = resolveRequestId(c.req.header("x-request-id"));
     try {
       const filters = parseCommercialQuery(queryRecord(c));
+      const after = decodeCursor(filters.cursor);
       await meter(c.get("db"), c.get("machine"), requestId);
-      const rows = await c.get("db").select().from(tcgSet).orderBy(asc(tcgSet.id));
-      const data = rows.filter((row) => (filters.game ? row.gameKey === filters.game : true));
-      return c.json({
-        data: data.map((row) => ({
-          id: row.id,
-          game: row.gameKey,
-          set: row.canonicalSetKey,
-          name: row.name,
-          language_scope: row.languageScope,
-        })),
-        next_cursor: null,
-      });
+      const rows = await c
+        .get("db")
+        .select()
+        .from(tcgSet)
+        .where(
+          and(
+            after ? gt(tcgSet.id, after) : undefined,
+            filters.game ? eq(tcgSet.gameKey, filters.game) : undefined,
+          ),
+        )
+        .orderBy(asc(tcgSet.id))
+        .limit(filters.limit + 1);
+      const page = rows.slice(0, filters.limit);
+      return c.json(
+        pageEnvelope({
+          data: page.map((row) => ({
+            id: row.id,
+            game: row.gameKey,
+            set: row.canonicalSetKey,
+            name: row.name,
+            language_scope: row.languageScope,
+          })),
+          nextCursor: rows.length > filters.limit ? encodeCursor(page.at(-1)!.id) : null,
+          limit: filters.limit,
+          requestId,
+        }),
+      );
     } catch (error) {
       return commercialError(error, requestId);
     }
@@ -233,14 +257,18 @@ export function registerCommercialRoutes(
         .from(tcgPrinting)
         .innerJoin(tcgCardConcept, eq(tcgCardConcept.id, tcgPrinting.cardId))
         .innerJoin(tcgSet, eq(tcgSet.id, tcgPrinting.setId))
-        .orderBy(asc(tcgPrinting.id));
-      const filtered = rows
-        .filter((row) => (filters.game ? row.printing.gameKey === filters.game : true))
-        .filter((row) => (filters.set ? row.set.canonicalSetKey === filters.set : true))
-        .filter((row) => (filters.language ? row.printing.languageCode === filters.language : true))
-        .filter((row) => (filters.variant ? row.printing.variantKey === filters.variant : true))
-        .filter((row) => (after ? row.printing.id > after : true))
-        .slice(0, filters.limit + 1);
+        .where(
+          and(
+            after ? gt(tcgPrinting.id, after) : undefined,
+            filters.game ? eq(tcgPrinting.gameKey, filters.game) : undefined,
+            filters.set ? eq(tcgSet.canonicalSetKey, filters.set) : undefined,
+            filters.language ? eq(tcgPrinting.languageCode, filters.language) : undefined,
+            filters.variant ? eq(tcgPrinting.variantKey, filters.variant) : undefined,
+          ),
+        )
+        .orderBy(asc(tcgPrinting.id))
+        .limit(filters.limit + 1);
+      const filtered = rows;
       const page = filtered.slice(0, filters.limit);
       return c.json(
         pageEnvelope({
