@@ -298,6 +298,10 @@ Status: **complete in-repo** (see [PHASE_28.md](../PHASE_28.md)). Weights unchan
 
 Status: **complete in-repo** (see [PHASE_29.md](../PHASE_29.md)). Predictions remain shadow. No accuracy claims.
 
+## Phase 30 — Public API production hardening
+
+Status: **complete in-repo** (see [PHASE_30.md](../PHASE_30.md)).
+
 ## Sequencing notes
 
 - Stripe/keys (04) sit before heavy TCG ingest so entitlements exist when data gets expensive

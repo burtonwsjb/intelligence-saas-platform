@@ -60,6 +60,9 @@ export function createApiApp(options?: {
     const started = Date.now();
     await next();
     c.header("x-request-id", requestId);
+    if (c.req.method === "GET" && c.req.path.startsWith("/v1/")) {
+      c.header("cache-control", "private, no-store");
+    }
     c.header("x-content-type-options", "nosniff");
     c.header("x-frame-options", "DENY");
     c.header("referrer-policy", "no-referrer");

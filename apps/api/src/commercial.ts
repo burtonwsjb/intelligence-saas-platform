@@ -43,7 +43,7 @@ import {
 } from "@isp/billing";
 import { jsonError } from "./errors.js";
 import { requireScope, type MachinePrincipal } from "./machine-auth.js";
-import { CommercialFilterError, decodeCursor, encodeCursor, parseCommercialQuery } from "./pagination.js";
+import { CommercialFilterError, decodeCursor, encodeCursor, pageEnvelope, parseCommercialQuery } from "./pagination.js";
 import { resolveRequestId } from "./request-id.js";
 import { requireApiKeyPepper } from "@isp/auth";
 import { majorMoneyFields, moneyToFiniteNumber } from "@isp/shared";
@@ -162,15 +162,19 @@ export function registerCommercialRoutes(
         .filter((row) => (after ? row.id > after : true))
         .slice(0, filters.limit + 1);
       const page = filtered.slice(0, filters.limit);
-      return c.json({
-        data: page.map((row) => ({
-          id: row.id,
-          game: row.gameKey,
-          concept_key: row.conceptKey,
-          name: row.canonicalName,
-        })),
-        next_cursor: filtered.length > filters.limit ? encodeCursor(page.at(-1)!.id) : null,
-      });
+      return c.json(
+        pageEnvelope({
+          data: page.map((row) => ({
+            id: row.id,
+            game: row.gameKey,
+            concept_key: row.conceptKey,
+            name: row.canonicalName,
+          })),
+          nextCursor: filtered.length > filters.limit ? encodeCursor(page.at(-1)!.id) : null,
+          limit: filters.limit,
+          requestId,
+        }),
+      );
     } catch (error) {
       return commercialError(error, requestId);
     }
@@ -238,10 +242,14 @@ export function registerCommercialRoutes(
         .filter((row) => (after ? row.printing.id > after : true))
         .slice(0, filters.limit + 1);
       const page = filtered.slice(0, filters.limit);
-      return c.json({
-        data: page.map(exactPrinting),
-        next_cursor: filtered.length > filters.limit ? encodeCursor(page.at(-1)!.printing.id) : null,
-      });
+      return c.json(
+        pageEnvelope({
+          data: page.map(exactPrinting),
+          nextCursor: filtered.length > filters.limit ? encodeCursor(page.at(-1)!.printing.id) : null,
+          limit: filters.limit,
+          requestId,
+        }),
+      );
     } catch (error) {
       return commercialError(error, requestId);
     }

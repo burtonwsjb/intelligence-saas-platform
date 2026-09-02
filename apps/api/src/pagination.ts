@@ -13,6 +13,7 @@ const FILTER_KEYS = new Set([
   "cursor",
   "limit",
   "include_membership",
+  "sort",
 ]);
 
 export class CommercialFilterError extends Error {
@@ -35,6 +36,7 @@ export function parseCommercialQuery(query: Record<string, string | undefined>):
   cursor?: string;
   limit: number;
   includeMembership: boolean;
+  sort: "id";
 } {
   for (const key of Object.keys(query)) {
     if (!FILTER_KEYS.has(key)) {
@@ -59,6 +61,9 @@ export function parseCommercialQuery(query: Record<string, string | undefined>):
   if (query.to && (to == null || Number.isNaN(to.getTime()))) {
     throw new CommercialFilterError("to must be an ISO datetime.");
   }
+  if (query.sort && query.sort !== "id") {
+    throw new CommercialFilterError("sort must be id.");
+  }
   return {
     game: query.game,
     set: query.set,
@@ -72,6 +77,28 @@ export function parseCommercialQuery(query: Record<string, string | undefined>):
     cursor: query.cursor,
     limit,
     includeMembership: query.include_membership === "true",
+    sort: "id",
+  };
+}
+
+export function pageEnvelope<T>(input: {
+  data: T[];
+  nextCursor: string | null;
+  limit: number;
+  requestId: string;
+}) {
+  return {
+    data: input.data,
+    next_cursor: input.nextCursor,
+    has_more: Boolean(input.nextCursor),
+    limit: input.limit,
+    request_id: input.requestId,
+  };
+}
+
+export function commercialCacheHeaders(): Record<string, string> {
+  return {
+    "cache-control": "private, no-store",
   };
 }
 

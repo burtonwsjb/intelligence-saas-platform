@@ -61,6 +61,7 @@ TypeScript, pnpm/Turborepo, Next.js, Hono, PostgreSQL/Neon, Drizzle, Better Auth
 - [Phase 27](docs/PHASE_27.md)
 - [Phase 28](docs/PHASE_28.md)
 - [Phase 29](docs/PHASE_29.md)
+- [Phase 30](docs/PHASE_30.md)
 - [Environments](docs/environments.md)
 - [Staging runbook](docs/staging-runbook.md)
 - [CI](docs/CI.md)

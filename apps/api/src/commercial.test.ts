@@ -143,6 +143,7 @@ describe("commercial API and webhooks", () => {
     const auth = { authorization: `Bearer ${key}` };
     const openapi = await app.request("/v1/openapi.json");
     expect(openapi.status).toBe(200);
+    expect(openapi.headers.get("cache-control")).toBe("private, no-store");
     await expect(openapi.json()).resolves.toMatchObject({ openapi: "3.1.0" });
     expect(commercialOpenApi().paths["/v1/printings/{id}/opportunity"]).toBeTruthy();
 
