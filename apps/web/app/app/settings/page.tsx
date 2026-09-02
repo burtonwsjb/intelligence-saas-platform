@@ -6,6 +6,7 @@ import {
   NOTIFICATION_CATEGORIES,
   NOTIFICATION_CHANNELS,
   REQUIRED_NOTIFICATION_CATEGORIES,
+  defaultOptedIn,
   getCrmOrganizationProfile,
   getCrmUserProfile,
   listNotificationPreferences,
@@ -104,7 +105,7 @@ export default async function SettingsPage({
                         type="checkbox"
                         name="optedIn"
                         aria-label={preferenceControlLabel(category, channel)}
-                        defaultChecked={row?.optedIn ?? false}
+                        defaultChecked={row?.optedIn ?? defaultOptedIn(category, channel)}
                         disabled={required}
                       />
                       {required ? null : <button className="link-button" type="submit">Save</button>}

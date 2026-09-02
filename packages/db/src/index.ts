@@ -499,6 +499,7 @@ export {
   NOTIFICATION_CHANNELS,
   REQUIRED_NOTIFICATION_CATEGORIES,
   USAGE_WARNING_THRESHOLDS,
+  defaultOptedIn,
   InvalidAlertRuleError,
   NotificationPreferenceDeniedError,
   countUnreadNotifications,
@@ -576,6 +577,7 @@ export {
   INVITABLE_ROLES,
   assertCanManageTeam,
   assertNotLastOwner,
+  canAssignOwnerRole,
   isInvitableRole,
 } from "./dashboard/team.js";
 export {

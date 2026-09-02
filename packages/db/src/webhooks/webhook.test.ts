@@ -20,6 +20,10 @@ describe("webhook SSRF defense", () => {
     expect(() => assertResolvedAddressesPublic(["127.0.0.1"])).toThrow(WebhookUrlRejectedError);
     expect(() => assertResolvedAddressesPublic(["::1"])).toThrow(WebhookUrlRejectedError);
     expect(() => assertPublicWebhookUrl("https://example.com/hooks/isp")).not.toThrow();
+    expect(() =>
+      assertPublicWebhookUrl("http://example.com/hooks/isp", { ISP_ENV: "staging" }),
+    ).toThrow(WebhookUrlRejectedError);
+    expect(() => assertPublicWebhookUrl("http://example.com/hooks/isp", { ISP_ENV: "local" })).not.toThrow();
   });
 
   it("rejects alternate IP forms, short dotted names, credentials, length, and metadata hosts", () => {

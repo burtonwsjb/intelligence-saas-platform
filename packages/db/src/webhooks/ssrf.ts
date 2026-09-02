@@ -1,3 +1,5 @@
+import { isHostedRuntime } from "@isp/shared";
+
 export class WebhookUrlRejectedError extends Error {
   constructor(message = "Webhook URL is not allowed.") {
     super(message);
@@ -131,7 +133,7 @@ export function isBlockedIPv6(host: string): boolean {
   return false;
 }
 
-export function parseWebhookUrl(raw: string): URL {
+export function parseWebhookUrl(raw: string, env: NodeJS.ProcessEnv = process.env): URL {
   if (raw.length > MAX_WEBHOOK_URL_CHARS) {
     throw new WebhookUrlRejectedError("Webhook URL is too long.");
   }
@@ -143,6 +145,9 @@ export function parseWebhookUrl(raw: string): URL {
   }
   if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
     throw new WebhookUrlRejectedError("Webhook URL must use http or https.");
+  }
+  if (parsed.protocol === "http:" && isHostedRuntime(env)) {
+    throw new WebhookUrlRejectedError("Webhook URL must use https.");
   }
   if (parsed.username || parsed.password) {
     throw new WebhookUrlRejectedError("Webhook URL must not include credentials.");
@@ -160,8 +165,8 @@ export function parseWebhookUrl(raw: string): URL {
   return parsed;
 }
 
-export function assertPublicWebhookUrl(raw: string): URL {
-  return parseWebhookUrl(raw);
+export function assertPublicWebhookUrl(raw: string, env: NodeJS.ProcessEnv = process.env): URL {
+  return parseWebhookUrl(raw, env);
 }
 
 export function assertResolvedAddressesPublic(addresses: string[]): void {

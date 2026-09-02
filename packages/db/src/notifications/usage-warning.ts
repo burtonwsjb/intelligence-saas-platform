@@ -5,6 +5,7 @@ import { getMonthUsage, monthStartUtc } from "../repos/usage.js";
 import { usageWarning } from "../schema/notification.js";
 import { USAGE_WARNING_THRESHOLDS } from "./catalog.js";
 import { createInAppNotification } from "./inbox.js";
+import { isChannelOptedIn } from "./preferences.js";
 
 export async function listUsageWarnings(scoped: Database, organizationId: string) {
   await assertTenantContext(scoped);
@@ -50,6 +51,18 @@ export async function evaluateUsageWarnings(
       .returning({ thresholdPct: usageWarning.thresholdPct });
     if (inserted.length === 0) {
       continue;
+    }
+    if (input.userId) {
+      const optedIn = await isChannelOptedIn(scoped, {
+        organizationId: input.organizationId,
+        userId: input.userId,
+        category: "usage",
+        channel: "in_app",
+      });
+      if (!optedIn) {
+        created.push(threshold);
+        continue;
+      }
     }
     const notification = await createInAppNotification(scoped, {
       organizationId: input.organizationId,

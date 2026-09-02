@@ -24,3 +24,7 @@ export function assertNotLastOwner(input: { targetRole: string; ownerCount: numb
     throw new Error("The last owner cannot be removed.");
   }
 }
+
+export function canAssignOwnerRole(actorRole: string | null | undefined): boolean {
+  return actorRole === "owner";
+}

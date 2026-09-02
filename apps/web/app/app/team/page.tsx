@@ -16,7 +16,8 @@ export default async function TeamPage({
 }: {
   searchParams: Promise<{ error?: string }>;
 }) {
-  const { organizationId, access } = await loadAppAccess();
+  const { organizationId, role, access } = await loadAppAccess();
+  const canAssignOwner = role === "owner";
   const query = await searchParams;
   const members = await getDb()
     .select({
@@ -52,7 +53,7 @@ export default async function TeamPage({
                 <form className="inline-form" action={changeRoleAction}>
                   <input type="hidden" name="memberId" value={row.id} />
                   <select name="role" defaultValue={row.role}>
-                    <option value="owner">owner</option>
+                    {canAssignOwner ? <option value="owner">owner</option> : null}
                     {INVITABLE_ROLES.map((role) => (
                       <option key={role} value={role}>
                         {role}

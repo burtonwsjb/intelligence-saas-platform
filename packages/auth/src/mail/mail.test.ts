@@ -22,6 +22,9 @@ describe("email templates and providers", () => {
     const digest = renderEmailTemplate("weekly_intelligence_digest", { summary: "Hello" });
     expect(digest.requiresMarketingConsent).toBe(true);
     expect(digest.text).toMatch(/Unsubscribe/);
+    expect(digest.text).toContain("/app/settings");
+    expect(digest.html).toContain("/app/settings");
+    expect(digest.html).not.toContain("/settings/notifications");
   });
 
   it("uses a local/fixture provider without RESEND_API_KEY and fails closed in production", async () => {

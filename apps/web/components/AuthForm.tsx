@@ -11,10 +11,12 @@ export function AuthForm({
   mode,
   inviteToken,
   inviteOnly,
+  nextPath = "/app",
 }: {
   mode: Mode;
   inviteToken?: string;
   inviteOnly?: boolean;
+  nextPath?: string;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -56,13 +58,13 @@ export function AuthForm({
       const result = await authClient.signIn.email({
         email,
         password,
-        callbackURL: "/app",
+        callbackURL: nextPath,
       });
       if (result.error) {
         setError(publicAuthErrorMessage("login"));
         return;
       }
-      window.location.href = "/app";
+      window.location.href = nextPath;
     } catch {
       setError("Something went wrong. Try again.");
     } finally {

@@ -36,10 +36,10 @@ function layout(input: { title: string; htmlBody: string; textBody: string; unsu
   html: string;
   text: string;
 } {
-  const unsubHtml = input.unsubscribe
-    ? `<p><a href="https://app.local/settings/notifications">Unsubscribe from marketing</a></p>`
-    : "";
-  const unsubText = input.unsubscribe ? "\nUnsubscribe: https://app.local/settings/notifications\n" : "";
+  const origin = (process.env.APP_URL ?? "").replace(/\/$/, "");
+  const unsubHref = `${origin}/app/settings`;
+  const unsubHtml = input.unsubscribe ? `<p><a href="${unsubHref}">Unsubscribe from marketing</a></p>` : "";
+  const unsubText = input.unsubscribe ? `\nUnsubscribe: ${unsubHref}\n` : "";
   return {
     html: `<!doctype html><html><body><h1>${escapeHtml(input.title)}</h1>${input.htmlBody}${unsubHtml}</body></html>`,
     text: `${input.title}\n\n${input.textBody}${unsubText}`,

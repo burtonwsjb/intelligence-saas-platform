@@ -5,6 +5,7 @@ export {
   NOTIFICATION_CHANNELS,
   REQUIRED_NOTIFICATION_CATEGORIES,
   USAGE_WARNING_THRESHOLDS,
+  defaultOptedIn,
 } from "./notifications/catalog.js";
 export {
   NotificationPreferenceDeniedError,

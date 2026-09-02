@@ -6,6 +6,7 @@ import { requireAppActor } from "@/lib/app-access";
 import {
   INVITABLE_ROLES,
   assertNotLastOwner,
+  canAssignOwnerRole,
   invitation,
   isInvitableRole,
   member,
@@ -65,18 +66,25 @@ export async function inviteMemberAction(formData: FormData) {
 }
 
 export async function changeRoleAction(formData: FormData) {
-  await requireTeamManager();
+  const { organizationId, role: actorRole } = await requireTeamManager();
   const memberId = String(formData.get("memberId") ?? "");
   const role = String(formData.get("role") ?? "");
   if (![...INVITABLE_ROLES, "owner"].includes(role)) {
     redirect("/app/team?error=invalid");
   }
+  if (role === "owner" && !canAssignOwnerRole(actorRole)) {
+    redirect("/app/team?error=forbidden");
+  }
   const db = getDb();
-  const [existing] = await db.select().from(member).where(eq(member.id, memberId)).limit(1);
+  const [existing] = await db
+    .select()
+    .from(member)
+    .where(and(eq(member.id, memberId), eq(member.organizationId, organizationId)))
+    .limit(1);
   if (!existing) {
     redirect("/app/team?error=missing");
   }
-  const owners = await db.select().from(member).where(eq(member.organizationId, existing.organizationId));
+  const owners = await db.select().from(member).where(eq(member.organizationId, organizationId));
   const ownerCount = owners.filter((row) => row.role === "owner").length;
   try {
     if (existing.role === "owner" && role !== "owner") {
@@ -85,19 +93,26 @@ export async function changeRoleAction(formData: FormData) {
   } catch {
     redirect("/app/team?error=last-owner");
   }
-  await db.update(member).set({ role }).where(eq(member.id, memberId));
+  await db
+    .update(member)
+    .set({ role })
+    .where(and(eq(member.id, existing.id), eq(member.organizationId, organizationId)));
   redirect("/app/team");
 }
 
 export async function removeMemberAction(formData: FormData) {
-  await requireTeamManager();
+  const { organizationId } = await requireTeamManager();
   const memberId = String(formData.get("memberId") ?? "");
   const db = getDb();
-  const [existing] = await db.select().from(member).where(eq(member.id, memberId)).limit(1);
+  const [existing] = await db
+    .select()
+    .from(member)
+    .where(and(eq(member.id, memberId), eq(member.organizationId, organizationId)))
+    .limit(1);
   if (!existing) {
     redirect("/app/team");
   }
-  const owners = await db.select().from(member).where(eq(member.organizationId, existing.organizationId));
+  const owners = await db.select().from(member).where(eq(member.organizationId, organizationId));
   try {
     assertNotLastOwner({
       targetRole: existing.role,
@@ -107,13 +122,17 @@ export async function removeMemberAction(formData: FormData) {
   } catch {
     redirect("/app/team?error=last-owner");
   }
-  await db.delete(member).where(eq(member.id, memberId));
+  await db
+    .delete(member)
+    .where(and(eq(member.id, existing.id), eq(member.organizationId, organizationId)));
   redirect("/app/team");
 }
 
 export async function cancelInvitationAction(formData: FormData) {
-  await requireTeamManager();
+  const { organizationId } = await requireTeamManager();
   const invitationId = String(formData.get("invitationId") ?? "");
-  await getDb().delete(invitation).where(eq(invitation.id, invitationId));
+  await getDb()
+    .delete(invitation)
+    .where(and(eq(invitation.id, invitationId), eq(invitation.organizationId, organizationId)));
   redirect("/app/team");
 }

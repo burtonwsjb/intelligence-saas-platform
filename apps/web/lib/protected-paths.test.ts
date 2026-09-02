@@ -26,6 +26,7 @@ describe("proxy", () => {
     expect(response.status).toBeGreaterThanOrEqual(300);
     expect(response.status).toBeLessThan(400);
     expect(response.headers.get("location")).toContain("/login");
+    expect(response.headers.get("location")).toContain("next=%2Fapp");
   });
 
   it("lets public routes through without a session cookie", () => {

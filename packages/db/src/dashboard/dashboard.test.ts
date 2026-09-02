@@ -3,7 +3,7 @@ import { customerPredictionsEnabled } from "./flags.js";
 import { formatPrintingIdentity, publishedPredictionsForCustomer } from "./queries.js";
 import { isPredictionsNavVisible, visibleAppNav } from "./nav.js";
 import { sparklinePath } from "./sparkline.js";
-import { assertCanManageTeam, assertNotLastOwner, isInvitableRole } from "./team.js";
+import { assertCanManageTeam, assertNotLastOwner, canAssignOwnerRole, isInvitableRole } from "./team.js";
 
 describe("printing identity", () => {
   it("never omits language or variant", () => {
@@ -101,6 +101,8 @@ describe("team RBAC helpers", () => {
     expect(() => assertNotLastOwner({ targetRole: "owner", ownerCount: 1, removing: true })).toThrow(/last owner/);
     expect(isInvitableRole("viewer")).toBe(true);
     expect(isInvitableRole("owner")).toBe(false);
+    expect(canAssignOwnerRole("admin")).toBe(false);
+    expect(canAssignOwnerRole("owner")).toBe(true);
   });
 });
 
