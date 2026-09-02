@@ -363,6 +363,13 @@ export {
   SCORE_UNCALIBRATED,
 } from "./scoring/weights.js";
 export { creatorConsensus, recommend, scoreFromInputs } from "./scoring/model.js";
+export {
+  assertMissingWeightRedistribution,
+  assertPolicyWeightsSumToOne,
+  assertScoreBounds,
+  compareScoreVersions,
+} from "./scoring/invariants.js";
+export { emptyScoreCalibrationReport, historicalOutcomeInterface } from "./scoring/calibration.js";
 export { gatherScoreInputs } from "./scoring/gather.js";
 export {
   getLatestScoreSnapshot,
@@ -411,6 +418,11 @@ export {
   rootMeanSquare,
 } from "./prediction/metrics.js";
 export { walkForwardBacktest } from "./prediction/backtest.js";
+export {
+  assertPredictionsRemainShadow,
+  comparePredictionModelRuns,
+  mapeForPricePairs,
+} from "./prediction/compare.js";
 export {
   WEBHOOK_EVENT_TYPES,
   WEBHOOK_RETRY_VERSION,
