@@ -8,8 +8,13 @@ import { readSecretFlash } from "@/lib/secret-flash";
 
 export const dynamic = "force-dynamic";
 
-export default async function ApiKeysPage() {
+export default async function ApiKeysPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
   const { session, organizationId } = await requirePageOrganization();
+  const query = await searchParams;
   const created = await readSecretFlash("api_key");
   const [membership] = await getDb()
     .select({ role: member.role })
@@ -30,6 +35,9 @@ export default async function ApiKeysPage() {
         Tenant-bound test credentials. The full secret is shown once on create or rotate. Prefix, last used, and
         expiration remain visible.
       </p>
+      {query.error === "quota" ? (
+        <p className="form-error">API key limit reached for the current plan.</p>
+      ) : null}
       {created ? (
         <p>
           Secret (copy now): <code>{created}</code>

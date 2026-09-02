@@ -38,7 +38,11 @@ export default async function TeamPage({
     <>
       <h1>Team</h1>
       <p className="muted">Organization membership uses Phase 03 RBAC. This is not the platform admin surface.</p>
-      {query.error ? <p className="form-error">Team change was rejected.</p> : null}
+      {query.error === "quota" ? (
+        <p className="form-error">Team member limit reached for the current plan.</p>
+      ) : query.error ? (
+        <p className="form-error">Team change was rejected.</p>
+      ) : null}
       <ul>
         {members.map((row) => (
           <li key={row.id}>

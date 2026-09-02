@@ -10,6 +10,7 @@ import {
   hasFeature,
   resolveEntitlement,
 } from "./entitlements.js";
+import { occupiedTeamSeats } from "./seats.js";
 
 const catalog = [
   {
@@ -100,6 +101,29 @@ describe("entitlement resolver", () => {
           key: "api_keys",
         }),
         1,
+      ),
+    ).toThrow(QuotaExceededError);
+  });
+
+  it("counts occupied team seats as members plus pending invites", () => {
+    expect(occupiedTeamSeats(3, 1)).toBe(4);
+    expect(() =>
+      assertWithinLimit(
+        resolveEntitlement({
+          planKey: "free",
+          status: "none",
+          catalog: [
+            {
+              planKey: "free",
+              entitlementKey: "team_members",
+              valueKind: "limit",
+              enabled: true,
+              limitValue: 3,
+            },
+          ],
+          key: "team_members",
+        }),
+        occupiedTeamSeats(3, 0),
       ),
     ).toThrow(QuotaExceededError);
   });

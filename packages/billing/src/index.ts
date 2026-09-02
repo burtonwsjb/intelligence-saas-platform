@@ -56,6 +56,11 @@ export {
   constructStripeEvent,
   processStripeWebhook,
 } from "./webhooks.js";
+export {
+  billingPatchFromStripeEvent,
+  shouldApplyStripeEvent,
+  stripeCreatedFromAuditMetadata,
+} from "./stripe-order.js";
 export { createCheckoutSession, createPortalSession } from "./checkout.js";
 export { createBillingCheckoutAdapter, openPortalWithAdapter, startCheckoutWithAdapter } from "./adapter.js";
 export { listBillingHistory } from "./history.js";
@@ -74,3 +79,4 @@ export {
   evaluateQuota,
   type MeterKey,
 } from "./quota.js";
+export { occupiedTeamSeats } from "./seats.js";

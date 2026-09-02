@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { auditEvent } from "../schema/audit.js";
 import { assertTenantContext } from "../rls.js";
 import type { Database } from "../client.js";
@@ -36,4 +36,18 @@ export async function listAuditEvents(
     .select()
     .from(auditEvent)
     .where(and(eq(auditEvent.organizationId, organizationId)));
+}
+
+export async function getLatestAuditEvent(
+  scoped: Database,
+  input: { organizationId: string; action: string },
+) {
+  await assertTenantContext(scoped);
+  const [row] = await scoped
+    .select()
+    .from(auditEvent)
+    .where(and(eq(auditEvent.organizationId, input.organizationId), eq(auditEvent.action, input.action)))
+    .orderBy(desc(auditEvent.createdAt))
+    .limit(1);
+  return row ?? null;
 }

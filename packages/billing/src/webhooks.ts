@@ -2,6 +2,8 @@ import Stripe from "stripe";
 import {
   claimStripeEvent,
   findOrganizationIdByStripeCustomer,
+  getLatestAuditEvent,
+  getTenantBilling,
   insertAuditEvent,
   upsertTenantBilling,
   withSystemContext,
@@ -9,6 +11,11 @@ import {
 } from "@isp/db";
 import { planKeyFromPriceId, requireStripeWebhookSecret } from "./stripe-env.js";
 import { normalizeSubscriptionStatus } from "./subscription.js";
+import {
+  billingPatchFromStripeEvent,
+  shouldApplyStripeEvent,
+  stripeCreatedFromAuditMetadata,
+} from "./stripe-order.js";
 
 export class InvalidStripeSignatureError extends Error {
   constructor() {
@@ -77,7 +84,7 @@ export async function processStripeWebhook(
     signature: string | null;
     env?: NodeJS.ProcessEnv;
   },
-): Promise<{ duplicate: boolean; ignored: boolean }> {
+): Promise<{ duplicate: boolean; ignored: boolean; stale: boolean }> {
   const secret = requireStripeWebhookSecret(input.env);
   const event = constructStripeEvent(input.payload, input.signature, secret);
   const customerId = customerIdFromEvent(event);
@@ -96,10 +103,10 @@ export async function processStripeWebhook(
     stripeCustomerId: customerId,
   });
   if (!claimed) {
-    return { duplicate: true, ignored: false };
+    return { duplicate: true, ignored: false, stale: false };
   }
   if (!HANDLED.has(event.type) || !organizationId || !customerId) {
-    return { duplicate: false, ignored: true };
+    return { duplicate: false, ignored: true, stale: false };
   }
 
   const subscription = subscriptionFromEvent(event);
@@ -117,7 +124,34 @@ export async function processStripeWebhook(
   const planKey =
     event.type === "customer.subscription.deleted" ? "free" : planKeyFromPriceId(priceId, input.env);
 
+  let stale = false;
   await withSystemContext(db, { organizationId }, async (scoped) => {
+    const [existing, lastChange] = await Promise.all([
+      getTenantBilling(scoped, organizationId),
+      getLatestAuditEvent(scoped, { organizationId, action: "subscription.changed" }),
+    ]);
+    if (
+      !shouldApplyStripeEvent({
+        lastAppliedCreated: stripeCreatedFromAuditMetadata(lastChange?.metadata),
+        incomingCreated: event.created,
+      })
+    ) {
+      stale = true;
+      return;
+    }
+    const patch = billingPatchFromStripeEvent({
+      eventType: event.type,
+      status,
+      planKey,
+      env: input.env,
+      existing: {
+        pastDueSince: existing?.pastDueSince ?? null,
+        graceEndsAt: existing?.graceEndsAt ?? null,
+        canceledAt: existing?.canceledAt ?? null,
+        trialStartedAt: existing?.trialStartedAt ?? null,
+        trialEndsAt: existing?.trialEndsAt ?? null,
+      },
+    });
     await upsertTenantBilling(scoped, {
       organizationId,
       stripeCustomerId: customerId,
@@ -127,12 +161,17 @@ export async function processStripeWebhook(
           ? (invoice.parent as { subscription_details?: { subscription?: string } }).subscription_details
               ?.subscription ?? null
           : null),
-      planKey: status === "canceled" ? "free" : planKey,
-      status: event.type === "customer.subscription.deleted" ? "canceled" : status,
+      planKey: patch.planKey,
+      status: patch.status,
       currentPeriodEnd: subscription?.items.data[0]?.current_period_end
         ? new Date(subscription.items.data[0].current_period_end * 1000)
         : null,
       cancelAtPeriodEnd: subscription?.cancel_at_period_end ?? false,
+      trialStartedAt: patch.trialStartedAt,
+      trialEndsAt: patch.trialEndsAt,
+      canceledAt: patch.canceledAt,
+      pastDueSince: patch.pastDueSince,
+      graceEndsAt: patch.graceEndsAt,
     });
     await insertAuditEvent(scoped, {
       id: crypto.randomUUID(),
@@ -140,8 +179,8 @@ export async function processStripeWebhook(
       action: "subscription.changed",
       targetType: "subscription",
       targetId: subscription?.id ?? event.id,
-      metadata: { type: event.type, status, planKey },
+      metadata: { type: event.type, status: patch.status, planKey: patch.planKey, stripe_created: event.created },
     });
   });
-  return { duplicate: false, ignored: false };
+  return { duplicate: false, ignored: stale, stale };
 }

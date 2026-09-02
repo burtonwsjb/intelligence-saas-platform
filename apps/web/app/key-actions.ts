@@ -3,7 +3,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getAuth, getDb } from "@/lib/auth";
-import { member, withOrganizationContext } from "@isp/db";
+import { countActiveApiKeys, member, withOrganizationContext } from "@isp/db";
 import {
   createTenantApiKey,
   requireApiKeyPepper,
@@ -13,6 +13,7 @@ import {
   revokeTenantApiKey,
   rotateTenantApiKey,
 } from "@isp/auth";
+import { QuotaExceededError, assertTenantWithinLimit } from "@isp/billing";
 import { and, eq } from "drizzle-orm";
 import { setSecretFlash } from "@/lib/secret-flash";
 
@@ -40,20 +41,35 @@ export async function createApiKeyAction(formData: FormData) {
   const scopes = formData.getAll("scopes");
   const expiresRaw = String(formData.get("expiresAt") ?? "").trim();
   const expiresAt = expiresRaw ? new Date(expiresRaw) : null;
-  const created = await withOrganizationContext(
-    getDb(),
-    { organizationId, userId: session.user.id },
-    (scoped) =>
-      createTenantApiKey(scoped, {
-        organizationId,
-        actorUserId: session.user.id,
-        actorRole: role,
-        name,
-        scopes,
-        pepper: requireApiKeyPepper(),
-        expiresAt: expiresAt && Number.isFinite(expiresAt.getTime()) ? expiresAt : null,
-      }),
-  );
+  let created: { fullKey: string };
+  try {
+    created = await withOrganizationContext(
+      getDb(),
+      { organizationId, userId: session.user.id },
+      async (scoped) => {
+        await assertTenantWithinLimit(
+          scoped,
+          organizationId,
+          "api_keys",
+          await countActiveApiKeys(scoped, organizationId),
+        );
+        return createTenantApiKey(scoped, {
+          organizationId,
+          actorUserId: session.user.id,
+          actorRole: role,
+          name,
+          scopes,
+          pepper: requireApiKeyPepper(),
+          expiresAt: expiresAt && Number.isFinite(expiresAt.getTime()) ? expiresAt : null,
+        });
+      },
+    );
+  } catch (error) {
+    if (error instanceof QuotaExceededError) {
+      redirect("/app/keys?error=quota");
+    }
+    throw error;
+  }
   await setSecretFlash("api_key", created.fullKey);
   redirect("/app/keys");
 }

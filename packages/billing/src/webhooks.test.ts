@@ -96,6 +96,6 @@ describe("stripe webhooks", () => {
         signature: signed(payload),
         env: { STRIPE_WEBHOOK_SECRET: secret },
       }),
-    ).resolves.toEqual({ duplicate: true, ignored: false });
+    ).resolves.toEqual({ duplicate: true, ignored: false, stale: false });
   });
 });

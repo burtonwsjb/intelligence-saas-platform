@@ -52,7 +52,7 @@ export {
   type OrganizationContext,
   type SystemContext,
 } from "./rls.js";
-export { insertAuditEvent, listAuditEvents } from "./repos/audit.js";
+export { getLatestAuditEvent, insertAuditEvent, listAuditEvents } from "./repos/audit.js";
 export { getTenant } from "./repos/tenant.js";
 export {
   deleteTenantResource,

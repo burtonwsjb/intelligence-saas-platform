@@ -9,8 +9,10 @@ import {
   invitation,
   isInvitableRole,
   member,
+  withOrganizationContext,
 } from "@isp/db";
-import { eq } from "drizzle-orm";
+import { QuotaExceededError, assertTenantWithinLimit, occupiedTeamSeats } from "@isp/billing";
+import { and, eq, sql } from "drizzle-orm";
 
 async function requireTeamManager() {
   return requireAppActor("canManageMembers");
@@ -22,6 +24,33 @@ export async function inviteMemberAction(formData: FormData) {
   const role = String(formData.get("role") ?? "viewer");
   if (!email.includes("@") || !isInvitableRole(role)) {
     redirect("/app/team?error=invalid");
+  }
+  try {
+    await withOrganizationContext(
+      getDb(),
+      { organizationId, userId: session.user.id },
+      async (scoped) => {
+        const [memberRow] = await scoped
+          .select({ count: sql<number>`count(*)::int` })
+          .from(member)
+          .where(eq(member.organizationId, organizationId));
+        const [inviteRow] = await scoped
+          .select({ count: sql<number>`count(*)::int` })
+          .from(invitation)
+          .where(and(eq(invitation.organizationId, organizationId), eq(invitation.status, "pending")));
+        await assertTenantWithinLimit(
+          scoped,
+          organizationId,
+          "team_members",
+          occupiedTeamSeats(memberRow?.count ?? 0, inviteRow?.count ?? 0),
+        );
+      },
+    );
+  } catch (error) {
+    if (error instanceof QuotaExceededError) {
+      redirect("/app/team?error=quota");
+    }
+    throw error;
   }
   await getDb().insert(invitation).values({
     id: crypto.randomUUID(),
