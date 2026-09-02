@@ -1,5 +1,6 @@
 import { IdentityLine } from "@/components/IdentityLine";
 import { Sparkline } from "@/components/Sparkline";
+import { TechnicalDetails, explanationText } from "@/components/TechnicalDetails";
 import type { getPrintingWorkspace } from "@isp/db";
 import { formatMoney } from "@isp/shared";
 
@@ -99,11 +100,12 @@ export function PrintingWorkspaceView({
             <h3>Why</h3>
             <ul>
               {explanations.map((item, index) => (
-                <li key={index}>{typeof item === "string" ? item : JSON.stringify(item)}</li>
+                <li key={index}>{explanationText(item)}</li>
               ))}
             </ul>
-            <h3>Components</h3>
-            <pre className="json-block">{JSON.stringify(components, null, 2)}</pre>
+            <TechnicalDetails title="Technical score components">
+              <pre className="json-block">{JSON.stringify(components, null, 2)}</pre>
+            </TechnicalDetails>
           </>
         ) : (
           <p className="muted">No score snapshot yet.</p>
@@ -117,7 +119,9 @@ export function PrintingWorkspaceView({
               Sample size {workspace.features.sampleSize} · quality {workspace.features.dataQuality} · as of{" "}
               {workspace.features.asOf.toISOString()}
             </p>
-            <pre className="json-block">{JSON.stringify(features, null, 2)}</pre>
+            <TechnicalDetails title="Technical market features">
+              <pre className="json-block">{JSON.stringify(features, null, 2)}</pre>
+            </TechnicalDetails>
           </>
         ) : (
           <p className="muted">No feature snapshot yet.</p>

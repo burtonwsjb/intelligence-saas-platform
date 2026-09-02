@@ -87,6 +87,23 @@ a {
   font-size: 0.9rem;
 }
 
+.table-wrap {
+  overflow-x: auto;
+}
+
+.technical-details {
+  margin: 0.75rem 0;
+}
+
+.technical-details summary {
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 2px solid #111;
+  outline-offset: 2px;
+}
+
 .data-table th,
 .data-table td {
   text-align: left;
@@ -181,8 +198,10 @@ a {
 }
 
 .auth-form button,
-.link-button {
+.link-button,
+.verify-email-actions button {
   cursor: pointer;
+  min-height: 2.75rem;
 }
 
 .link-button {
