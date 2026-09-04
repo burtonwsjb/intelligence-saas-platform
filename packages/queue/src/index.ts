@@ -33,10 +33,12 @@ export {
   type JobEnvelope,
 } from "./envelope.js";
 export {
+  assertBullmqConnection,
   assertRedisAvailable,
   closeRedisConnection,
   createRedisConnection,
   createRedisConnectionOptions,
+  isIoredisClient,
   resolveRedisClientRole,
   waitForRedisReady,
   type RedisClientRole,

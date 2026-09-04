@@ -35,6 +35,7 @@ import { DEFAULT_JOB_ATTEMPTS } from "./names.js";
 import { createIngestQueue, publishOutboxJob } from "./publisher.js";
 import { dispatchPendingOutbox } from "./dispatcher.js";
 import { markJobPermanentlyFailed, processNormalizeJob } from "./process.js";
+import { readQueueJobCounts } from "./counts.js";
 import { createRedisConnection, waitForRedisReady } from "./redis.js";
 import { getIngestJobStatus } from "./status.js";
 
@@ -184,11 +185,20 @@ describe("Redis + Postgres ingest queue", () => {
       expect(metricsClient.status).toBe("ready");
       expect(workerClient.status).toBe("ready");
       expect(await metricsClient.ping()).toBe("PONG");
+      expect(metricsClient.options.host).toBe(new URL(env.REDIS_URL ?? process.env.REDIS_URL ?? "").hostname);
+      expect(workerClient.options.host).toBe(metricsClient.options.host);
+      expect(workerClient.duplicate).toBeTypeOf("function");
+      const workerDup = workerClient.duplicate();
+      try {
+        expect(workerDup.options.host).toBe(workerClient.options.host);
+      } finally {
+        workerDup.disconnect();
+      }
       await queue.waitUntilReady();
       const counts = await queue.getJobCounts();
-      expect(typeof (counts.waiting ?? counts.wait ?? 0)).toBe("number");
-      expect(typeof (counts.active ?? 0)).toBe("number");
-      expect(typeof (counts.failed ?? 0)).toBe("number");
+      const normalized = readQueueJobCounts(counts);
+      expect(normalized.queueDepth).toBeGreaterThanOrEqual(0);
+      expect(normalized.failedJobs).toBeGreaterThanOrEqual(0);
       await queue.close();
       const recovered = createIngestQueue(env);
       try {

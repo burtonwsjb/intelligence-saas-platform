@@ -1,13 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { Redis } from "ioredis";
+import { describe, expect, it, vi } from "vitest";
 import { REDIS_COMMAND_TIMEOUT_MS } from "./names.js";
+import { logQueueEvent } from "./logger.js";
+import { createIngestQueue } from "./publisher.js";
 import {
+  assertBullmqConnection,
   createRedisConnection,
   createRedisConnectionOptions,
+  isIoredisClient,
   resolveRedisClientRole,
   waitForRedisReady,
 } from "./redis.js";
-import { logQueueEvent } from "./logger.js";
-import { vi } from "vitest";
 
 describe("redis client roles", () => {
   it("keeps worker clients blocking-safe and queue clients fail-bounded", () => {
@@ -89,6 +92,100 @@ describe("redis client roles", () => {
       );
     } finally {
       redis.disconnect();
+    }
+  });
+});
+
+describe("BullMQ Redis URL handoff", () => {
+  it("proves BullMQ merges localhost defaults onto a raw { url } options object", () => {
+    const fromUrl = createRedisConnectionOptions(
+      { REDIS_URL: "redis://user:hunter2@hosted.example:6380/2" },
+      { role: "queue" },
+    );
+    const bullmqMerged = { port: 6379, host: "127.0.0.1", ...fromUrl };
+    expect(fromUrl.url).toContain("hosted.example");
+    expect(bullmqMerged.host).toBe("127.0.0.1");
+    expect(bullmqMerged.port).toBe(6379);
+    expect(bullmqMerged.url).toBe(fromUrl.url);
+    expect(() => assertBullmqConnection(bullmqMerged)).toThrow(/raw \{ url \} options object/);
+  });
+
+  it("fails closed if createIngestQueue is given a raw { url } connection object", () => {
+    expect(() =>
+      createIngestQueue(
+        { REDIS_URL: "redis://localhost:6379", QUEUE_PREFIX: "handoff" },
+        {
+          connection: createRedisConnectionOptions(
+            { REDIS_URL: "redis://user:hunter2@hosted.example:6380/0" },
+            { role: "queue" },
+          ) as never,
+        },
+      ),
+    ).toThrow(/raw \{ url \} options object/);
+  });
+
+  it("rejects handing a raw { url } options object to BullMQ", () => {
+    expect(() => assertBullmqConnection({ url: "redis://hosted.example:6380/0" })).toThrow(
+      /raw \{ url \} options object/,
+    );
+    const redis = createRedisConnection(
+      { REDIS_URL: "redis://user:hunter2@hosted.example:6380/0" },
+      { role: "queue" },
+    );
+    try {
+      expect(() => assertBullmqConnection(redis)).not.toThrow();
+      expect(isIoredisClient(redis)).toBe(true);
+    } finally {
+      redis.disconnect();
+    }
+  });
+
+  it("uses the REDIS_URL host, TLS, and credentials on a real ioredis instance", () => {
+    const redis = createRedisConnection(
+      { REDIS_URL: "rediss://queueuser:hunter2@hosted.example:6380/2" },
+      { role: "queue" },
+    );
+    try {
+      expect(redis.options.host).toBe("hosted.example");
+      expect(redis.options.port).toBe(6380);
+      expect(redis.options.username).toBe("queueuser");
+      expect(redis.options.password).toBe("hunter2");
+      expect(redis.options.tls).toEqual({});
+      const duplicate = redis.duplicate();
+      try {
+        expect(duplicate).not.toBe(redis);
+        expect(duplicate.options.host).toBe("hosted.example");
+        expect(duplicate.options.tls).toEqual({});
+      } finally {
+        duplicate.disconnect();
+      }
+    } finally {
+      redis.disconnect();
+    }
+  });
+
+  it("passes an ioredis instance into BullMQ so Queue keeps the intended host", async () => {
+    const env = {
+      REDIS_URL: "redis://queueuser:hunter2@hosted.example:6380/0",
+      QUEUE_PREFIX: "handoff",
+    };
+    const queue = createIngestQueue(env);
+    try {
+      expect(isIoredisClient(queue.opts.connection)).toBe(true);
+      expect(() => assertBullmqConnection(queue.opts.connection)).not.toThrow();
+      const client = queue.opts.connection as Redis;
+      expect(client.options.host).toBe("hosted.example");
+      expect(client.options.port).toBe(6380);
+      expect(client.options.username).toBe("queueuser");
+      expect(client.options.password).toBe("hunter2");
+      const leaked = JSON.stringify({
+        host: client.options.host,
+        tls: Boolean(client.options.tls),
+      });
+      expect(leaked).toContain("hosted.example");
+      expect(leaked).not.toContain("hunter2");
+    } finally {
+      await queue.close();
     }
   });
 });

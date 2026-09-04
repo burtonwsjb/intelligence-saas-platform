@@ -13,7 +13,7 @@ import {
   type Database,
 } from "@isp/db";
 import { QueueUnavailableError } from "./errors.js";
-import { createRedisConnectionOptions } from "./redis.js";
+import { assertBullmqConnection, closeRedisConnection, createRedisConnection } from "./redis.js";
 import { ingestQueueName } from "./names.js";
 import { defaultIngestJobOptions } from "./lifecycle.js";
 import { logQueueEvent, safeLoopErrorFields } from "./logger.js";
@@ -21,17 +21,34 @@ import type { JobEnvelope } from "./envelope.js";
 
 export type IngestQueue = Queue<JobEnvelope>;
 
+const ownedQueueConnections = new WeakMap<IngestQueue, Redis>();
+
 export function createIngestQueue(
   env: NodeJS.ProcessEnv = process.env,
   options?: { failFast?: boolean; connection?: Redis },
 ): IngestQueue {
-  return new Queue<JobEnvelope>(ingestQueueName(env), {
-    connection:
-      options?.connection ??
-      createRedisConnectionOptions(env, { ...options, role: options?.failFast ? "failFast" : "queue" }),
+  const owned = options?.connection
+    ? undefined
+    : createRedisConnection(env, { role: options?.failFast ? "failFast" : "queue" });
+  const connection = options?.connection ?? owned;
+  assertBullmqConnection(connection);
+  const queue = new Queue<JobEnvelope>(ingestQueueName(env), {
+    connection,
     skipVersionCheck: true,
     defaultJobOptions: defaultIngestJobOptions(),
   });
+  if (owned) {
+    ownedQueueConnections.set(queue, owned);
+    const close = queue.close.bind(queue);
+    queue.close = async () => {
+      try {
+        await close();
+      } finally {
+        await closeRedisConnection(owned);
+      }
+    };
+  }
+  return queue;
 }
 
 export async function publishOutboxJob(

@@ -45,6 +45,28 @@ export function createRedisConnectionOptions(
   };
 }
 
+export function isIoredisClient(value: unknown): value is Redis {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      "options" in value &&
+      "status" in value &&
+      typeof (value as Redis).duplicate === "function",
+  );
+}
+
+export function assertBullmqConnection(connection: unknown): asserts connection is Redis {
+  if (isIoredisClient(connection)) {
+    return;
+  }
+  if (connection && typeof connection === "object" && "url" in connection) {
+    throw new Error(
+      "BullMQ connection cannot be a raw { url } options object; pass new Redis(url, options).",
+    );
+  }
+  throw new Error("BullMQ connection must be an ioredis Redis instance.");
+}
+
 export function createRedisConnection(
   env: NodeJS.ProcessEnv = process.env,
   options?: { failFast?: boolean; role?: RedisClientRole },
