@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { MissingRedisUrlError } from "@isp/queue";
 import {
@@ -222,5 +225,25 @@ describe("worker operational loops", () => {
     expect(payload.status).toBe("shutting_down");
     expect(payload.worker).toBe("shutting_down");
     expect(JSON.stringify(payload)).not.toMatch(/postgresql:\/\//);
+  });
+});
+
+describe("startup redis transport probe", () => {
+  it("runs once at worker startup and is not part of the heartbeat loop", () => {
+    const source = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "worker.ts"), "utf8");
+    expect(source).toMatch(/void runRedisTransportProbe\(\{ env, queue \}\)/);
+    expect(source.match(/runRedisTransportProbe/g)?.length).toBe(2);
+    const startWorker = source.slice(source.indexOf("export function startWorker"));
+    const heartbeatLoop = startWorker.slice(
+      startWorker.indexOf("const schedule = setInterval"),
+      startWorker.indexOf("void runRedisTransportProbe"),
+    );
+    expect(heartbeatLoop).toContain("runWorkerHeartbeat(db, queue)");
+    expect(heartbeatLoop).not.toContain("runRedisTransportProbe");
+    const heartbeat = source.slice(
+      source.indexOf("export async function runWorkerHeartbeat"),
+      source.indexOf("export async function runOutboxSweep"),
+    );
+    expect(heartbeat).not.toContain("runRedisTransportProbe");
   });
 });

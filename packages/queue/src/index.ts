@@ -45,6 +45,21 @@ export {
   type RedisConnectionOptions,
 } from "./redis.js";
 export { classifyRedisError, isTransientRedisError, withDeadline } from "./recovery.js";
+export {
+  REDIS_PROBE_STAGE_TIMEOUT_MS,
+  REDIS_TRANSPORT_PROBE_EVENT,
+  REDIS_TRANSPORT_STAGES,
+  StagingRedisProbeError,
+  assertStagingRedisProbeAllowed,
+  classifyRedisTransportError,
+  formatRedisTransportProbeReport,
+  logRedisTransportProbe,
+  runRedisTransportProbe,
+  serializeRedisTransportStage,
+  type RedisTransportProbeReport,
+  type RedisTransportStage,
+  type RedisTransportStageResult,
+} from "./probe.js";
 export { readQueueJobCounts, type QueueJobCountInput } from "./counts.js";
 export {
   classifyJobFailure,

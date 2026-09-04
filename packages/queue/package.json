@@ -15,7 +15,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
-    "test:integration": "vitest run --config vitest.integration.config.ts"
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "staging-redis-probe": "tsx src/staging-redis-probe.ts"
   },
   "dependencies": {
     "@isp/db": "workspace:*",
@@ -28,6 +29,7 @@
     "@isp/config": "workspace:*",
     "@types/node": "^24.3.0",
     "eslint": "^9.32.0",
+    "tsx": "^4.20.3",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
   }

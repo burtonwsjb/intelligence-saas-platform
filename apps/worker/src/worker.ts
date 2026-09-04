@@ -20,12 +20,14 @@ import {
   dispatchPendingPlatformOutbox,
   ingestQueueName,
   logQueueEvent,
+  logRedisTransportProbe,
   markJobPermanentlyFailed,
   parseJobEnvelope,
   processNormalizeJob,
   readQueueJobCounts,
   requireRedisUrl,
   runGracefulStop,
+  runRedisTransportProbe,
   safeLoopErrorFields,
   withDeadline,
   type IngestQueue,
@@ -227,6 +229,16 @@ export function startWorker(options?: {
       }
     });
   }, WORKER_HEARTBEAT_INTERVAL_MS);
+
+  void runRedisTransportProbe({ env, queue })
+    .then(logRedisTransportProbe)
+    .catch((error) => {
+      logQueueEvent("error", "redis.transport_probe", {
+        stage: "connect",
+        status: "failed",
+        ...safeLoopErrorFields(error),
+      });
+    });
 
   void runWorkerHeartbeat(db, queue, { startup: true }).then((result) => {
     if (result.ok) {

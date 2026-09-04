@@ -36,6 +36,7 @@ import { createIngestQueue, publishOutboxJob } from "./publisher.js";
 import { dispatchPendingOutbox } from "./dispatcher.js";
 import { markJobPermanentlyFailed, processNormalizeJob } from "./process.js";
 import { readQueueJobCounts } from "./counts.js";
+import { runRedisTransportProbe } from "./probe.js";
 import { createRedisConnection, waitForRedisReady } from "./redis.js";
 import { getIngestJobStatus } from "./status.js";
 
@@ -214,6 +215,19 @@ describe("Redis + Postgres ingest queue", () => {
       metricsClient.disconnect();
       workerClient.disconnect();
     }
+  });
+
+  it("runs a read-only Redis transport probe through connect, ping, ready, and counts", async () => {
+    const report = await runRedisTransportProbe({ env, stageTimeoutMs: 8_000 });
+    expect(report.stages.map((stage) => [stage.stage, stage.status])).toEqual([
+      ["connect", "ok"],
+      ["ping", "ok"],
+      ["queue_ready", "ok"],
+      ["job_counts", "ok"],
+    ]);
+    expect(report.stages.every((stage) => stage.error_class === null)).toBe(true);
+    expect(JSON.stringify(report)).not.toMatch(/redis(?:s)?:\/\//);
+    expect(JSON.stringify(report)).not.toMatch(/password|token/i);
   });
 
   it("dispatches pending outbox and processes a valid tenant-bound job", async () => {
