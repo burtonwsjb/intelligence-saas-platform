@@ -12,9 +12,8 @@ import {
 import {
   JOB_TIMEOUT_MS,
   UnrecoverableJobError,
-  closeRedisConnection,
   createIngestQueue,
-  createRedisConnection,
+  createRedisConnectionOptions,
   defaultWorkerRuntimeOptions,
   dispatchPendingOutbox,
   dispatchPendingPlatformOutbox,
@@ -174,8 +173,7 @@ export function startWorker(options?: {
   const env = options?.env ?? process.env;
   const ownedDb = options?.db ? null : createDbConnection(requireWorkerDatabaseUrl(env));
   const db = options?.db ?? ownedDb?.db ?? createDbFromWorkerEnv(env);
-  const connection = createRedisConnection(env);
-  const queue = options?.queue ?? createIngestQueue(env, { connection });
+  const queue = options?.queue ?? createIngestQueue(env);
   const startedAt = new Date().toISOString();
   let status: WorkerRuntimeStatus = "starting";
   let lastHeartbeatAt: string | null = null;
@@ -200,7 +198,8 @@ export function startWorker(options?: {
       }
     },
     {
-      connection,
+      connection: createRedisConnectionOptions(env, { role: "worker" }),
+      skipVersionCheck: true,
       ...defaultWorkerRuntimeOptions(),
     },
   );
@@ -279,12 +278,6 @@ export function startWorker(options?: {
               if (!options?.queue) {
                 await queue.close();
               }
-            },
-          },
-          {
-            name: "redis",
-            run: async () => {
-              await closeRedisConnection(connection);
             },
           },
           {

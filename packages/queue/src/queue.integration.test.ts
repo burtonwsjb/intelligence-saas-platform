@@ -35,7 +35,7 @@ import { DEFAULT_JOB_ATTEMPTS } from "./names.js";
 import { createIngestQueue, publishOutboxJob } from "./publisher.js";
 import { dispatchPendingOutbox } from "./dispatcher.js";
 import { markJobPermanentlyFailed, processNormalizeJob } from "./process.js";
-import { createRedisConnection } from "./redis.js";
+import { createRedisConnection, waitForRedisReady } from "./redis.js";
 import { getIngestJobStatus } from "./status.js";
 
 const passwords = testRolePasswords();
@@ -171,6 +171,38 @@ describe("Redis + Postgres ingest queue", () => {
       expect(second.published).toBe(true);
     } finally {
       await queue.close();
+    }
+  });
+
+  it("uses a dedicated queue client that becomes ready and returns numeric job counts", async () => {
+    const metricsClient = createRedisConnection(env, { role: "queue" });
+    const workerClient = createRedisConnection(env, { role: "worker" });
+    const queue = createIngestQueue(env);
+    try {
+      await waitForRedisReady(metricsClient);
+      await waitForRedisReady(workerClient);
+      expect(metricsClient.status).toBe("ready");
+      expect(workerClient.status).toBe("ready");
+      expect(await metricsClient.ping()).toBe("PONG");
+      await queue.waitUntilReady();
+      const counts = await queue.getJobCounts();
+      expect(typeof (counts.waiting ?? counts.wait ?? 0)).toBe("number");
+      expect(typeof (counts.active ?? 0)).toBe("number");
+      expect(typeof (counts.failed ?? 0)).toBe("number");
+      await queue.close();
+      const recovered = createIngestQueue(env);
+      try {
+        await recovered.waitUntilReady();
+        const again = await recovered.getJobCounts();
+        expect(typeof (again.waiting ?? again.wait ?? 0)).toBe("number");
+        expect(typeof (again.failed ?? 0)).toBe("number");
+      } finally {
+        await recovered.close();
+      }
+    } finally {
+      await queue.close().catch(() => undefined);
+      metricsClient.disconnect();
+      workerClient.disconnect();
     }
   });
 

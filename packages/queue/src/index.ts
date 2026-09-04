@@ -32,7 +32,16 @@ export {
   parseJobEnvelope,
   type JobEnvelope,
 } from "./envelope.js";
-export { assertRedisAvailable, closeRedisConnection, createRedisConnection } from "./redis.js";
+export {
+  assertRedisAvailable,
+  closeRedisConnection,
+  createRedisConnection,
+  createRedisConnectionOptions,
+  resolveRedisClientRole,
+  waitForRedisReady,
+  type RedisClientRole,
+  type RedisConnectionOptions,
+} from "./redis.js";
 export { classifyRedisError, isTransientRedisError, withDeadline } from "./recovery.js";
 export { readQueueJobCounts, type QueueJobCountInput } from "./counts.js";
 export {

@@ -13,7 +13,7 @@ import {
   type Database,
 } from "@isp/db";
 import { QueueUnavailableError } from "./errors.js";
-import { createRedisConnection } from "./redis.js";
+import { createRedisConnectionOptions } from "./redis.js";
 import { ingestQueueName } from "./names.js";
 import { defaultIngestJobOptions } from "./lifecycle.js";
 import { logQueueEvent, safeLoopErrorFields } from "./logger.js";
@@ -26,7 +26,10 @@ export function createIngestQueue(
   options?: { failFast?: boolean; connection?: Redis },
 ): IngestQueue {
   return new Queue<JobEnvelope>(ingestQueueName(env), {
-    connection: options?.connection ?? createRedisConnection(env, options),
+    connection:
+      options?.connection ??
+      createRedisConnectionOptions(env, { ...options, role: options?.failFast ? "failFast" : "queue" }),
+    skipVersionCheck: true,
     defaultJobOptions: defaultIngestJobOptions(),
   });
 }
