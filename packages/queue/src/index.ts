@@ -34,6 +34,7 @@ export {
 } from "./envelope.js";
 export { assertRedisAvailable, closeRedisConnection, createRedisConnection } from "./redis.js";
 export { classifyRedisError, isTransientRedisError, withDeadline } from "./recovery.js";
+export { readQueueJobCounts, type QueueJobCountInput } from "./counts.js";
 export {
   classifyJobFailure,
   createShutdownLatch,

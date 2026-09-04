@@ -41,4 +41,24 @@ describe("queue logs", () => {
     expect(line).not.toContain("TCC_SECRET");
     spy.mockRestore();
   });
+
+  it("classifies queue metrics timeouts without leaking Redis URLs", () => {
+    const error = new Error("queue_metrics_timeout");
+    expect(safeLoopErrorFields(error)).toEqual({
+      error_name: "Error",
+      error_class: "timeout",
+    });
+    const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    logQueueEvent("error", "worker.queue_metrics_failed", {
+      operation: "queue_metrics",
+      ...safeLoopErrorFields(error),
+      redis: "rediss://default:s3cret-token@redis.example:6379",
+      retry: "next_cycle",
+    });
+    const line = String(spy.mock.calls[0]?.[0] ?? "");
+    expect(line).toContain("timeout");
+    expect(line).not.toContain("s3cret-token");
+    expect(line).not.toContain("rediss://");
+    spy.mockRestore();
+  });
 });

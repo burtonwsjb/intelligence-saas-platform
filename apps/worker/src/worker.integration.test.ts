@@ -7,6 +7,7 @@ import {
   DB_ROLES,
   getSourceEvent,
   getObservationBySourceEvent,
+  getWorkerHeartbeat,
   insertOutboxJob,
   insertSourceEvent,
   member,
@@ -17,6 +18,7 @@ import {
   tenant,
   user,
   withOrganizationContext,
+  withPlatformContext,
   withSystemContext,
   type Database,
 } from "@isp/db";
@@ -136,5 +138,14 @@ describe("BullMQ worker", () => {
     );
     expect(observation?.sourceEventId).toBe(eventId);
     expect(observation?.observationType).toBe("metric.snapshot");
+  });
+
+  it("persists numeric queue metrics once Redis answers", async () => {
+    const row = await waitUntil(async () => {
+      const heartbeat = await withPlatformContext(workerConn.db, (scoped) => getWorkerHeartbeat(scoped));
+      return heartbeat?.queueDepth != null && heartbeat.failedJobs != null ? heartbeat : null;
+    });
+    expect(row.queueDepth).toBeGreaterThanOrEqual(0);
+    expect(row.failedJobs).toBeGreaterThanOrEqual(0);
   });
 });

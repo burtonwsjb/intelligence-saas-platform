@@ -5,6 +5,7 @@ describe("classifyRedisError", () => {
   it("classifies reconnectable outages and timeouts without treating auth failures as transient", () => {
     expect(classifyRedisError(new Error("ECONNRESET"))).toEqual({ errorClass: "connection", retryable: true });
     expect(classifyRedisError(new Error("Command timed out"))).toEqual({ errorClass: "timeout", retryable: true });
+    expect(classifyRedisError(new Error("queue_metrics_timeout"))).toEqual({ errorClass: "timeout", retryable: true });
     expect(classifyRedisError(new Error("READONLY You can't write against a read only replica"))).toEqual({
       errorClass: "readonly",
       retryable: true,

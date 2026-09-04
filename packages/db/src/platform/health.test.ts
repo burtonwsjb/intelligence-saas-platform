@@ -27,7 +27,10 @@ describe("worker heartbeat health", () => {
   });
 
   it("rolls worker, queue, and provider states into an operator-safe overall status", async () => {
-    const { classifyPlatformHealth, classifyQueueHealth, operatorGuidanceForHealth } = await import("./health.js");
+    const { classifyPlatformHealth, classifyQueueHealth, operatorGuidanceForHealth, readQueueMetricsErrorClass } =
+      await import("./health.js");
+    expect(readQueueMetricsErrorClass({ queue_metrics_error_class: "timeout" })).toBe("timeout");
+    expect(readQueueMetricsErrorClass({ queue_metrics_error_class: "rediss://x" })).toBeNull();
     expect(classifyQueueHealth({ queueDepth: null, failedJobs: null })).toBe("unknown");
     expect(classifyQueueHealth({ queueDepth: 2, failedJobs: 0 })).toBe("healthy");
     expect(classifyQueueHealth({ queueDepth: 2, failedJobs: 25 })).toBe("degraded");
@@ -57,6 +60,7 @@ describe("worker heartbeat health", () => {
     expect(health.operations.queueHealth).toBe("healthy");
     expect(health.operations.queueDepth).toBe(4);
     expect(health.operations.failedJobs).toBe(2);
+    expect(health.operations.queueMetricsErrorClass).toBeNull();
     expect(health.operations.workerHeartbeatAt).toBeTruthy();
     expect(health.providers.every((row) => row.mode === "disabled" || row.mode === undefined)).toBe(true);
     const published = await db.select().from(tcgPrediction);
@@ -80,5 +84,41 @@ describe("worker heartbeat health", () => {
     expect(health.operations.workerHeartbeatStatus).toBe("stale");
     expect(health.operations.queueDepth).toBe(1);
     expect(health.operations.failedJobs).toBe(0);
+  });
+
+  it("exposes a safe queue metrics error class and stays unknown when counts are null", async () => {
+    const db = await setup();
+    await withPlatformContext(db, (scoped) =>
+      upsertWorkerHeartbeat(scoped, {
+        queueDepth: null,
+        failedJobs: null,
+        queueMetricsErrorClass: "timeout",
+      }),
+    );
+    const health = await collectSystemHealth(db);
+    expect(health.operations.queueHealth).toBe("unknown");
+    expect(health.operations.queueDepth).toBeNull();
+    expect(health.operations.failedJobs).toBeNull();
+    expect(health.operations.queueMetricsErrorClass).toBe("timeout");
+    expect(health.status).toBe("healthy");
+  });
+
+  it("replaces null queue metrics with later numeric values and clears the error class", async () => {
+    const db = await setup();
+    await withPlatformContext(db, (scoped) =>
+      upsertWorkerHeartbeat(scoped, {
+        queueDepth: null,
+        failedJobs: null,
+        queueMetricsErrorClass: "timeout",
+      }),
+    );
+    await withPlatformContext(db, (scoped) =>
+      upsertWorkerHeartbeat(scoped, { queueDepth: 0, failedJobs: 0, queueMetricsErrorClass: null }),
+    );
+    const health = await collectSystemHealth(db);
+    expect(health.operations.queueHealth).toBe("healthy");
+    expect(health.operations.queueDepth).toBe(0);
+    expect(health.operations.failedJobs).toBe(0);
+    expect(health.operations.queueMetricsErrorClass).toBeNull();
   });
 });

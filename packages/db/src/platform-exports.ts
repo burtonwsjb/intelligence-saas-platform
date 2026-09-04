@@ -62,6 +62,7 @@ export {
   collectSystemHealth,
   describePlatformConfig,
   operatorGuidanceForHealth,
+  readQueueMetricsErrorClass,
 } from "./platform/health.js";
 export {
   MAX_OUTBOX_PUBLISH_ATTEMPTS,

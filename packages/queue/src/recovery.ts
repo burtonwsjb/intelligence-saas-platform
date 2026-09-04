@@ -19,7 +19,7 @@ const TRANSIENT_MESSAGE =
 
 export function classifyRedisError(error: unknown): ClassifiedRedisError {
   const message = error instanceof Error ? `${error.name} ${error.message}` : String(error ?? "");
-  if (/etimedout|command timed out|timeout/i.test(message)) {
+  if (/etimedout|command timed out|queue_metrics_timeout|operation_timeout|timeout/i.test(message)) {
     return { errorClass: "timeout", retryable: true };
   }
   if (/readonly/i.test(message)) {

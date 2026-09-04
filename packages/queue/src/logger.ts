@@ -1,3 +1,5 @@
+import { classifyRedisError } from "./recovery.js";
+
 const FORBIDDEN =
   /authorization|api[_-]?key|password|secret|token|bearer|redis:\/\/|rediss:\/\/|postgres(?:ql)?:\/\/|sk_live_|sk_test_|whsec_/i;
 
@@ -13,7 +15,7 @@ export function safeLoopErrorFields(error: unknown): {
     return "";
   };
   const code = codeFrom(error) || codeFrom(error instanceof Error ? error.cause : undefined);
-  const errorClass =
+  const sqlClass =
     code === "42501"
       ? "permission_denied"
       : code === "25P02"
@@ -24,7 +26,11 @@ export function safeLoopErrorFields(error: unknown): {
             ? "check_violation"
             : code === "P0001"
               ? "raise_exception"
-              : code || name.replace(/[^A-Za-z0-9_.-]/g, "").slice(0, 64) || "unknown";
+              : "";
+  const redisClass = classifyRedisError(error).errorClass;
+  const errorClass =
+    sqlClass ||
+    (redisClass !== "unknown" ? redisClass : code || name.replace(/[^A-Za-z0-9_.-]/g, "").slice(0, 64) || "unknown");
   return {
     error_name: name.replace(/[^A-Za-z0-9_.-]/g, "").slice(0, 80) || "Error",
     error_class: errorClass,

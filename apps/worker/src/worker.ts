@@ -23,6 +23,7 @@ import {
   markJobPermanentlyFailed,
   parseJobEnvelope,
   processNormalizeJob,
+  readQueueJobCounts,
   requireRedisUrl,
   runGracefulStop,
   safeLoopErrorFields,
@@ -33,7 +34,7 @@ import {
 
 export const WORKER_HEARTBEAT_INTERVAL_MS = 15_000;
 export const WORKER_SWEEP_INTERVAL_MS = 5_000;
-export const QUEUE_METRICS_TIMEOUT_MS = 2_500;
+export const QUEUE_METRICS_TIMEOUT_MS = 8_000;
 export const WORKER_SHUTDOWN_DRAIN_MS = 20_000;
 
 type QueueCounts = Pick<IngestQueue, "getJobCounts">;
@@ -67,47 +68,60 @@ export async function runProviderSchedule(
   }
 }
 
-export async function collectQueueCounts(queue: QueueCounts): Promise<{
+export async function collectQueueCounts(
+  queue: QueueCounts,
+  options?: { timeoutMs?: number },
+): Promise<{
   queueDepth: number | null;
   failedJobs: number | null;
+  errorClass: string | null;
 }> {
   try {
     const counts = await withDeadline(
-      queue.getJobCounts("wait", "active", "failed"),
-      QUEUE_METRICS_TIMEOUT_MS,
+      queue.getJobCounts(),
+      options?.timeoutMs ?? QUEUE_METRICS_TIMEOUT_MS,
       "queue_metrics_timeout",
     );
-    return {
-      queueDepth: (counts.wait ?? 0) + (counts.active ?? 0),
-      failedJobs: counts.failed ?? 0,
-    };
+    const normalized = readQueueJobCounts(counts);
+    return { ...normalized, errorClass: null };
   } catch (error) {
+    const errorClass = safeLoopErrorFields(error).error_class;
     logLoopFailure("worker.queue_metrics_failed", "queue_metrics", error);
-    return { queueDepth: null, failedJobs: null };
+    return { queueDepth: null, failedJobs: null, errorClass };
   }
 }
 
 export async function runWorkerHeartbeat(
   db: Database,
   queue: QueueCounts,
-  options?: { startup?: boolean },
+  options?: { startup?: boolean; timeoutMs?: number },
 ): Promise<{ ok: boolean; errorClass: string | null }> {
+  const counts = await collectQueueCounts(queue, { timeoutMs: options?.timeoutMs });
   try {
-    const counts = await collectQueueCounts(queue);
     await withPlatformContext(db, (scoped) =>
       upsertWorkerHeartbeat(scoped, {
         queueDepth: counts.queueDepth,
         failedJobs: counts.failedJobs,
+        queueMetricsErrorClass: counts.errorClass,
       }),
     );
     if (options?.startup) {
-      logQueueEvent("info", "worker.heartbeat_ok", {
-        queue_depth: counts.queueDepth,
-        failed_jobs: counts.failedJobs,
-        status: "ok",
-      });
+      if (counts.errorClass) {
+        logQueueEvent("warn", "worker.queue_metrics_unavailable", {
+          error_class: counts.errorClass,
+          queue_depth: counts.queueDepth,
+          failed_jobs: counts.failedJobs,
+          status: "unknown",
+        });
+      } else {
+        logQueueEvent("info", "worker.heartbeat_ok", {
+          queue_depth: counts.queueDepth,
+          failed_jobs: counts.failedJobs,
+          status: "ok",
+        });
+      }
     }
-    return { ok: true, errorClass: null };
+    return { ok: true, errorClass: counts.errorClass };
   } catch (error) {
     logLoopFailure("worker.heartbeat_failed", "worker_heartbeat", error);
     return { ok: false, errorClass: safeLoopErrorFields(error).error_class };
@@ -161,7 +175,7 @@ export function startWorker(options?: {
   const ownedDb = options?.db ? null : createDbConnection(requireWorkerDatabaseUrl(env));
   const db = options?.db ?? ownedDb?.db ?? createDbFromWorkerEnv(env);
   const connection = createRedisConnection(env);
-  const queue = options?.queue ?? createIngestQueue(env);
+  const queue = options?.queue ?? createIngestQueue(env, { connection });
   const startedAt = new Date().toISOString();
   let status: WorkerRuntimeStatus = "starting";
   let lastHeartbeatAt: string | null = null;

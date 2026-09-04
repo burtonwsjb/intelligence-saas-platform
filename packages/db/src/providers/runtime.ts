@@ -201,10 +201,19 @@ export async function finishProviderSyncRun(
 
 export async function upsertWorkerHeartbeat(
   db: Database,
-  input: { workerKey?: string; queueDepth?: number | null; failedJobs?: number | null },
+  input: {
+    workerKey?: string;
+    queueDepth?: number | null;
+    failedJobs?: number | null;
+    queueMetricsErrorClass?: string | null;
+  },
 ) {
   const workerKey = input.workerKey ?? "ingest";
   const now = new Date();
+  const metadata = {
+    role: "ingest",
+    queue_metrics_error_class: input.queueMetricsErrorClass ?? null,
+  };
   await db
     .insert(workerHeartbeat)
     .values({
@@ -212,7 +221,7 @@ export async function upsertWorkerHeartbeat(
       lastSeenAt: now,
       queueDepth: input.queueDepth ?? null,
       failedJobs: input.failedJobs ?? null,
-      metadata: { role: "ingest" },
+      metadata,
     })
     .onConflictDoUpdate({
       target: workerHeartbeat.workerKey,
@@ -220,6 +229,7 @@ export async function upsertWorkerHeartbeat(
         lastSeenAt: now,
         queueDepth: input.queueDepth ?? null,
         failedJobs: input.failedJobs ?? null,
+        metadata,
         updatedAt: now,
       },
     });

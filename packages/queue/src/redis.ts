@@ -1,7 +1,6 @@
 import { Redis } from "ioredis";
 import { QueueUnavailableError } from "./errors.js";
 import { requireRedisUrl } from "./env.js";
-import { REDIS_COMMAND_TIMEOUT_MS } from "./names.js";
 import { withDeadline } from "./recovery.js";
 
 export function createRedisConnection(
@@ -12,9 +11,13 @@ export function createRedisConnection(
   const failFast = options?.failFast === true;
   const redis = new Redis(url, {
     maxRetriesPerRequest: null,
+    family: 0,
     enableReadyCheck: true,
     connectTimeout: failFast ? 750 : 10_000,
-    commandTimeout: failFast ? 750 : REDIS_COMMAND_TIMEOUT_MS,
+    // Long-lived BullMQ clients must not set commandTimeout: it applies to the
+    // ready-check INFO and blocking pops, so the client never becomes ready and
+    // queue.getJobCounts hangs until the metrics deadline.
+    ...(failFast ? { commandTimeout: 750 } : {}),
     enableOfflineQueue: !failFast,
     retryStrategy: failFast ? () => null : (times) => Math.min(times * 200, 2_000),
     reconnectOnError: (error) => /readonly|loading/i.test(error.message),

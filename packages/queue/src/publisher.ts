@@ -1,4 +1,5 @@
 import { Queue } from "bullmq";
+import type { Redis } from "ioredis";
 import {
   getOutboxJob,
   getPlatformOutbox,
@@ -22,10 +23,10 @@ export type IngestQueue = Queue<JobEnvelope>;
 
 export function createIngestQueue(
   env: NodeJS.ProcessEnv = process.env,
-  options?: { failFast?: boolean },
+  options?: { failFast?: boolean; connection?: Redis },
 ): IngestQueue {
   return new Queue<JobEnvelope>(ingestQueueName(env), {
-    connection: createRedisConnection(env, options),
+    connection: options?.connection ?? createRedisConnection(env, options),
     defaultJobOptions: defaultIngestJobOptions(),
   });
 }

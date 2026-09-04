@@ -25,6 +25,15 @@ export type WorkerHeartbeatStatus = "healthy" | "stale" | "missing";
 export type PlatformHealthStatus = "healthy" | "degraded" | "stale" | "missing" | "failed";
 export type QueueHealthStatus = "healthy" | "degraded" | "unknown";
 
+export function readQueueMetricsErrorClass(metadata: Record<string, unknown> | null | undefined): string | null {
+  const value = metadata?.queue_metrics_error_class;
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  return /^[a-z0-9_.-]{1,64}$/i.test(trimmed) ? trimmed : null;
+}
+
 export function classifyQueueHealth(input: {
   queueDepth: number | null;
   failedJobs: number | null;
@@ -170,6 +179,7 @@ export async function collectSystemHealth(db: Database) {
   const sources = await db.select().from(sourceDefinition);
   const worker = heartbeat.find((row) => row.workerKey === "ingest") ?? heartbeat[0] ?? null;
   const workerHeartbeatStatus = classifyWorkerHeartbeat(worker?.lastSeenAt);
+  const queueMetricsErrorClass = readQueueMetricsErrorClass(worker?.metadata);
   const queueHealth = classifyQueueHealth({
     queueDepth: worker?.queueDepth ?? null,
     failedJobs: worker?.failedJobs ?? null,
@@ -210,6 +220,7 @@ export async function collectSystemHealth(db: Database) {
       queueHealth,
       queueDepth: worker?.queueDepth ?? null,
       failedJobs: worker?.failedJobs ?? null,
+      queueMetricsErrorClass,
       normalizationFailures: Number(failedMarket[0]?.count ?? 0) + Number(failedSource[0]?.count ?? 0),
       resolutionFailures: Number(failedResolution[0]?.count ?? 0),
       scoringSnapshots: Number(failedScores[0]?.count ?? 0),
