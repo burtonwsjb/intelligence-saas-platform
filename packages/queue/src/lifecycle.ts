@@ -99,14 +99,14 @@ export function createShutdownLatch(options?: {
       // Assign before callbacks so even re-entrant requests share one drain.
       pending = new Promise<void>((resolve) => { resolveRequest = resolve; });
       let finished = false;
-      let forceTimer: ReturnType<typeof setTimeout> | undefined;
+      const forceTimer: { id?: ReturnType<typeof setTimeout> } = {};
       const finish = (code: number) => {
         if (finished) return;
         finished = true;
-        if (forceTimer !== undefined) clearTimer(forceTimer);
+        if (forceTimer.id !== undefined) clearTimer(forceTimer.id);
         try { exit(code); } finally { resolveRequest(); }
       };
-      forceTimer = setTimer(() => finish(1), forceExitMs);
+      forceTimer.id = setTimer(() => finish(1), forceExitMs);
       void Promise.resolve().then(stop).then(() => finish(0), () => finish(1));
       return pending;
     },
