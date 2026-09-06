@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -47,8 +47,12 @@ import { createFetchTransport, requireOkJson } from "./transport.js";
 import { LiveTcgMarketProvider } from "./live-market.js";
 import { safePayloadSummary } from "./safe.js";
 
+const disposableClients: PGlite[] = [];
+afterEach(async () => { await Promise.all(disposableClients.splice(0).map((client) => client.close())); });
+
 async function memoryDb() {
   const client = new PGlite();
+  disposableClients.push(client);
   await client.exec(await readMigrationSql());
   return drizzle(client) as unknown as Database;
 }

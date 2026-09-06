@@ -1,6 +1,7 @@
 import {
   listDiscoveredCreators,
   listDiscoveryTopics,
+  listDiscoveryRuns,
 } from "@isp/db";
 import { requireGrantedOperator } from "@/lib/platform-admin";
 import {
@@ -22,7 +23,7 @@ export default async function AdminDiscoveryPage({
   if (!db) {
     return <p className="muted">Discovery needs the platform admin database role.</p>;
   }
-  const [topics, creators] = await Promise.all([listDiscoveryTopics(db), listDiscoveredCreators(db)]);
+  const [topics, creators, runs] = await Promise.all([listDiscoveryTopics(db), listDiscoveredCreators(db), listDiscoveryRuns(db)]);
 
   return (
     <>
@@ -33,6 +34,14 @@ export default async function AdminDiscoveryPage({
       </p>
       {query.error ? <p className="form-error">Discovery update was rejected.</p> : null}
       {query.queued === "yes" ? <p role="status">Discovery queued for the worker. Refresh to see results after processing.</p> : null}
+      <h2>Recent runs</h2>
+      <p className="muted">Discovery and creator polling are separate bounded operations. Accepted records still pass through normalization and identity checks.</p>
+      {runs.length === 0 ? <p>No runs recorded yet.</p> : runs.map((run) => (
+        <section key={run.id}>
+          <p>{run.providerKey} · {run.metadata.activity === "monitoring" ? "Creator monitoring" : run.query} · {run.status}</p>
+          <p className="muted">Started {run.startedAt.toISOString()} · accepted {run.contentIngested} · channels {run.channelsSeen} · HTTP requests {run.quotaUnits} · error {run.errorClass ?? "none"}</p>
+        </section>
+      ))}
       <h2>Topics</h2>
       <form className="inline-form" action={triggerDiscoveryRunAction}>
         <label>
@@ -72,6 +81,10 @@ export default async function AdminDiscoveryPage({
           <p>
             {row.displayName ?? row.externalAccountId} · {row.providerKey} · {row.relevanceState} · score{" "}
             {row.relevanceScore} · topics {row.topicHits} · reach views {row.reachViews ?? "—"}
+          </p>
+          <p className="muted">
+            Last monitor success {row.lastMonitorSuccessAt?.toISOString() ?? "Not polled yet"} · next check{" "}
+            {row.nextMonitorAt?.toISOString() ?? "Next scheduled cycle"} · monitoring error {row.monitorErrorClass ?? "none"}
           </p>
           <form className="inline-form" action={setDiscoveredCreatorStateAction}>
             <input type="hidden" name="id" value={row.id} />

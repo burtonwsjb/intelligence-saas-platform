@@ -129,6 +129,7 @@ export {
   setDiscoveryTopicEnabled,
   listDiscoveredCreators,
   listDiscoveryTopics,
+  listDiscoveryRuns,
   persistDiscoveredCommunities,
   ensureDiscoveryTopics,
   setProviderEnabled,

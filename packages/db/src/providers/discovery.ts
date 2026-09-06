@@ -1,6 +1,6 @@
 import { isHostedRuntime } from "@isp/shared";
 import { createHash, randomUUID } from "node:crypto";
-import { asc, eq, sql } from "drizzle-orm";
+import { asc, desc, eq, sql } from "drizzle-orm";
 import type { Database } from "../client.js";
 import { ensureCreatorForSourceAccount } from "../creator/ingest.js";
 import { latestTrustState } from "../creator/authority.js";
@@ -52,8 +52,6 @@ export const DEFAULT_DISCOVERY_STRATEGIES = [
   { strategyKey: "pokemon_grading", query: "Pokemon grading" },
   { strategyKey: "pokemon_restock", query: "Pokemon restock" },
   { strategyKey: "pokemon_new_set", query: "Pokemon new set" },
-  { strategyKey: "active_set", query: "Pokemon Twilight Masquerade" },
-  { strategyKey: "high_opportunity", query: "Greninja TCG" },
   { strategyKey: "anomaly", query: "Pokemon card spike" },
 ] as const;
 
@@ -101,6 +99,13 @@ export function calculateCreatorRelevance(input: {
 }
 
 export async function ensureDiscoveryTopics(db: Database): Promise<number> {
+  return withPlatformContext(db, async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(1769172993, 2)`);
+    return bootstrapDiscoveryTopics(tx);
+  });
+}
+
+async function bootstrapDiscoveryTopics(db: Database): Promise<number> {
   let inserted = 0;
   for (const providerKey of ["youtube", "reddit"] as const) {
     for (const [index, strategy] of DEFAULT_DISCOVERY_STRATEGIES.entries()) {
@@ -119,7 +124,46 @@ export async function ensureDiscoveryTopics(db: Database): Promise<number> {
       inserted += result.length;
     }
   }
+  // Derive a small candidate set from the actual catalog and recent scores,
+  // rather than labeling a fixed 2024 set as the forever-current set.
+  const derived = await db.execute(sql`
+    SELECT query, origin_id, strategy FROM (
+      (SELECT 'Pokemon ' || name AS query, id AS origin_id, 'derived_set' AS strategy
+       FROM tcg_set WHERE game_key='pokemon' AND status='active'
+       ORDER BY release_date DESC NULLS LAST, id LIMIT 3)
+      UNION ALL
+      (SELECT 'Pokemon ' || c.canonical_name || ' market' AS query, c.id AS origin_id, 'derived_opportunity' AS strategy
+       FROM tcg_score_snapshot s JOIN tcg_printing p ON p.id=s.printing_id
+       JOIN tcg_card_concept c ON c.id=p.card_id
+       WHERE p.game_key='pokemon' AND p.status='active' AND c.status='active'
+         AND s.as_of <= now() AND s.as_of >= now()-interval '30 days'
+       ORDER BY s.opportunity_score DESC, s.as_of DESC, s.id LIMIT 3)
+    ) candidates`);
+  const candidates = (Array.isArray(derived) ? derived : (derived as unknown as { rows: unknown[] }).rows) as { query: string; origin_id: string; strategy: string }[];
+  for (const providerKey of ["youtube", "reddit"] as const) {
+    // Limit active automatically derived topics. Pausing them frees capacity;
+    // a paused topic is never re-enabled by a subsequent bootstrap.
+    const existing = await db.select({ id: discoveryTopic.id }).from(discoveryTopic)
+      .where(sql`${discoveryTopic.providerKey}=${providerKey} AND ${discoveryTopic.enabled}=true AND ${discoveryTopic.strategyKey} IN ('derived_set','derived_opportunity')`).limit(20);
+    let available = Math.max(0, 20 - existing.length);
+    for (const candidate of candidates) {
+      if (!available) break;
+      let query: string;
+      try { query = normalizeDiscoveryQuery(candidate.query); } catch { continue; }
+      const result = await db.insert(discoveryTopic).values({
+        id: stableDiscoveryId("dtp", [providerKey, query]), providerKey, query,
+        strategyKey: candidate.strategy, priority: 30,
+        metadata: { origin_id: candidate.origin_id, created_source: "automatic_catalog" },
+      }).onConflictDoNothing().returning({ id: discoveryTopic.id });
+      inserted += result.length;
+      available -= result.length;
+    }
+  }
   return inserted;
+}
+
+export async function listDiscoveryRuns(db: Database) {
+  return db.select().from(discoveryRun).orderBy(desc(discoveryRun.startedAt), discoveryRun.id).limit(30);
 }
 
 export async function listDiscoveryTopics(db: Database, providerKey?: DiscoveryProviderKey) {
@@ -155,12 +199,12 @@ export async function setDiscoveredCreatorState(
   if (!isDiscoveryRelevanceState(input.relevanceState)) {
     throw new Error("Unknown discovery relevance state.");
   }
-  await db
-    .update(discoveredCreator)
-    .set({ relevanceState: input.relevanceState, lastDiscoveredAt: new Date() })
-    .where(eq(discoveredCreator.id, input.id));
   const [row] = await db.select().from(discoveredCreator).where(eq(discoveredCreator.id, input.id)).limit(1);
-  return row ?? null;
+  if (!row) throw new DiscoveryConfigurationError("Discovered creator does not exist.");
+  const [updated] = await db.update(discoveredCreator).set({ relevanceState: input.relevanceState,
+    discoveryProvenance: { ...row.discoveryProvenance, operator_state: input.relevanceState, operator_state_at: new Date().toISOString() },
+  }).where(eq(discoveredCreator.id, input.id)).returning();
+  return updated ?? null;
 }
 
 export async function nextDiscoveryTopic(db: Database, providerKey: DiscoveryProviderKey) {
@@ -367,8 +411,10 @@ export async function persistDiscoveryFromRecords(
       topicHits,
       views: record.engagement?.views ?? null,
     });
+    const operatorState = existing[0]?.discoveryProvenance.operator_state;
     const nextState =
-      existing[0]?.relevanceState === "excluded" || (await latestTrustState(db, linked.creator.id)) === "excluded" ? "excluded" : relevance.state;
+      existing[0]?.relevanceState === "excluded" || (await latestTrustState(db, linked.creator.id)) === "excluded" ? "excluded"
+        : typeof operatorState === "string" && isDiscoveryRelevanceState(operatorState) ? operatorState : relevance.state;
     const id =
       existing[0]?.id ??
       stableDiscoveryId("dcr", [input.providerKey, record.account.external_account_id]);
@@ -385,6 +431,7 @@ export async function persistDiscoveryFromRecords(
           reachSubscribers: subscriberCount(record) ?? existing[0].reachSubscribers,
           lastDiscoveredAt: new Date(),
           discoveryProvenance: {
+            ...existing[0].discoveryProvenance,
             version: DISCOVERY_VERSION,
             last_query: input.query,
             last_content_id: record.content.external_content_id,
@@ -487,7 +534,12 @@ export async function runSocialDiscovery(
   const topic = await withPlatformContext(db, async (tx) => {
     await ensureDiscoveryTopics(tx);
     if (!requestedQuery) return nextDiscoveryTopic(tx, input.providerKey);
-    const id = stableDiscoveryId("dtp", [input.providerKey, requestedQuery]);
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(1769172993, 2)`);
+    const [existing] = await tx.select().from(discoveryTopic)
+      .where(sql`${discoveryTopic.providerKey}=${input.providerKey} AND lower(${discoveryTopic.query})=lower(${requestedQuery})`)
+      .orderBy(discoveryTopic.enabled, discoveryTopic.createdAt, discoveryTopic.id).limit(1);
+    if (existing) return existing;
+    const id = stableDiscoveryId("dtp", [input.providerKey, requestedQuery.toLowerCase()]);
     await tx.insert(discoveryTopic).values({ id, providerKey: input.providerKey, query: requestedQuery, strategyKey: "ad_hoc", priority: 50 }).onConflictDoNothing();
     const [row] = await tx.select().from(discoveryTopic).where(eq(discoveryTopic.id, id)).limit(1);
     return row ?? null;

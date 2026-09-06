@@ -4,7 +4,7 @@ import { drizzle } from "drizzle-orm/pglite";
 import type { Database } from "../client.js";
 import { readMigrationSql } from "../migrations.js";
 import { sourceIntelligenceFixtures } from "../source/fixtures.js";
-import { runSocialDiscovery, requestDiscoveryRun, listDiscoveredCreators, normalizeDiscoveryQuery } from "./discovery.js";
+import { runSocialDiscovery, requestDiscoveryRun, listDiscoveredCreators, normalizeDiscoveryQuery, setDiscoveredCreatorState } from "./discovery.js";
 import { runStagingSourceSmoke } from "./staging.js";
 import { reserveDiscoveryRequest } from "./discovery-budget.js";
 
@@ -61,6 +61,24 @@ describe("discovery execution safety", () => {
     expect(after.relevanceScore).toBe(before.relevanceScore);
     const count = (await client.query<{ count: number }>("SELECT count(*)::int AS count FROM platform_outbox WHERE job_type='source.intelligence.normalize.v1'")).rows[0]?.count;
     expect(count).toBe(1);
+  });
+  it("preserves manual monitoring choices and first-discovery evidence across searches", async () => {
+    const record = sourceIntelligenceFixtures().find((row) => row.provider === "youtube")!;
+    const [creator] = await listDiscoveredCreators(db);
+    await setDiscoveredCreatorState(db, { id: creator!.id, relevanceState: "candidate" });
+    const before = (await listDiscoveredCreators(db))[0]!;
+    await runSocialDiscovery(db, { providerKey: "youtube", query: "Pokemon manual decision", records: [record], env: { ISP_ENV: "test" } });
+    const after = (await listDiscoveredCreators(db))[0]!;
+    expect(after.relevanceState).toBe("candidate");
+    expect(after.discoveryProvenance.first_query).toBe(before.discoveryProvenance.first_query);
+    expect(after.discoveryProvenance.operator_state).toBe("candidate");
+  });
+  it("does not bypass a paused topic by changing its capitalization", async () => {
+    await client.exec("UPDATE discovery_topic SET enabled=false WHERE query='Pokemon cards'");
+    const fetch = vi.fn();
+    await expect(runSocialDiscovery(db, { providerKey: "youtube", query: "pokemon CARDS", env: { ISP_ENV: "test" }, transport: { fetch } }))
+      .rejects.toThrow(/enabled discovery topic/);
+    expect(fetch).not.toHaveBeenCalled();
   });
   it("queues an audited worker job without requiring credentials in the web process", async () => {
     await client.exec("INSERT INTO \"user\" (id,name,email) VALUES ('repair_operator','Operator','repair@example.invalid') ON CONFLICT DO NOTHING; UPDATE provider_runtime SET mode='live', enabled=true, paused=false, credential_status='present' WHERE provider_key='youtube';");

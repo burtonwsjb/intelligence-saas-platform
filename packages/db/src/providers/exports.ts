@@ -39,6 +39,7 @@ export {
   ensureDiscoveryTopics,
   listDiscoveredCreators,
   listDiscoveryTopics,
+  listDiscoveryRuns,
   runSocialDiscovery,
   requestDiscoveryRun,
   DiscoveryConfigurationError,

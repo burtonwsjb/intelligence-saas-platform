@@ -1,3 +1,4 @@
+import { runCreatorMonitoring } from "./monitoring.js";
 import { isHostedRuntime } from "@isp/shared";
 import { withPlatformContext } from "../rls.js";
 import { createHash } from "node:crypto";
@@ -128,14 +129,18 @@ export async function syncProvider(db: Database, input: ProviderSyncInput) {
   const leased = await withPlatformContext(db, (tx) => tryAcquireProviderLease(tx, providerKey));
   if (!leased) return { status: "skipped" as const, reason: "overlap", received: 0, quarantined: 0 };
   try {
+    const monitoring = input.trigger === "schedule" ? await runCreatorMonitoring(db, { providerKey, env, transport: input.transport }) : null;
     const report = await runSocialDiscovery(db, { providerKey, query: input.query,
       trigger: input.trigger === "admin" ? "admin" : input.trigger === "schedule" ? "schedule" : "staging",
       limit: Math.min(input.limit ?? 10, 10), env, transport: input.transport });
+    const received = report.content_ingested + (monitoring?.received ?? 0);
+    const ok = report.status === "completed" && monitoring?.status !== "failed";
+    const reason = report.reason ?? (monitoring?.status === "failed" ? monitoring.reason : null);
     await withPlatformContext(db, (tx) => recordProviderSyncResult(tx, {
-      providerKey, ok: report.status === "completed", errorClass: report.reason,
-      received: report.content_ingested, healthStatus: report.status === "completed" ? "healthy" : "failed",
+      providerKey, ok, errorClass: reason,
+      received, healthStatus: ok ? "healthy" : "failed",
     }));
-    return { status: report.status, reason: report.reason ?? null, received: report.content_ingested, quarantined: 0 };
+    return { status: ok ? "completed" as const : report.status === "skipped" ? "skipped" as const : "failed" as const, reason, received, quarantined: 0 };
   } finally {
     await withPlatformContext(db, (tx) => releaseProviderLease(tx, providerKey));
   }

@@ -659,6 +659,7 @@ export {
   listAdminProviders,
   listDiscoveredCreators,
   listDiscoveryTopics,
+  listDiscoveryRuns,
   listIntelligenceQuarantineForAdmin,
   listMarketQuarantineForAdmin,
   listPendingPlatformOutbox,

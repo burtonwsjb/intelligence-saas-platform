@@ -81,6 +81,28 @@ describe("transactional migration history", () => {
     await expect(run(c, [first], { baselineThrough: "0001", confirmExistingSchema: true }))
       .rejects.toThrow(/catalog group 1/);
   });
+  it("detects the real legacy baseline without writing or requiring a guessed version", async () => {
+    const c = client();
+    await c.exec(first.sql);
+    const report = await run(c, [first, second], { plan: true, detectBaseline: true });
+    expect(report.baselineCandidate).toBe(first.name);
+    expect(report.adopted).toEqual([]);
+    expect(report.pending).toEqual([second.name]);
+    expect(report.applied).toEqual([]);
+    expect((await c.query("SELECT to_regclass('_isp_migration_history') AS name")).rows).toEqual([{ name: null }]);
+    expect((await c.query("SELECT column_name FROM information_schema.columns WHERE table_name='demo'")).rows).toEqual([{ column_name: "id" }]);
+  });
+  it("never turns detection into implicit schema adoption", async () => {
+    const c = client();
+    await expect(run(c, [first], { detectBaseline: true })).rejects.toThrow(/read-only/);
+  });
+  it("preflights ownership for an unquoted ALTER TABLE before applying pending SQL", async () => {
+    const c = client();
+    await run(c, [first]);
+    await c.exec("CREATE ROLE app_migrate; GRANT USAGE, CREATE ON SCHEMA public TO app_migrate; GRANT SELECT ON _isp_migration_history TO app_migrate; SET ROLE app_migrate;");
+    await expect(run(c, [first, file("0002_test.sql", "ALTER TABLE demo ADD COLUMN title text;")]))
+      .rejects.toThrow(/ownership rights on public.demo/);
+  });
   it("rejects runtime roles before any migration", async () => {
     const c = client();
     await c.exec("CREATE ROLE app_admin; SET ROLE app_admin;");
@@ -97,6 +119,8 @@ describe("migration CLI configuration", () => {
   });
   it("accepts a bounded baseline only with explicit confirmation", () => {
     expect(parseMigrationArgs(["--", "--plan", "--baseline-through", "0023", "--confirm-existing-schema"])).toMatchObject({ plan: true, baselineThrough: "0023", confirmExistingSchema: true });
+    expect(parseMigrationArgs(["--plan", "--detect-baseline"])).toEqual({ plan: true, detectBaseline: true });
+    expect(() => parseMigrationArgs(["--detect-baseline"])).toThrow(/read-only/);
     expect(() => parseMigrationArgs(["--baseline-through", "0023"])).toThrow(/both/);
     expect(() => parseMigrationArgs(["--baseline-through", "../../bad", "--confirm-existing-schema"])).toThrow(/Unknown/);
   });

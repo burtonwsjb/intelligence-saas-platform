@@ -1,5 +1,5 @@
 import type { MigrationConnection, MigrationFile } from "./migration-engine.js";
-import { MigrationSafetyError } from "./migration-engine.js";
+import { LegacySchemaMismatchError } from "./migration-engine.js";
 
 // Compare schema structure, not data, role ownership, or timestamps. No schema
 // from an existing hosted database is ever copied into the reference database.
@@ -46,7 +46,7 @@ export async function verifyLegacyBaseline(db: MigrationConnection, files: Migra
       const expected = canonical((await reference.query(query)).rows as Record<string, unknown>[]);
       const actual = canonical(await db.query(query));
       if (JSON.stringify(expected) !== JSON.stringify(actual)) {
-        throw new MigrationSafetyError(`Legacy schema does not match baseline ${files.at(-1)?.name} (catalog group ${i + 1}). No baseline or application changes were committed. Review schema drift; do not guess a newer baseline.`);
+        throw new LegacySchemaMismatchError(`Legacy schema does not match baseline ${files.at(-1)?.name} (catalog group ${i + 1}). No baseline or application changes were committed. Review schema drift; do not guess a newer baseline.`);
       }
     }
   } finally {

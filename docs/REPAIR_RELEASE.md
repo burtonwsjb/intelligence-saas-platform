@@ -12,7 +12,7 @@ roles are refused. Existing hosted owners, passwords and data are untouched.
 Legacy adoption requires both `--baseline-through <version>` and
 `--confirm-existing-schema`. The verifier executes old SQL only in an isolated
 PGlite reference and compares target schema catalogs. Do not guess the version.
-Catalog-format differences or partial migrations fail closed and need review.
+PostgreSQL 16 and 18 nullability catalog differences are normalized without dropping NOT NULL, validation, or enforcement checks. Partial schemas still fail closed.
 Pending ALTER operations also require their existing owner; CREATE grants alone
 do not confer ownership of existing tables. No automatic ownership transfer is
 performed by migration adoption. The target must first have a provider backup.
@@ -44,7 +44,7 @@ Worker shutdown shares one drain and cannot emit a success after a forced exit.
 
 ## Deployment boundary
 
-Forward migrations 0024 and 0025 must be verified and applied to staging through
+Forward migrations 0024, 0025 and 0026 must be verified and applied to staging through
 the repaired maintenance runner before deploying this branch's discovery code.
 Do not change credentials or grants blindly. Do not run the pre-repair migrator.
 Deploy web/API/worker together only after migration preflight passes.
@@ -61,3 +61,57 @@ validate discovered creator monitoring over time, and validate a real market sou
 Complete source-to-call/score/index/shadow-prediction and customer/beta acceptance.
 Production infrastructure, billing, legal review and live acceptance remain gates.
 Do not state that every source-of-truth item is complete based on repository tests.
+
+
+## Read-only staging handoff
+
+From a checkout of this reviewed repair branch, run in PowerShell:
+
+```powershell
+.\scripts\staging-repair-preflight.ps1
+```
+
+The script prompts for the existing staging schema-owner connection URL without
+showing it, sets DATABASE_MIGRATE_URL only for this command, and restores the
+previous environment afterward. It does not reset passwords or reuse the admin
+runtime URL. It calls `pnpm db:migrate -- --plan --detect-baseline`.
+
+Baseline detection compares each historical schema in an isolated reference and
+returns `baselineCandidate`, pending filenames, and maintenance role. It NEVER
+writes a migration ledger or schema, and cannot be used without `--plan`.
+Existing migration history still has its checksums checked. There is no forced
+adoption option. Apply only the verified candidate, after a staging backup and
+explicit maintenance authorization, with the same owner connection in
+DATABASE_MIGRATE_URL:
+
+```text
+pnpm db:migrate -- --baseline-through <verified-version> --confirm-existing-schema
+```
+
+After a ledger exists, ordinary `pnpm db:migrate` applies only pending changes.
+Runtime DATABASE_ADMIN_URL, APP_DATABASE_URL, and WORKER_DATABASE_URL stay separate.
+
+## Automatic monitoring and operator feedback
+
+A scheduled social sync now polls one due, automatically discovered monitored
+creator and performs one bounded topic discovery. YouTube uses the channel's
+uploads playlist through the official API; Reddit polls the discovered author's
+submitted posts. Neither requires manual account IDs. Admin/staging one-off
+searches remain capped at 10 and do not launch additional monitoring work.
+
+Each creator poll fetches at most the latest 10 entries, with a one-hour per-creator
+due time and a committed row claim. This is recent-content monitoring, not a claim
+of exhaustive historical backfill. Polls share persistent HTTP budgets, honor
+pauses and exclusions including changes made during HTTP, and record success or
+safe failure. New observation IDs retain separate engagement snapshots while
+canonical content identities and original calls are not overwritten.
+
+The discovery page shows recent runs, accepted counts, HTTP requests, safe error
+classes and each creator's last/next monitoring timestamps. Explicit operator
+relevance states and first-discovery provenance survive subsequent searches.
+Changing query capitalization cannot bypass a paused topic.
+
+Initial topics also derive from at most three active catalog sets and three recent
+score candidates per bootstrap, with at most 20 active derived topics per provider.
+This creates search candidates, not unsupported trading recommendations.
+YouTube keys are sent in the supported API-key header rather than URL parameters.
