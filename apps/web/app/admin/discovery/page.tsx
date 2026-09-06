@@ -4,6 +4,7 @@ import {
   listDiscoveryRuns,
 } from "@isp/db";
 import { requireGrantedOperator } from "@/lib/platform-admin";
+import { isDiscoverySchemaUnavailable } from "@/lib/discovery-schema";
 import {
   setDiscoveredCreatorStateAction,
   setDiscoveryTopicEnabledAction,
@@ -23,7 +24,22 @@ export default async function AdminDiscoveryPage({
   if (!db) {
     return <p className="muted">Discovery needs the platform admin database role.</p>;
   }
-  const [topics, creators, runs] = await Promise.all([listDiscoveryTopics(db), listDiscoveredCreators(db), listDiscoveryRuns(db)]);
+  const load = () => Promise.all([listDiscoveryTopics(db), listDiscoveredCreators(db), listDiscoveryRuns(db)]);
+  let data: Awaited<ReturnType<typeof load>>;
+  try {
+    data = await load();
+  } catch (error) {
+    if (!isDiscoverySchemaUnavailable(error)) throw error;
+    return (
+      <>
+        <h1>Discovery</h1>
+        <p role="alert">Discovery database update required.</p>
+        <p>The database does not yet match this release. Complete the reviewed migration preflight before running discovery.</p>
+        <p className="muted">No discovery request was started by loading this page. Do not change passwords or broaden runtime permissions.</p>
+      </>
+    );
+  }
+  const [topics, creators, runs] = data;
 
   return (
     <>
