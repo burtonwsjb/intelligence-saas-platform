@@ -3,18 +3,27 @@ import { MigrationSafetyError } from "./migration-engine.js";
 
 // Compare schema structure, not data, role ownership, or timestamps. No schema
 // from an existing hosted database is ever copied into the reference database.
+// PostgreSQL 18 also represents NOT NULL in pg_constraint; 16/17 do not.
+// Compare nullability using pg_attribute on both versions, never by the presence
+// or automatically generated name of a version-specific NOT NULL constraint.
+// https://www.postgresql.org/docs/18/catalog-pg-constraint.html
 const QUERIES = [
   `SELECT n.nspname AS schema, c.relname AS name, c.relkind AS kind, c.relrowsecurity AS rls, c.relforcerowsecurity AS forced
    FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
-   WHERE n.nspname IN ('public','app') AND c.relkind IN ('r','p','v','m','S') AND c.relname NOT LIKE '_isp_migration_%'`,
-  `SELECT n.nspname AS schema,c.relname AS name,a.attname AS column_name,format_type(a.atttypid,a.atttypmod) AS type,a.attnotnull AS required,pg_get_expr(d.adbin,d.adrelid) AS default_value
+   WHERE n.nspname IN ('public','app') AND c.relkind IN ('r','p','v','m','S') AND c.relname <> '_isp_migration_history'`,
+  `SELECT n.nspname AS schema,c.relname AS name,a.attname AS column_name,format_type(a.atttypid,a.atttypmod) AS type,a.attnotnull AS required,
+   COALESCE((SELECT bool_and(nnc.convalidated) FROM pg_constraint nnc
+     WHERE nnc.conrelid=c.oid AND nnc.contype='n' AND a.attnum=ANY(nnc.conkey)),true) AS nullability_validated,
+   a.attidentity AS identity_kind,a.attgenerated AS generated_kind,pg_get_expr(d.adbin,d.adrelid) AS default_value
    FROM pg_attribute a JOIN pg_class c ON c.oid=a.attrelid JOIN pg_namespace n ON n.oid=c.relnamespace LEFT JOIN pg_attrdef d ON d.adrelid=c.oid AND d.adnum=a.attnum
-   WHERE n.nspname IN ('public','app') AND c.relkind IN ('r','p','v','m') AND a.attnum>0 AND NOT a.attisdropped AND c.relname NOT LIKE '_isp_migration_%'`,
-  `SELECT n.nspname AS schema,c.relname AS name,k.conname AS constraint_name,pg_get_constraintdef(k.oid) AS definition
+   WHERE n.nspname IN ('public','app') AND c.relkind IN ('r','p','v','m') AND a.attnum>0 AND NOT a.attisdropped AND c.relname <> '_isp_migration_history'`,
+  `SELECT n.nspname AS schema,c.relname AS name,k.conname AS constraint_name,k.convalidated AS validated,
+   COALESCE((to_jsonb(k)->>'conenforced')::boolean,true) AS enforced,
+   pg_get_constraintdef(k.oid) AS definition
    FROM pg_constraint k JOIN pg_class c ON c.oid=k.conrelid JOIN pg_namespace n ON n.oid=c.relnamespace
-   WHERE n.nspname IN ('public','app') AND c.relname NOT LIKE '_isp_migration_%'`,
+   WHERE n.nspname IN ('public','app') AND k.contype <> 'n' AND c.relname <> '_isp_migration_history'`,
   `SELECT schemaname AS schema,tablename AS name,indexname AS index_name,indexdef AS definition FROM pg_indexes
-   WHERE schemaname IN ('public','app') AND tablename NOT LIKE '_isp_migration_%'`,
+   WHERE schemaname IN ('public','app') AND tablename <> '_isp_migration_history'`,
   `SELECT schemaname AS schema,tablename AS name,policyname,permissive,roles::text AS roles,cmd,qual,with_check FROM pg_policies WHERE schemaname IN ('public','app')`,
   `SELECT n.nspname AS schema,c.relname AS name,t.tgname AS trigger_name,pg_get_triggerdef(t.oid) AS definition
    FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE NOT t.tgisinternal AND n.nspname IN ('public','app')`,

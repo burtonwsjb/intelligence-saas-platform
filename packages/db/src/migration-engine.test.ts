@@ -60,6 +60,27 @@ describe("transactional migration history", () => {
     await expect(run(c, [first, second], { baselineThrough: "0001", confirmExistingSchema: true })).rejects.toThrow(/does not match/);
     expect((await c.query("SELECT to_regclass('_isp_migration_history') AS name")).rows).toEqual([{ name: null }]);
   });
+  it("still rejects missing NOT NULL independently of pg_constraint representation", async () => {
+    const c = client();
+    const required = file("0001_test.sql", "CREATE TABLE public.demo (id text NOT NULL)");
+    await c.exec("CREATE TABLE public.demo (id text)");
+    await expect(run(c, [required], { baselineThrough: "0001", confirmExistingSchema: true }))
+      .rejects.toThrow(/catalog group 2/);
+    expect((await c.query("SELECT to_regclass('_isp_migration_history') AS name")).rows).toEqual([{ name: null }]);
+  });
+  it("rejects unvalidated CHECK constraints rather than hiding semantic drift", async () => {
+    const c = client();
+    const checked = file("0001_test.sql", "CREATE TABLE public.demo (id text, CONSTRAINT demo_check CHECK (id <> ''))");
+    await c.exec("CREATE TABLE public.demo (id text); ALTER TABLE public.demo ADD CONSTRAINT demo_check CHECK (id <> '') NOT VALID");
+    await expect(run(c, [checked], { baselineThrough: "0001", confirmExistingSchema: true }))
+      .rejects.toThrow(/catalog group 3/);
+  });
+  it("does not silently ignore unexpected tables with a migration-like prefix", async () => {
+    const c = client();
+    await c.exec(first.sql + "CREATE TABLE public._isp_migration_unexpected(id text)");
+    await expect(run(c, [first], { baselineThrough: "0001", confirmExistingSchema: true }))
+      .rejects.toThrow(/catalog group 1/);
+  });
   it("rejects runtime roles before any migration", async () => {
     const c = client();
     await c.exec("CREATE ROLE app_admin; SET ROLE app_admin;");
