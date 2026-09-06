@@ -5,6 +5,7 @@ import {
 } from "@isp/db";
 import { requireGrantedOperator } from "@/lib/platform-admin";
 import { isDiscoverySchemaUnavailable } from "@/lib/discovery-schema";
+import { collectDiscoveryRuntimeDiagnostics, discoveryFailure, discoveryQuery } from "@/lib/discovery-runtime";
 import {
   setDiscoveredCreatorStateAction,
   setDiscoveryTopicEnabledAction,
@@ -24,18 +25,30 @@ export default async function AdminDiscoveryPage({
   if (!db) {
     return <p className="muted">Discovery needs the platform admin database role.</p>;
   }
-  const load = () => Promise.all([listDiscoveryTopics(db), listDiscoveredCreators(db), listDiscoveryRuns(db)]);
+  const load = () => Promise.all([
+    discoveryQuery("topics", () => listDiscoveryTopics(db)),
+    discoveryQuery("creators", () => listDiscoveredCreators(db)),
+    discoveryQuery("runs", () => listDiscoveryRuns(db)),
+  ]);
   let data: Awaited<ReturnType<typeof load>>;
   try {
     data = await load();
   } catch (error) {
     if (!isDiscoverySchemaUnavailable(error)) throw error;
+    const failure = discoveryFailure(error);
+    const diagnostics = await collectDiscoveryRuntimeDiagnostics(db);
     return (
       <>
         <h1>Discovery</h1>
-        <p role="alert">Discovery database update required.</p>
-        <p>The database does not yet match this release. Complete the reviewed migration preflight before running discovery.</p>
-        <p className="muted">No discovery request was started by loading this page. Do not change passwords or broaden runtime permissions.</p>
+        <p role="alert">Discovery is unavailable to this running application.</p>
+        <p>The admin connection could not resolve a required table or column. A completed migration on another connection does not prove this runtime can see it.</p>
+        <p>Failed query: {failure.operation}. Database code: {failure.sqlState}. Object: {failure.object ?? "not identified"}.</p>
+        <p className="muted">No discovery request, migration, or job retry was started. Do not reset credentials, rerun baseline adoption, or clear failed jobs based on this message.</p>
+        <details open>
+          <summary>Runtime diagnostics (read-only)</summary>
+          <p>These checks use this page's actual admin connection. The failure sample is from the database outbox, not the Redis failed-job set. Unknown error text and connection values are not displayed.</p>
+          <pre>{JSON.stringify(diagnostics, null, 2)}</pre>
+        </details>
       </>
     );
   }
@@ -81,7 +94,7 @@ export default async function AdminDiscoveryPage({
         <section key={topic.id}>
           <p>
             {topic.providerKey} · {topic.query} · {topic.enabled ? "enabled" : "paused"} · last run{" "}
-            {topic.lastRunAt?.toISOString() ?? "—"}
+            {topic.lastRunAt?.toISOString() ?? "Not yet"}
           </p>
           <form className="inline-form" action={setDiscoveryTopicEnabledAction}>
             <input type="hidden" name="topicId" value={topic.id} />
@@ -96,7 +109,7 @@ export default async function AdminDiscoveryPage({
         <section key={row.id}>
           <p>
             {row.displayName ?? row.externalAccountId} · {row.providerKey} · {row.relevanceState} · score{" "}
-            {row.relevanceScore} · topics {row.topicHits} · reach views {row.reachViews ?? "—"}
+            {row.relevanceScore} · topics {row.topicHits} · reach views {row.reachViews ?? "Not available"}
           </p>
           <p className="muted">
             Last monitor success {row.lastMonitorSuccessAt?.toISOString() ?? "Not polled yet"} · next check{" "}
