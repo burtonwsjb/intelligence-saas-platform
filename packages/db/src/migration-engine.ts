@@ -1,0 +1,99 @@
+import { createHash } from "node:crypto";
+
+/** The adapter runs every operation on one transaction-bound connection. */
+export interface MigrationConnection {
+  query: <T extends Record<string, unknown> = Record<string, unknown>>(text: string, params?: unknown[]) => Promise<T[]>;
+  exec: (text: string) => Promise<void>;
+}
+export type MigrationFile = { name: string; sql: string; checksum: string };
+export type MigrationOptions = {
+  plan?: boolean;
+  baselineThrough?: string;
+  confirmExistingSchema?: boolean;
+  verifyBaseline?: (db: MigrationConnection, files: MigrationFile[]) => Promise<void>;
+};
+export class MigrationSafetyError extends Error {
+  constructor(message: string) { super(message); this.name = "MigrationSafetyError"; }
+}
+export function migrationChecksum(sql: string): string {
+  // Git checkouts on Windows and Linux must describe the same migration.
+  return createHash("sha256").update(sql.replace(/\r\n/g, "\n")).digest("hex");
+}
+const LEDGER = "_isp_migration_history";
+
+export async function migrateOnConnection(db: MigrationConnection, files: MigrationFile[], options: MigrationOptions = {}) {
+  const ordered = [...files].sort((a, b) => a.name.localeCompare(b.name));
+  if (new Set(ordered.map((f) => f.name.slice(0, 4))).size !== ordered.length ||
+      ordered.some((f) => !/^\d{4}_[A-Za-z0-9_-]+\.sql$/.test(f.name))) {
+    throw new MigrationSafetyError("Migration filenames must have unique four-digit versions.");
+  }
+  // Transaction-level lock is safe on both direct and transaction-pooled Postgres.
+  await db.query("SELECT pg_advisory_xact_lock(1769172992, 1)");
+  const [who] = await db.query<{ role: string }>("SELECT current_user AS role");
+  if (!who || ["app_user", "app_worker", "app_admin"].includes(who.role)) {
+    throw new MigrationSafetyError("Runtime database roles cannot run migrations. Set DATABASE_MIGRATE_URL to the authorized schema migration connection, not a web, worker, or admin runtime URL.");
+  }
+  const [exists] = await db.query<{ present: boolean }>("SELECT to_regclass('public._isp_migration_history') IS NOT NULL AS present");
+  if (!exists) throw new MigrationSafetyError("Could not inspect the migration ledger.");
+  const recorded = exists.present
+    ? await db.query<{ name: string; checksum: string }>(`SELECT name, checksum FROM public.${LEDGER} ORDER BY name`)
+    : [];
+  for (const [i, entry] of recorded.entries()) {
+    if (entry.name !== ordered[i]?.name || entry.checksum !== ordered[i]?.checksum) {
+      throw new MigrationSafetyError(`Migration history differs from this checkout at ${entry.name}. No SQL was replayed; restore the original migration files and investigate drift.`);
+    }
+  }
+  let baseline: MigrationFile[] = [];
+  if (recorded.length === 0) {
+    const tables = await db.query<{ name: string }>(
+      "SELECT c.relname AS name FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname IN ('public','app') AND c.relkind IN ('r','p') AND c.relname <> $1 ORDER BY c.relname",
+      [LEDGER],
+    );
+    if (tables.length > 0) {
+      if (!options.baselineThrough || !options.confirmExistingSchema || !options.verifyBaseline) {
+        throw new MigrationSafetyError("Existing database has no migration ledger. Refusing to replay old SQL. Use --baseline-through <last-existing-version> --confirm-existing-schema only after reviewing the target; the runner must verify its schema against an isolated reference first.");
+      }
+      const end = ordered.findIndex((f) => f.name === options.baselineThrough || f.name.slice(0, 4) === options.baselineThrough);
+      if (end < 0) throw new MigrationSafetyError("Requested legacy baseline is not a migration in this checkout.");
+      baseline = ordered.slice(0, end + 1);
+      await options.verifyBaseline(db, baseline);
+    } else if (options.baselineThrough) {
+      throw new MigrationSafetyError("An empty database cannot adopt a legacy baseline.");
+    }
+  } else if (options.baselineThrough) {
+    throw new MigrationSafetyError("A migration ledger already exists; legacy adoption is not allowed.");
+  }
+  const pending = ordered.slice(recorded.length + baseline.length);
+  // Catch the actual ownership issue before applying ANY pending migration.
+  // No automatic grants, ownership transfer, or runtime-role elevation.
+  if (pending.length > 0) {
+    const [schema] = await db.query<{ allowed: boolean }>("SELECT has_schema_privilege(current_user, 'public', 'USAGE') AND has_schema_privilege(current_user, 'public', 'CREATE') AS allowed");
+    if (!schema?.allowed) throw new MigrationSafetyError("The migration connection lacks USAGE/CREATE on schema public. No pending migrations were applied. Use the authorized schema owner or have an owner grant only the migration role the required access.");
+    for (const file of pending) {
+      for (const match of file.sql.matchAll(/ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?"([A-Za-z0-9_]+)"/gi)) {
+        const [table] = await db.query<{ allowed: boolean }>(
+          "SELECT (r.rolsuper OR pg_has_role(current_user, c.relowner, 'USAGE')) AS allowed FROM pg_class c JOIN pg_roles r ON r.rolname=current_user WHERE c.oid=to_regclass($1)",
+          [`public.${match[1]}`],
+        );
+        if (table && !table.allowed) {
+          throw new MigrationSafetyError(`${file.name} needs ownership rights on public.${match[1]}. Use its existing schema owner for this maintenance run; do not broaden application permissions. No pending migrations were applied.`);
+        }
+      }
+    }
+  }
+  const report = { role: who.role, adopted: baseline.map((f) => f.name), pending: pending.map((f) => f.name), applied: [] as string[], plan: options.plan === true };
+  if (options.plan) return report;
+  await db.exec(`CREATE TABLE IF NOT EXISTS public.${LEDGER} (
+    name text PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now(),
+    applied_by text NOT NULL DEFAULT current_user, method text NOT NULL CHECK (method IN ('executed','baseline'))
+  ); REVOKE ALL ON TABLE public.${LEDGER} FROM PUBLIC;`);
+  for (const file of baseline) {
+    await db.query(`INSERT INTO public.${LEDGER} (name, checksum, method) VALUES ($1,$2,'baseline')`, [file.name, file.checksum]);
+  }
+  for (const file of pending) {
+    await db.exec(file.sql);
+    await db.query(`INSERT INTO public.${LEDGER} (name, checksum, method) VALUES ($1,$2,'executed')`, [file.name, file.checksum]);
+    report.applied.push(file.name);
+  }
+  return report;
+}
