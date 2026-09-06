@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import {
@@ -8,12 +8,18 @@ import {
   listDiscoveryTopics,
   runSocialDiscovery,
   setDiscoveredCreatorState,
+  setDiscoveryTopicEnabled,
 } from "./discovery.js";
 import { readMigrationSql, type Database } from "../index.js";
 import { sourceIntelligenceFixtures } from "../source/fixtures.js";
+import { tcgSet } from "../schema/tcg.js";
+
+const disposableClients: PGlite[] = [];
+afterEach(async () => { await Promise.all(disposableClients.splice(0).map((client) => client.close())); });
 
 async function memoryDb() {
   const client = new PGlite();
+  disposableClients.push(client);
   await client.exec(await readMigrationSql());
   return drizzle(client) as unknown as Database;
 }
@@ -77,6 +83,26 @@ describe("automatic social discovery", () => {
     expect(topics.some((row) => row.providerKey === "youtube" && row.query === "Pokemon TCG investing")).toBe(true);
     expect(topics.some((row) => row.providerKey === "reddit" && row.query === "Pokemon market")).toBe(true);
     expect(topics.every((row) => row.query.length <= 120)).toBe(true);
+  });
+
+  it("derives topics from current catalog sets, stays bounded and preserves paused topics", async () => {
+    const db = await memoryDb();
+    await db.insert(tcgSet).values(Array.from({ length: 5 }, (_, i) => ({
+      id: `new_set_${i}`, gameKey: "pokemon", canonicalSetKey: `new_set_${i}`,
+      name: `Test Expansion ${i}`, releaseDate: `2026-0${i + 1}-01`,
+    })));
+    await ensureDiscoveryTopics(db);
+    let topics = (await listDiscoveryTopics(db, "youtube")).filter((row) => row.strategyKey === "derived_set");
+    expect(topics.map((row) => row.query).sort()).toEqual([
+      "Pokemon Test Expansion 2", "Pokemon Test Expansion 3", "Pokemon Test Expansion 4",
+    ]);
+    const paused = topics[0]!;
+    await setDiscoveryTopicEnabled(db, { topicId: paused.id, enabled: false });
+    await Promise.all([ensureDiscoveryTopics(db), ensureDiscoveryTopics(db)]);
+    topics = (await listDiscoveryTopics(db, "youtube")).filter((row) => row.strategyKey === "derived_set");
+    expect(topics).toHaveLength(3);
+    expect(topics.find((row) => row.id === paused.id)?.enabled).toBe(false);
+    expect(topics.every((row) => row.metadata.created_source === "automatic_catalog")).toBe(true);
   });
 
   it("treats reach as reach, not authority, when scoring relevance", () => {

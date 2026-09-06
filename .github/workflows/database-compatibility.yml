@@ -1,0 +1,58 @@
+name: Database compatibility
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  postgres18:
+    name: PostgreSQL 18 migration and isolation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: isp_admin
+          POSTGRES_PASSWORD: isp_ci_only
+          POSTGRES_DB: isp_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U isp_admin -d isp_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_ADMIN_URL: postgresql://isp_admin:isp_ci_only@localhost:5432/isp_ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.22.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @isp/db... build
+      - run: pnpm test:isolation
+  preflight_linux:
+    name: Maintenance prompt (PowerShell 7)
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read-only maintenance prompt safety
+        shell: pwsh
+        run: ./scripts/test-staging-repair-preflight.ps1
+  preflight_windows:
+    name: Maintenance prompt (Windows PowerShell 5.1)
+    runs-on: windows-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read-only maintenance prompt safety
+        shell: powershell
+        run: ./scripts/test-staging-repair-preflight.ps1

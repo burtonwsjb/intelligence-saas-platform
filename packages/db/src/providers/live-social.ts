@@ -4,6 +4,7 @@ import { normalizeRedditListing, normalizeYoutubeVideo } from "./source-normaliz
 import {
   createFetchTransport,
   requireOkJson,
+  ProviderHttpError,
   type HttpTransport,
 } from "./transport.js";
 
@@ -101,6 +102,15 @@ export class LiveRedditSourceProvider implements RedditSourceProvider {
       .slice(0, limit);
   }
 
+  async getRecentAuthorPosts(externalAccountId: string, limit = 10) {
+    const author = externalAccountId.replace(/^u\//, "");
+    if (!/^[A-Za-z0-9_-]{1,32}$/.test(author) || author === "unknown") {
+      throw new ProviderHttpError({ status: 0, errorClass: "invalid_account" });
+    }
+    const rows = await this.listing(`/user/${encodeURIComponent(author)}/submitted?sort=new&limit=${Math.max(1, Math.min(10, limit))}`);
+    return rows.filter((row) => row.account.external_account_id.replace(/^u\//, "").toLowerCase() === author.toLowerCase()).slice(0, limit);
+  }
+
   async getPost(externalContentId: string) {
     const rows = await this.listing(`/by_id/t3_${externalContentId}`);
     return rows[0] ?? null;
@@ -126,8 +136,8 @@ export class LiveYoutubeSourceProvider implements YoutubeSourceProvider {
   }
 
   private async videos(params: URLSearchParams): Promise<SourceContentRecordInput[]> {
-    const url = `https://www.googleapis.com/youtube/v3/videos?${params.toString()}&key=${this.auth.apiKey}`;
-    const response = await this.transport.fetch(url, { headers: { accept: "application/json" } });
+    const url = `https://www.googleapis.com/youtube/v3/videos?${params.toString()}`;
+    const response = await this.transport.fetch(url, { headers: { accept: "application/json", "x-goog-api-key": this.auth.apiKey } });
     const json = requireOkJson(response, (value) => value as { items?: unknown[] });
     return (json.items ?? []).map((item) => normalizeYoutubeVideo(item));
   }
@@ -140,11 +150,10 @@ export class LiveYoutubeSourceProvider implements YoutubeSourceProvider {
     const params = new URLSearchParams({
       part: "snippet,statistics",
       id: unique.join(","),
-      key: this.auth.apiKey,
     });
     const response = await this.transport.fetch(
       `https://www.googleapis.com/youtube/v3/channels?${params.toString()}`,
-      { headers: { accept: "application/json" } },
+      { headers: { accept: "application/json", "x-goog-api-key": this.auth.apiKey } },
     );
     const json = requireOkJson(
       response,
@@ -198,7 +207,6 @@ export class LiveYoutubeSourceProvider implements YoutubeSourceProvider {
       part: "snippet",
       maxResults: String(Math.min(query.limit ?? 5, 10)),
       type: "video",
-      key: this.auth.apiKey,
     });
     if (query.q?.trim()) {
       search.set("q", query.q.trim());
@@ -210,7 +218,7 @@ export class LiveYoutubeSourceProvider implements YoutubeSourceProvider {
       return [];
     }
     const searchUrl = `https://www.googleapis.com/youtube/v3/search?${search.toString()}`;
-    const response = await this.transport.fetch(searchUrl, { headers: { accept: "application/json" } });
+    const response = await this.transport.fetch(searchUrl, { headers: { accept: "application/json", "x-goog-api-key": this.auth.apiKey } });
     const json = requireOkJson(response, (value) => value as { items?: Array<{ id?: { videoId?: string } }> });
     const ids = (json.items ?? []).map((item) => item.id?.videoId).filter((id): id is string => Boolean(id));
     if (ids.length === 0) {
@@ -223,6 +231,33 @@ export class LiveYoutubeSourceProvider implements YoutubeSourceProvider {
     return this.attachChannelStats(rows, stats).filter(
       (row) => !query.language || row.content.language === query.language,
     );
+  }
+
+  /** Poll the discovered channel's uploads, not an operator-supplied channel list.
+   * Three bounded data requests; no expensive search request or unbounded crawl.
+   */
+  async getRecentChannelContent(externalAccountId: string, limit = 10) {
+    if (!/^[A-Za-z0-9_-]{3,128}$/.test(externalAccountId)) {
+      throw new ProviderHttpError({ status: 0, errorClass: "invalid_account" });
+    }
+    const headers = { accept: "application/json", "x-goog-api-key": this.auth.apiKey };
+    const channelParams = new URLSearchParams({ part: "contentDetails", id: externalAccountId });
+    const response = await this.transport.fetch(`https://www.googleapis.com/youtube/v3/channels?${channelParams}`, { headers });
+    const channel = requireOkJson(response, (value) => value as {
+      items?: Array<{ id?: string; contentDetails?: { relatedPlaylists?: { uploads?: string } } }>;
+    }).items?.find((item) => item.id === externalAccountId);
+    const uploads = channel?.contentDetails?.relatedPlaylists?.uploads;
+    if (!uploads) throw new ProviderHttpError({ status: 404, errorClass: "channel_unavailable" });
+    const params = new URLSearchParams({ part: "contentDetails", playlistId: uploads, maxResults: String(Math.max(1, Math.min(10, limit))) });
+    const playlist = await this.transport.fetch(`https://www.googleapis.com/youtube/v3/playlistItems?${params}`, { headers });
+    const items = requireOkJson(playlist, (value) => value as {
+      items?: Array<{ contentDetails?: { videoId?: string } }>;
+    }).items ?? [];
+    const ids = [...new Set(items.map((item) => item.contentDetails?.videoId).filter((id): id is string => typeof id === "string" && id.length > 0))].slice(0, limit);
+    if (!ids.length) return [];
+    const rows = await this.videos(new URLSearchParams({ part: "snippet,statistics", id: ids.join(",") }));
+    // Never attach a response for another channel to this monitored identity.
+    return rows.filter((row) => row.account.external_account_id === externalAccountId).slice(0, limit);
   }
 
   async getChannel(externalAccountId: string) {

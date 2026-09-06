@@ -278,7 +278,18 @@ describe("migrations", () => {
     expect(numbers).toEqual([...numbers].sort());
     expect(new Set(numbers).size).toBe(numbers.length);
     expect(files[0]).toBe("0001_phase02_identity.sql");
-    expect(files.at(-1)).toBe("0024_phase40_discovery.sql");
+    const journal = JSON.parse(readFileSync(path.join(repoRoot, "packages/db/drizzle/meta/_journal.json"), "utf8")) as { entries: Array<{ idx: number; tag: string }> };
+    expect(journal.entries.map((entry) => `${entry.tag}.sql`)).toEqual(files);
+    expect(journal.entries.map((entry) => entry.idx)).toEqual(files.map((_, index) => index));
+    expect(files).toContain("0025_discovery_execution_safety.sql");
+  });
+
+  it("keeps 0025 discovery budgets and topic evidence forward-only", () => {
+    const sql = readFileSync(path.join(repoRoot, "packages/db/drizzle/0025_discovery_execution_safety.sql"), "utf8");
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS discovery_request_budget/);
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS discovery_creator_topic/);
+    expect(sql).not.toMatch(/DROP TABLE|TRUNCATE|DELETE FROM|BYPASSRLS/);
+    expect(sql).toMatch(/REVOKE ALL ON discovery_request_budget, discovery_creator_topic FROM app_user/);
   });
 
   it("keeps 0024 discovery tables forward-only and non-destructive", async () => {

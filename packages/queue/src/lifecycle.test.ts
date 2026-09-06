@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { UnrecoverableJobError } from "./errors.js";
 import {
   classifyJobFailure,
@@ -64,7 +64,9 @@ describe("runGracefulStop", () => {
 });
 
 describe("createShutdownLatch", () => {
-  it("is idempotent and force-exits if stop hangs past the Railway window", async () => {
+  afterEach(() => { vi.useRealTimers(); });
+  it("shares one drain and exits once after a successful shutdown", async () => {
+    vi.useFakeTimers();
     const exits: number[] = [];
     const latch = createShutdownLatch({
       forceExitMs: 15,
@@ -78,7 +80,10 @@ describe("createShutdownLatch", () => {
     const second = latch.request(async () => {
       exits.push(99);
     });
+    expect(first).toBe(second);
+    await vi.advanceTimersByTimeAsync(5);
     await Promise.all([first, second]);
+    await vi.advanceTimersByTimeAsync(100);
     expect(latch.isShuttingDown()).toBe(true);
     expect(exits).toEqual([0]);
   });
@@ -113,3 +118,26 @@ describe("createShutdownLatch", () => {
     expect(timers).toHaveLength(1);
   });
 });
+
+  it("never reports success after a forced shutdown", async () => {
+    vi.useFakeTimers();
+    try {
+      const exit = vi.fn();
+      let finishDrain!: () => void;
+      const latch = createShutdownLatch({ forceExitMs: 20, exit });
+      const pending = latch.request(() => new Promise<void>((resolve) => { finishDrain = resolve; }));
+      await vi.advanceTimersByTimeAsync(20);
+      await pending;
+      finishDrain();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(exit.mock.calls).toEqual([[1]]);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
+  it("clears cleanup deadlines after successful steps", async () => {
+    vi.useFakeTimers();
+    try {
+      await runGracefulStop([{ name: "done", run: async () => undefined }]);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });

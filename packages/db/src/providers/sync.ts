@@ -1,16 +1,14 @@
+import { runCreatorMonitoring } from "./monitoring.js";
+import { isHostedRuntime } from "@isp/shared";
+import { withPlatformContext } from "../rls.js";
 import { createHash } from "node:crypto";
 import type { Database } from "../client.js";
 import { receiveTcgMarketRecord } from "../tcg/market-ingest.js";
-import { receiveSourceContentRecord } from "../source/ingest.js";
 import { tcgMarketFixtureRecords } from "../tcg/market-fixtures.js";
 import {
   FixtureTcgMarketProvider,
   type TcgMarketProvider,
 } from "../tcg/market-provider.js";
-import {
-  FixtureRedditSourceProvider,
-  FixtureYoutubeSourceProvider,
-} from "../source/provider.js";
 import type { TcgMarketRecordInput } from "../tcg/market-identity.js";
 import {
   PLATFORM_JOB_VERSION,
@@ -26,12 +24,9 @@ import {
 } from "./catalog.js";
 import { decideProviderSyncDue, providerSyncBucketId } from "./schedule.js";
 import { createLiveMarketProvider } from "./live-market.js";
-import { createLiveRedditProvider, createLiveYoutubeProvider } from "./live-social.js";
 import {
-  ensureDiscoveryTopics,
   isDiscoveryProviderKey,
-  nextDiscoveryTopic,
-  persistDiscoveryFromRecords,
+  runSocialDiscovery,
 } from "./discovery.js";
 import {
   ensureProviderRuntimeRows,
@@ -73,20 +68,6 @@ async function enqueueMarketNormalize(db: Database, ingestId: string) {
   });
 }
 
-async function enqueueSourceNormalize(db: Database, ingestId: string) {
-  return enqueuePlatformJob(db, {
-    id: `source.intelligence.normalize.v1:${ingestId}`,
-    jobType: "source.intelligence.normalize.v1",
-    payload: {
-      job_version: PLATFORM_JOB_VERSION,
-      job_type: "source.intelligence.normalize.v1",
-      job_id: `source.intelligence.normalize.v1:${ingestId}`,
-      source_ingest_id: ingestId,
-      created_at: platformJobCreatedAt(),
-    },
-  });
-}
-
 async function quarantineIntelligence(
   db: Database,
   input: { providerKey: string; recordType: string; reason: string; payload: Record<string, unknown> },
@@ -122,7 +103,50 @@ export function resolveMarketProvider(
   return null;
 }
 
-export async function syncProvider(
+type ProviderSyncInput = {
+  providerKey: string; trigger: "schedule" | "admin" | "staging_ingest" | "smoke";
+  limit?: number; env?: NodeJS.ProcessEnv; transport?: HttpTransport; query?: string;
+};
+export async function syncProvider(db: Database, input: ProviderSyncInput) {
+  // Social discovery manages short independent transactions so HTTP failures do
+  // not roll back request reservations. Market normalization keeps its existing scope.
+  if (!isDiscoveryProviderKey(input.providerKey)) return withPlatformContext(db, (tx) => syncProviderInTransaction(tx, input));
+  const providerKey = input.providerKey;
+  const env = input.env ?? process.env;
+  const mode = resolveProviderMode(providerKey, env);
+  if (mode === "disabled") return { status: "skipped" as const, reason: "disabled", received: 0, quarantined: 0 };
+  if (mode === "live" && !providerCredentialStatus(providerKey, env).present) {
+    return { status: "skipped" as const, reason: "disabled_pending_credentials", received: 0, quarantined: 0 };
+  }
+  const runtime = await withPlatformContext(db, async (tx) => {
+    await ensureProviderRuntimeRows(tx, env);
+    return getProviderRuntime(tx, providerKey);
+  });
+  if (runtime?.paused || (isHostedRuntime(env) && (!runtime?.enabled || runtime.mode !== "live"))) {
+    return { status: "skipped" as const, reason: "paused_or_disabled", received: 0, quarantined: 0 };
+  }
+  if (runtime?.retryAfterAt && runtime.retryAfterAt.getTime() > Date.now()) return { status: "skipped" as const, reason: "throttled", received: 0, quarantined: 0 };
+  const leased = await withPlatformContext(db, (tx) => tryAcquireProviderLease(tx, providerKey));
+  if (!leased) return { status: "skipped" as const, reason: "overlap", received: 0, quarantined: 0 };
+  try {
+    const monitoring = input.trigger === "schedule" ? await runCreatorMonitoring(db, { providerKey, env, transport: input.transport }) : null;
+    const report = await runSocialDiscovery(db, { providerKey, query: input.query,
+      trigger: input.trigger === "admin" ? "admin" : input.trigger === "schedule" ? "schedule" : "staging",
+      limit: Math.min(input.limit ?? 10, 10), env, transport: input.transport });
+    const received = report.content_ingested + (monitoring?.received ?? 0);
+    const ok = report.status === "completed" && monitoring?.status !== "failed";
+    const reason = report.reason ?? (monitoring?.status === "failed" ? monitoring.reason : null);
+    await withPlatformContext(db, (tx) => recordProviderSyncResult(tx, {
+      providerKey, ok, errorClass: reason,
+      received, healthStatus: ok ? "healthy" : "failed",
+    }));
+    return { status: ok ? "completed" as const : report.status === "skipped" ? "skipped" as const : "failed" as const, reason, received, quarantined: 0 };
+  } finally {
+    await withPlatformContext(db, (tx) => releaseProviderLease(tx, providerKey));
+  }
+}
+
+async function syncProviderInTransaction(
   db: Database,
   input: {
     providerKey: string;
@@ -133,7 +157,7 @@ export async function syncProvider(
   },
 ) {
   const env = input.env ?? process.env;
-  if (!isProviderKey(input.providerKey)) {
+  if (!isProviderKey(input.providerKey) || isDiscoveryProviderKey(input.providerKey)) {
     throw new ProviderSyncError("Unknown provider.", "invalid_provider");
   }
   await ensureProviderRuntimeRows(db, env);
@@ -178,73 +202,29 @@ export async function syncProvider(
   let lastSourceTimestamp: Date | null = runtime?.lastSourceTimestamp ?? null;
 
   try {
-    if (input.providerKey === "reddit" || input.providerKey === "youtube") {
-      await ensureDiscoveryTopics(db);
-      const topic = isDiscoveryProviderKey(input.providerKey)
-        ? await nextDiscoveryTopic(db, input.providerKey)
-        : null;
-      const search = { q: topic?.query, limit };
-      const records =
-        input.providerKey === "reddit"
-          ? mode === "fixture"
-            ? await new FixtureRedditSourceProvider().searchPosts(search)
-            : ((await createLiveRedditProvider(env, input.transport)?.searchPosts(search)) ?? [])
-          : mode === "fixture"
-            ? await new FixtureYoutubeSourceProvider().searchContent(search)
-            : ((await createLiveYoutubeProvider(env, input.transport)?.searchContent(search)) ?? []);
-      const sliced = records.slice(0, limit);
-      if (isDiscoveryProviderKey(input.providerKey)) {
-        await persistDiscoveryFromRecords(db, {
+    const provider = resolveMarketProvider(input.providerKey, mode, env, input.transport);
+    if (!provider) {
+      throw new ProviderSyncError("Live market provider is not configured.", "disabled_pending_credentials");
+    }
+    const after = runtime?.lastSourceId;
+    const records: TcgMarketRecordInput[] = (await provider.getMarketSnapshots({}))
+      .filter((row) => !after || row.provider_record_id > after)
+      .slice(0, limit);
+    for (const record of records) {
+      try {
+        const accepted = await receiveTcgMarketRecord(db, record);
+        await enqueueMarketNormalize(db, accepted.ingestId);
+        received += 1;
+        lastSourceId = record.provider_record_id;
+        lastSourceTimestamp = new Date(record.observed_at);
+      } catch (error) {
+        quarantined += 1;
+        await quarantineIntelligence(db, {
           providerKey: input.providerKey,
-          query: topic?.query ?? "Pokemon TCG",
-          topicId: topic?.id ?? null,
-          trigger: input.trigger === "admin" ? "admin" : input.trigger === "schedule" ? "schedule" : "staging",
-          records: sliced,
-          ingestContent: false,
+          recordType: "market_observation",
+          reason: error instanceof Error ? error.name : "invalid_payload",
+          payload: { provider_record_id: record.provider_record_id },
         });
-      }
-      for (const record of sliced) {
-        try {
-          const accepted = await receiveSourceContentRecord(db, record);
-          await enqueueSourceNormalize(db, accepted.ingestId);
-          received += 1;
-          lastSourceId = record.provider_record_id;
-          lastSourceTimestamp = new Date(record.content.published_at);
-        } catch (error) {
-          quarantined += 1;
-          await quarantineIntelligence(db, {
-            providerKey: input.providerKey,
-            recordType: "source_content",
-            reason: error instanceof Error ? error.name : "invalid_payload",
-            payload: { provider_record_id: record.provider_record_id },
-          });
-        }
-      }
-    } else {
-      const provider = resolveMarketProvider(input.providerKey, mode, env, input.transport);
-      if (!provider) {
-        throw new ProviderSyncError("Live market provider is not configured.", "disabled_pending_credentials");
-      }
-      const after = runtime?.lastSourceId;
-      const records: TcgMarketRecordInput[] = (await provider.getMarketSnapshots({}))
-        .filter((row) => !after || row.provider_record_id > after)
-        .slice(0, limit);
-      for (const record of records) {
-        try {
-          const accepted = await receiveTcgMarketRecord(db, record);
-          await enqueueMarketNormalize(db, accepted.ingestId);
-          received += 1;
-          lastSourceId = record.provider_record_id;
-          lastSourceTimestamp = new Date(record.observed_at);
-        } catch (error) {
-          quarantined += 1;
-          await quarantineIntelligence(db, {
-            providerKey: input.providerKey,
-            recordType: "market_observation",
-            reason: error instanceof Error ? error.name : "invalid_payload",
-            payload: { provider_record_id: record.provider_record_id },
-          });
-        }
       }
     }
 

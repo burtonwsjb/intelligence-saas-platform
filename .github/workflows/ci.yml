@@ -73,5 +73,11 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Load smoke
+        run: pnpm test:load-smoke
+
+      - name: Security scan
+        run: pnpm test:security-scan
+
       - name: Diff check
         run: git diff --check

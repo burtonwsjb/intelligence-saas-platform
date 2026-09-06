@@ -1,4 +1,4 @@
-import { boolean, index, integer, jsonb, numeric, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { bigint, boolean, index, integer, jsonb, numeric, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { creator } from "./creator.js";
 import { sourceAccount } from "./source.js";
 
@@ -65,9 +65,13 @@ export const discoveredCreator = pgTable(
     topicHits: integer("topic_hits").notNull().default(1),
     relevanceScore: numeric("relevance_score", { precision: 8, scale: 4, mode: "string" }).notNull().default("0"),
     relevanceState: text("relevance_state").notNull().default("candidate"),
-    reachViews: integer("reach_views"),
-    reachSubscribers: integer("reach_subscribers"),
+    reachViews: bigint("reach_views", { mode: "number" }),
+    reachSubscribers: bigint("reach_subscribers", { mode: "number" }),
     discoveryProvenance: jsonb("discovery_provenance").$type<Record<string, unknown>>().notNull().default({}),
+    lastMonitorAttemptAt: timestamp("last_monitor_attempt_at", { withTimezone: true }),
+    lastMonitorSuccessAt: timestamp("last_monitor_success_at", { withTimezone: true }),
+    nextMonitorAt: timestamp("next_monitor_at", { withTimezone: true }),
+    monitorErrorClass: text("monitor_error_class"),
     firstDiscoveredAt: timestamp("first_discovered_at", { withTimezone: true }).defaultNow().notNull(),
     lastDiscoveredAt: timestamp("last_discovered_at", { withTimezone: true }).defaultNow().notNull(),
   },

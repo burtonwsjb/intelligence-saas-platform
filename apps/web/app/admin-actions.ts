@@ -16,7 +16,8 @@ import {
   upsertOperatorIndexDefinition,
   createBetaInvite,
   isFeatureFlagKey,
-  runSocialDiscovery,
+  requestDiscoveryRun,
+  DiscoveryConfigurationError,
   setDiscoveredCreatorState,
   setDiscoveryTopicEnabled,
   setProviderEnabled,
@@ -320,19 +321,16 @@ export async function triggerDiscoveryRunAction(formData: FormData) {
   if (providerKey !== "youtube" && providerKey !== "reddit") {
     redirect("/admin/discovery?error=rejected");
   }
-  await runSocialDiscovery(operator.adminDb, {
-    providerKey,
-    query: String(formData.get("query") ?? "").trim() || undefined,
-    limit: 10,
-    trigger: "admin",
-  });
-  await insertBreakGlassAudit(operator.adminDb, {
-    actorUserId: operator.session.user.id,
-    action: "discovery.run",
-    targetType: "discovery_run",
-    targetId: providerKey,
-  });
-  redirect("/admin/discovery");
+  try {
+    await requestDiscoveryRun(operator.adminDb, {
+      providerKey, query: String(formData.get("query") ?? ""),
+      actorUserId: operator.session.user.id, confirm: true,
+    });
+  } catch (error) {
+    if (error instanceof DiscoveryConfigurationError) redirect("/admin/discovery?error=configuration");
+    throw error;
+  }
+  redirect("/admin/discovery?queued=yes");
 }
 
 export async function reviewQuarantineAction(formData: FormData) {

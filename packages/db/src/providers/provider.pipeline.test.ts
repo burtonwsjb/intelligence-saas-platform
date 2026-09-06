@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -47,8 +47,12 @@ import { createFetchTransport, requireOkJson } from "./transport.js";
 import { LiveTcgMarketProvider } from "./live-market.js";
 import { safePayloadSummary } from "./safe.js";
 
+const disposableClients: PGlite[] = [];
+afterEach(async () => { await Promise.all(disposableClients.splice(0).map((client) => client.close())); });
+
 async function memoryDb() {
   const client = new PGlite();
+  disposableClients.push(client);
   await client.exec(await readMigrationSql());
   return drizzle(client) as unknown as Database;
 }
@@ -181,7 +185,7 @@ describe("staging command guards", () => {
     expect(staging).not.toMatch(/current_principal_type', 'user'/);
   });
 
-  it("bootstraps disabled provider runtime in staging mode without printing secrets", async () => {
+  it("inspects persisted provider state without live calls or persisting probe writes", async () => {
     const db = await memoryDb();
     const env = {
       ISP_ENV: "staging",
@@ -197,7 +201,7 @@ describe("staging command guards", () => {
       type: "market",
       mode: "disabled",
       enabled: false,
-      credential_status: "present",
+      credential_status: "missing",
     });
     const second = await runStagingSourceSmoke(db, env);
     expect(second.providers.map((row) => row.provider).sort()).toEqual(

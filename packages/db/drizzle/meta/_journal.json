@@ -169,6 +169,20 @@
       "when": 23,
       "tag": "0024_phase40_discovery",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 24,
+      "tag": "0025_discovery_execution_safety",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 25,
+      "tag": "0026_creator_monitoring",
+      "breakpoints": true
     }
   ]
 }
