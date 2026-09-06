@@ -1,0 +1,23 @@
+name: Repair source snapshot
+on:
+  pull_request:
+    branches: [main]
+    paths: [.github/workflows/repair-source-snapshot.yml]
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    if: github.head_ref == 'fix/scope-truth-release-repair'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: e667d1b650d0cdc45718e199b17fd10014569e80
+          persist-credentials: false
+      - run: git archive --format=tar.gz HEAD -o /tmp/repair-source.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: repair-source-e667d1b
+          path: /tmp/repair-source.tar.gz
+          retention-days: 1
