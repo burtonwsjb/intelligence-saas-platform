@@ -28,7 +28,9 @@ const WHERE_OBTAINED: Record<string, string> = {
   REDDIT_USER_AGENT: "Required Reddit user-agent identifying this platform.",
   REDDIT_SUBREDDITS: "Optional comma-separated subreddit allowlist.",
   YOUTUBE_API_KEY: "Google Cloud YouTube Data API v3 key.",
-  YOUTUBE_CHANNEL_IDS: "Optional comma-separated channel ids.",
+  YOUTUBE_CHANNEL_IDS: "Optional seed channel ids only. Topic search does not require them.",
+  TCGPLAYER_PRODUCT_IDS: "Optional bounded TCGplayer product id seeds. No catalog crawl.",
+  EBAY_SEARCH_QUERY: "Optional bounded eBay Browse search query.",
   CREATOR_LLM_API_KEY: "Optional LLM provider key for assisted extraction only.",
   CREATOR_LLM_PROVIDER: "Optional LLM provider name. Domain stays vendor-neutral.",
   CREATOR_LLM_MODEL: "Optional model identifier recorded in extractor version.",
@@ -41,6 +43,8 @@ const OPTIONAL = new Set([
   "EBAY_API_BASE_URL",
   "REDDIT_SUBREDDITS",
   "YOUTUBE_CHANNEL_IDS",
+  "TCGPLAYER_PRODUCT_IDS",
+  "EBAY_SEARCH_QUERY",
   "CREATOR_LLM_API_KEY",
   "CREATOR_LLM_PROVIDER",
   "CREATOR_LLM_MODEL",
@@ -53,9 +57,9 @@ export function credentialReadinessReport(env: NodeJS.ProcessEnv = process.env):
     const required = PROVIDER_CREDENTIAL_VARS[provider];
     const extras =
       provider === "tcgplayer"
-        ? ["TCGPLAYER_API_BASE_URL"]
+        ? ["TCGPLAYER_API_BASE_URL", "TCGPLAYER_PRODUCT_IDS"]
         : provider === "ebay"
-          ? ["EBAY_APP_ID", "EBAY_CERT_ID", "EBAY_API_BASE_URL"]
+          ? ["EBAY_APP_ID", "EBAY_CERT_ID", "EBAY_API_BASE_URL", "EBAY_SEARCH_QUERY"]
           : provider === "reddit"
             ? ["REDDIT_SUBREDDITS"]
             : provider === "youtube"

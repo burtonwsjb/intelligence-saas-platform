@@ -29,7 +29,7 @@ export {
   setAlertRuleEnabled,
 } from "./notifications/alerts.js";
 export { evaluateUsageWarnings, listUsageWarnings } from "./notifications/usage-warning.js";
-export { insertEmailDelivery, listEmailDeliveries } from "./notifications/delivery.js";
+export { insertEmailDelivery, listEmailDeliveries, processQueuedEmailDeliveries } from "./notifications/delivery.js";
 export {
   alertRuleMatches,
   canDispatchPredictionAlert,

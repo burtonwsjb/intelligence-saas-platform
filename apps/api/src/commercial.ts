@@ -599,6 +599,14 @@ export function registerCommercialRoutes(
         display_name: profile.creator.displayName,
         trust_state: profile.trustState,
         total_calls: profile.totalCalls,
+        discovery: profile.discovery.map((row) => ({
+          provider: row.providerKey,
+          relevance_state: row.relevanceState,
+          relevance_score: row.relevanceScore,
+          topic_hits: row.topicHits,
+          reach_views: row.reachViews,
+          reach_subscribers: row.reachSubscribers,
+        })),
         slices: profile.slices.map((slice) => ({
           game: slice.gameKey,
           language: slice.languageCode,

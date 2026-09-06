@@ -24,7 +24,9 @@
     "staging-fixture": "tsx src/staging-fixture.ts",
     "staging-source-smoke": "tsx src/staging-source-smoke.ts",
     "staging-ingest": "tsx src/staging-ingest.ts",
-    "staging-db-identity": "tsx src/staging-db-identity.ts"
+    "staging-db-identity": "tsx src/staging-db-identity.ts",
+    "staging-youtube-discovery": "tsx src/staging-youtube-discovery.ts",
+    "staging-reddit-discovery": "tsx src/staging-reddit-discovery.ts"
   },
   "dependencies": {
     "@isp/shared": "workspace:*",

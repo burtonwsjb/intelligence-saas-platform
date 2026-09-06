@@ -21,6 +21,7 @@ export {
   InvalidTenantContextError,
   MissingTenantContextError,
 } from "./errors.js";
+export { exportOrganizationData, disableOrganizationAccount } from "./privacy/portability.js";
 export { applyMigrations } from "./migrate-lib.js";
 export {
   assertDisposableAdminUrl,
@@ -511,6 +512,7 @@ export {
   dispatchMatchingAlerts,
   evaluateUsageWarnings,
   insertEmailDelivery,
+  processQueuedEmailDeliveries,
   isChannelOptedIn,
   listAlertRules,
   listEmailDeliveries,
@@ -611,6 +613,7 @@ export {
   BREAK_GLASS_ACTIONS,
   CreatorModerationError,
   OPERATOR_TRUST_STATES,
+  PROVIDER_ADAPTER_NOTES,
   PROVIDER_KEYS,
   PROVIDER_MODES,
   PlatformAdminDbNotConfiguredError,
@@ -645,6 +648,8 @@ export {
   credentialReadinessReport,
   decideProviderSyncDue,
   describePlatformConfig,
+  persistDiscoveredCommunities,
+  ensureDiscoveryTopics,
   enqueueDueProviderSyncs,
   enqueuePlatformJob,
   formatCredentialReadinessReport,
@@ -652,6 +657,8 @@ export {
   getProviderRuntime,
   getWorkerHeartbeat,
   listAdminProviders,
+  listDiscoveredCreators,
+  listDiscoveryTopics,
   listIntelligenceQuarantineForAdmin,
   listMarketQuarantineForAdmin,
   listPendingPlatformOutbox,
@@ -666,8 +673,11 @@ export {
   releaseProviderLease,
   retryProviderJob,
   reviewMarketQuarantine,
+  runSocialDiscovery,
   runStagingIngest,
   runStagingSourceSmoke,
+  setDiscoveredCreatorState,
+  setDiscoveryTopicEnabled,
   setProviderEnabled,
   setProviderPaused,
   syncProvider,

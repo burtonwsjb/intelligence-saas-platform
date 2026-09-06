@@ -1,4 +1,4 @@
-import { collectSystemHealth, listAdminProviders } from "@isp/db";
+import { PROVIDER_ADAPTER_NOTES, collectSystemHealth, listAdminProviders } from "@isp/db";
 import { requireGrantedOperator } from "@/lib/platform-admin";
 import { getDb } from "@/lib/auth";
 import {
@@ -35,6 +35,9 @@ export default async function AdminSourcesPage({
           <p>
             {row.providerType} · mode {row.mode} · {row.enabled ? "enabled" : "disabled"} ·{" "}
             {row.paused ? "paused" : "active"} · credentials {row.credentialStatus} · health {row.healthStatus}
+          </p>
+          <p className="muted">
+            {PROVIDER_ADAPTER_NOTES[row.providerKey as keyof typeof PROVIDER_ADAPTER_NOTES] ?? ""}
           </p>
           <p className="muted">
             last success {row.lastSuccessAt?.toISOString() ?? "—"} · last attempt {row.lastAttemptAt?.toISOString() ?? "—"} ·

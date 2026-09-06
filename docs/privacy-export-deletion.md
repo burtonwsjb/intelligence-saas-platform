@@ -1,9 +1,7 @@
-# Account export and deletion (architecture)
+# Account export and deletion
 
-Not a completed legal program. No extra legal claims.
+Export (implemented): tenant-owned members, API key metadata (never secrets), and webhook destinations. Global TCG reference data is excluded.
 
-Export (future): tenant-owned rows (users in org, keys metadata not secrets, usage, webhooks endpoints without plaintext secrets, feedback). Exclude other tenants and global TCG reference data.
+Deletion (implemented as disable): tenant status is set to disabled; API keys are revoked; webhooks are disabled. Audit and global market/printings stay. Platform admin grants for that user are a separate operator action.
 
-Deletion (future): disable tenant; tombstone PII in CRM; keep audit/break-glass; keep global market/printings/predictions accountability. Platform admin grants for that user are removed.
-
-Until implemented, operators handle requests manually with this boundary.
+Legal program and counsel review remain future work. No extra legal claims.

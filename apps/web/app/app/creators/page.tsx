@@ -37,6 +37,9 @@ export default async function CreatorsPage() {
               {" — "}
               trust {profile.trustState} · n={profile.headline?.sampleSize ?? profile.resolved} · authority{" "}
               {profile.headline?.authorityScore ?? "low_confidence"}
+              {profile.discovery[0]
+                ? ` · discovery ${profile.discovery[0].relevanceState} · reach ${profile.discovery[0].reachSubscribers ?? profile.discovery[0].reachViews ?? "—"}`
+                : ""}
             </li>
           ))}
         </ul>

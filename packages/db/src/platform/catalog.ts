@@ -19,6 +19,10 @@ export const BREAK_GLASS_ACTIONS = [
   "quarantine.retry",
   "quarantine.resolve",
   "quarantine.dismiss",
+  "discovery.topic",
+  "discovery.run",
+  "discovery.monitor",
+  "discovery.exclude",
 ] as const;
 
 export type BreakGlassAction = (typeof BREAK_GLASS_ACTIONS)[number];

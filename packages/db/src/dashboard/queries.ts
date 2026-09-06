@@ -6,7 +6,7 @@ import { tcgCardConcept, tcgPrinting, tcgSet } from "../schema/tcg.js";
 import { tcgScoreSnapshot } from "../schema/scoring.js";
 import { tcgIndexDefinition, tcgIndexLevel } from "../schema/analytics.js";
 import { tcgPrediction } from "../schema/prediction.js";
-import { creatorCall } from "../schema/creator.js";
+import { creator, creatorCall } from "../schema/creator.js";
 import { tcgMarketSnapshot } from "../schema/tcg-market.js";
 import { getLatestTcgMarketSnapshot, getTcgAskSoldSpread, listTcgSoldHistory } from "../tcg/market-query.js";
 import { getLatestScoreSnapshot } from "../scoring/persist.js";
@@ -258,7 +258,20 @@ export async function listIndexOverview(db: Database) {
 }
 
 export async function listRecentCreatorCalls(db: Database, limit = 8) {
-  return db.select().from(creatorCall).orderBy(desc(creatorCall.publishedAt)).limit(limit);
+  return db
+    .select({
+      id: creatorCall.id,
+      direction: creatorCall.direction,
+      horizonCode: creatorCall.horizonCode,
+      publishedAt: creatorCall.publishedAt,
+      printingId: creatorCall.printingId,
+      creatorId: creatorCall.creatorId,
+      creatorName: creator.displayName,
+    })
+    .from(creatorCall)
+    .leftJoin(creator, eq(creator.id, creatorCall.creatorId))
+    .orderBy(desc(creatorCall.publishedAt))
+    .limit(limit);
 }
 
 export async function countCatalog(db: Database) {

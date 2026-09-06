@@ -6,6 +6,7 @@ const ITEMS = [
   { href: "/admin/creators", label: "Creators" },
   { href: "/admin/indices", label: "Indices" },
   { href: "/admin/sources", label: "Sources" },
+  { href: "/admin/discovery", label: "Discovery" },
   { href: "/admin/quarantine", label: "Quarantine" },
   { href: "/admin/predictions", label: "Predictions" },
   { href: "/admin/support", label: "Support" },

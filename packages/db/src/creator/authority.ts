@@ -8,6 +8,7 @@ import {
   creatorTrustEvent,
 } from "../schema/creator.js";
 import { creatorCallAlpha } from "../schema/analytics.js";
+import { discoveredCreator } from "../schema/discovery.js";
 import {
   assignTrustState,
   authorityScore,
@@ -225,6 +226,7 @@ export async function getCreatorAuthorityProfile(db: Database, creatorId: string
     return Number(row.outcome?.returnPct) < Number(acc.outcome?.returnPct) ? row : acc;
   }, null);
   const headline = slices.find((row) => row.priceTier === "all" && row.gameKey == null) ?? slices[0] ?? null;
+  const discovery = await db.select().from(discoveredCreator).where(eq(discoveredCreator.creatorId, creatorId));
   return {
     creator: creatorRow,
     trustState: (await latestTrustState(db, creatorId)) ?? headline?.trustState ?? "low_confidence",
@@ -239,6 +241,7 @@ export async function getCreatorAuthorityProfile(db: Database, creatorId: string
     headline,
     slices,
     historicalCalls: joined,
+    discovery,
     buySellSignal: false,
   };
 }

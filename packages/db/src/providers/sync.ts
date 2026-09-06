@@ -28,6 +28,12 @@ import { decideProviderSyncDue, providerSyncBucketId } from "./schedule.js";
 import { createLiveMarketProvider } from "./live-market.js";
 import { createLiveRedditProvider, createLiveYoutubeProvider } from "./live-social.js";
 import {
+  ensureDiscoveryTopics,
+  isDiscoveryProviderKey,
+  nextDiscoveryTopic,
+  persistDiscoveryFromRecords,
+} from "./discovery.js";
+import {
   ensureProviderRuntimeRows,
   finishProviderSyncRun,
   getProviderRuntime,
@@ -173,15 +179,30 @@ export async function syncProvider(
 
   try {
     if (input.providerKey === "reddit" || input.providerKey === "youtube") {
+      await ensureDiscoveryTopics(db);
+      const topic = isDiscoveryProviderKey(input.providerKey)
+        ? await nextDiscoveryTopic(db, input.providerKey)
+        : null;
+      const search = { q: topic?.query, limit };
       const records =
         input.providerKey === "reddit"
           ? mode === "fixture"
-            ? await new FixtureRedditSourceProvider().searchPosts({})
-            : ((await createLiveRedditProvider(env, input.transport)?.searchPosts({ limit })) ?? [])
+            ? await new FixtureRedditSourceProvider().searchPosts(search)
+            : ((await createLiveRedditProvider(env, input.transport)?.searchPosts(search)) ?? [])
           : mode === "fixture"
-            ? await new FixtureYoutubeSourceProvider().searchContent({})
-            : ((await createLiveYoutubeProvider(env, input.transport)?.searchContent({ limit })) ?? []);
+            ? await new FixtureYoutubeSourceProvider().searchContent(search)
+            : ((await createLiveYoutubeProvider(env, input.transport)?.searchContent(search)) ?? []);
       const sliced = records.slice(0, limit);
+      if (isDiscoveryProviderKey(input.providerKey)) {
+        await persistDiscoveryFromRecords(db, {
+          providerKey: input.providerKey,
+          query: topic?.query ?? "Pokemon TCG",
+          topicId: topic?.id ?? null,
+          trigger: input.trigger === "admin" ? "admin" : input.trigger === "schedule" ? "schedule" : "staging",
+          records: sliced,
+          ingestContent: false,
+        });
+      }
       for (const record of sliced) {
         try {
           const accepted = await receiveSourceContentRecord(db, record);

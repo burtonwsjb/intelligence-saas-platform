@@ -5,6 +5,7 @@ import {
   createDbConnection,
   createDbFromWorkerEnv,
   enqueueDueProviderSyncs,
+  processQueuedEmailDeliveries,
   requireWorkerDatabaseUrl,
   upsertWorkerHeartbeat,
   withPlatformContext,
@@ -168,6 +169,38 @@ export async function runOutboxSweep(
     await dispatchPendingPlatformOutbox(db, input);
   } catch (error) {
     logLoopFailure("worker.platform_outbox_dispatch_failed", "platform_outbox_dispatch", error);
+  }
+  try {
+    const env = input.env ?? process.env;
+    const hosted = env.ISP_ENV === "staging" || env.ISP_ENV === "production";
+    const configured = Boolean(env.RESEND_API_KEY?.trim() && env.RESEND_FROM_EMAIL?.trim());
+    await withPlatformContext(db, (scoped) =>
+      processQueuedEmailDeliveries(scoped, {
+        send:
+          hosted && configured
+            ? async ({ templateKey }) => {
+                const response = await fetch("https://api.resend.com/emails", {
+                  method: "POST",
+                  headers: {
+                    authorization: `Bearer ${env.RESEND_API_KEY}`,
+                    "content-type": "application/json",
+                  },
+                  body: JSON.stringify({
+                    from: env.RESEND_FROM_EMAIL,
+                    to: env.RESEND_OPERATOR_EMAIL ?? env.RESEND_FROM_EMAIL,
+                    subject: templateKey,
+                    text: "A Social Signal IQ notification is waiting in the app.",
+                  }),
+                });
+                if (!response.ok) {
+                  throw new Error("resend_failed");
+                }
+              }
+            : undefined,
+      }),
+    );
+  } catch (error) {
+    logLoopFailure("worker.notification_fanout_failed", "notification_fanout", error);
   }
 }
 

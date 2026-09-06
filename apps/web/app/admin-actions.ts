@@ -7,6 +7,7 @@ import {
   OperatorNoteRejectedError,
   ProviderAdminError,
   SupportCaseRejectedError,
+  insertBreakGlassAudit,
   insertOperatorNote,
   insertSupportCase,
   setCreatorTrustKeepingHistory,
@@ -14,8 +15,10 @@ import {
   setSupportCaseStatus,
   upsertOperatorIndexDefinition,
   createBetaInvite,
-  insertBreakGlassAudit,
   isFeatureFlagKey,
+  runSocialDiscovery,
+  setDiscoveredCreatorState,
+  setDiscoveryTopicEnabled,
   setProviderEnabled,
   setProviderPaused,
   triggerProviderSync,
@@ -258,6 +261,78 @@ export async function retryProviderJobAction(formData: FormData) {
     throw error;
   }
   redirect("/admin/sources");
+}
+
+export async function setDiscoveryTopicEnabledAction(formData: FormData) {
+  const operator = await requireGrantedOperator();
+  if (!operator.adminDb) {
+    redirect("/admin/discovery?error=config");
+  }
+  await setDiscoveryTopicEnabled(operator.adminDb, {
+    topicId: String(formData.get("topicId") ?? ""),
+    enabled: String(formData.get("enabled") ?? "") === "true",
+  });
+  await insertBreakGlassAudit(operator.adminDb, {
+    actorUserId: operator.session.user.id,
+    action: "discovery.topic",
+    targetType: "discovery_topic",
+    targetId: String(formData.get("topicId") ?? ""),
+  });
+  redirect("/admin/discovery");
+}
+
+export async function setDiscoveredCreatorStateAction(formData: FormData) {
+  const operator = await requireGrantedOperator();
+  if (!operator.adminDb) {
+    redirect("/admin/discovery?error=config");
+  }
+  try {
+    await setDiscoveredCreatorState(operator.adminDb, {
+      id: String(formData.get("id") ?? ""),
+      relevanceState: String(formData.get("relevanceState") ?? "") as
+        | "candidate"
+        | "monitored"
+        | "excluded"
+        | "low_confidence",
+    });
+    const state = String(formData.get("relevanceState") ?? "");
+    await insertBreakGlassAudit(operator.adminDb, {
+      actorUserId: operator.session.user.id,
+      action: state === "excluded" ? "discovery.exclude" : "discovery.monitor",
+      targetType: "discovered_creator",
+      targetId: String(formData.get("id") ?? ""),
+    });
+  } catch {
+    redirect("/admin/discovery?error=rejected");
+  }
+  redirect("/admin/discovery");
+}
+
+export async function triggerDiscoveryRunAction(formData: FormData) {
+  const operator = await requireGrantedOperator();
+  if (!operator.adminDb) {
+    redirect("/admin/discovery?error=config");
+  }
+  if (String(formData.get("confirm") ?? "") !== "yes") {
+    redirect("/admin/discovery?error=rejected");
+  }
+  const providerKey = String(formData.get("providerKey") ?? "youtube");
+  if (providerKey !== "youtube" && providerKey !== "reddit") {
+    redirect("/admin/discovery?error=rejected");
+  }
+  await runSocialDiscovery(operator.adminDb, {
+    providerKey,
+    query: String(formData.get("query") ?? "").trim() || undefined,
+    limit: 10,
+    trigger: "admin",
+  });
+  await insertBreakGlassAudit(operator.adminDb, {
+    actorUserId: operator.session.user.id,
+    action: "discovery.run",
+    targetType: "discovery_run",
+    targetId: providerKey,
+  });
+  redirect("/admin/discovery");
 }
 
 export async function reviewQuarantineAction(formData: FormData) {

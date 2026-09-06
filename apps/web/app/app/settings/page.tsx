@@ -1,4 +1,9 @@
-import { updateOrgProfileAction, updatePreferenceAction, updateUserProfileAction } from "@/app/settings-actions";
+import {
+  disableOrganizationAction,
+  updateOrgProfileAction,
+  updatePreferenceAction,
+  updateUserProfileAction,
+} from "@/app/settings-actions";
 import { loadAppAccess } from "@/lib/app-access";
 import { preferenceControlLabel } from "@/lib/a11y";
 import { getDb } from "@/lib/auth";
@@ -118,6 +123,24 @@ export default async function SettingsPage({
         </tbody>
       </table>
       </div>
+      <h2>Privacy</h2>
+      <p className="muted">Export workspace members, API key prefixes, and webhook destinations. Secrets are never included.</p>
+      {access.canManageMembers ? (
+        <>
+          <p>
+            <a href="/app/privacy/export">Download workspace export</a>
+          </p>
+          <form action={disableOrganizationAction}>
+            <label>
+              Type DISABLE to disable this workspace
+              <input name="confirm" required />
+            </label>
+            <button type="submit">Disable workspace</button>
+          </form>
+        </>
+      ) : (
+        <p className="muted">Ask an owner to export workspace data.</p>
+      )}
     </>
   );
 }

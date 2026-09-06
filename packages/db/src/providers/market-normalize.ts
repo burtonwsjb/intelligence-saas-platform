@@ -7,7 +7,13 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 
 function asString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+  if (typeof value === "string" && value.trim()) {
+    return value.trim();
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+  return undefined;
 }
 
 function asNumber(value: unknown): number | undefined {
@@ -51,11 +57,64 @@ function externalFrom(raw: Record<string, unknown>, fallbackNamespace: string): 
   };
 }
 
+function mapEbayCondition(value: string | undefined): string {
+  const normalized = (value ?? "").toLowerCase();
+  if (normalized.includes("new") || normalized.includes("mint")) {
+    return "nm";
+  }
+  if (normalized.includes("used") || normalized.includes("good") || normalized.includes("acceptable")) {
+    return "unknown";
+  }
+  return "unknown";
+}
+
+function coerceVendorRow(
+  provider: "tcg_card_central" | "tcgplayer" | "ebay",
+  raw: Record<string, unknown>,
+): Record<string, unknown> {
+  if (provider === "tcgplayer" && raw.productId != null) {
+    const marketPrice = asNumber(raw.marketPrice ?? raw.midPrice ?? raw.lowPrice);
+    return {
+      ...raw,
+      provider_record_id: asString(raw.provider_record_id) ?? `tcgplayer:${asString(raw.productId)}`,
+      market_type: asString(raw.market_type) ?? "market_price",
+      price_type: asString(raw.price_type) ?? "reference",
+      observed_at: asString(raw.observed_at) ?? new Date().toISOString(),
+      currency: asString(raw.currency) ?? "USD",
+      condition: asString(raw.condition) ?? "unknown",
+      price: marketPrice,
+      low_price: asNumber(raw.lowPrice ?? raw.low_price),
+      high_price: asNumber(raw.highPrice ?? raw.high_price),
+      median_price: asNumber(raw.midPrice ?? raw.median_price),
+      average_price: marketPrice,
+      product_id: asString(raw.productId),
+      catalog_id: asString(raw.productId),
+    };
+  }
+  if (provider === "ebay" && (raw.itemId || raw.item_id)) {
+    const price = asRecord(raw.price);
+    return {
+      ...raw,
+      provider_record_id: asString(raw.provider_record_id ?? raw.itemId ?? raw.item_id) ?? "",
+      market_type: asString(raw.market_type) ?? "marketplace_listing",
+      price_type: asString(raw.price_type) ?? "asking",
+      observed_at: asString(raw.observed_at) ?? new Date().toISOString(),
+      currency: (asString(price.currency ?? raw.currency) ?? "USD").toUpperCase(),
+      condition: asString(raw.mapped_condition) ?? mapEbayCondition(asString(raw.condition)),
+      raw_condition: asString(raw.condition),
+      price: asNumber(price.value ?? raw.price),
+      url: asString(raw.itemWebUrl ?? raw.url),
+      catalog_id: asString(raw.itemId ?? raw.item_id),
+    };
+  }
+  return raw;
+}
+
 export function normalizeMarketVendorPayload(
   provider: "tcg_card_central" | "tcgplayer" | "ebay",
   raw: unknown,
 ): TcgMarketRecordInput {
-  const row = asRecord(raw);
+  const row = coerceVendorRow(provider, asRecord(raw));
   const marketType =
     asString(row.market_type) ??
     (asString(row.price_type) === "sold" || asString(row.kind) === "sold"
@@ -125,6 +184,16 @@ export function normalizeMarketVendorList(
   raw: unknown,
 ): TcgMarketRecordInput[] {
   const root = asRecord(raw);
-  const items = Array.isArray(raw) ? raw : Array.isArray(root.items) ? root.items : Array.isArray(root.data) ? root.data : [];
+  const items = Array.isArray(raw)
+    ? raw
+    : Array.isArray(root.items)
+      ? root.items
+      : Array.isArray(root.data)
+        ? root.data
+        : Array.isArray(root.results)
+          ? root.results
+          : Array.isArray(root.itemSummaries)
+            ? root.itemSummaries
+            : [];
   return items.map((item) => normalizeMarketVendorPayload(provider, item));
 }

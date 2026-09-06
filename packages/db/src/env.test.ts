@@ -267,6 +267,9 @@ describe("migrations", () => {
     expect(sql).toMatch(/GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE[\s\S]*"provider_runtime"[\s\S]*TO app_migrate, app_admin/);
     expect(sql).toMatch(/REVOKE INSERT, UPDATE, DELETE ON TABLE[\s\S]*"provider_runtime"[\s\S]*FROM app_user/);
     expect(sql).toMatch(/REVOKE SELECT ON TABLE "platform_outbox" FROM app_user/);
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "discovery_topic"/);
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "discovery_run"/);
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "discovered_creator"/);
   });
 
   it("keeps uniquely numbered forward-only drizzle files", async () => {
@@ -275,7 +278,17 @@ describe("migrations", () => {
     expect(numbers).toEqual([...numbers].sort());
     expect(new Set(numbers).size).toBe(numbers.length);
     expect(files[0]).toBe("0001_phase02_identity.sql");
-    expect(files.at(-1)).toBe("0023_phase24_provider_runtime_grants.sql");
+    expect(files.at(-1)).toBe("0024_phase40_discovery.sql");
+  });
+
+  it("keeps 0024 discovery tables forward-only and non-destructive", async () => {
+    const sql = readFileSync(path.join(repoRoot, "packages/db/drizzle/0024_phase40_discovery.sql"), "utf8");
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "discovery_topic"/);
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "discovered_creator"/);
+    expect(sql).not.toMatch(/DROP TABLE/);
+    expect(sql).not.toMatch(/TRUNCATE/);
+    expect(sql).not.toMatch(/DELETE FROM/);
+    expect(sql).not.toMatch(/BYPASSRLS/);
   });
 
   it("keeps 0023 forward-only and non-destructive", async () => {

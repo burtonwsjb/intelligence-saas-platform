@@ -1,4 +1,11 @@
-export { PROVIDER_KEYS, PROVIDER_MODES, resolveProviderMode, type ProviderKey, type ProviderMode } from "./catalog.js";
+export {
+  PROVIDER_ADAPTER_NOTES,
+  PROVIDER_KEYS,
+  PROVIDER_MODES,
+  resolveProviderMode,
+  type ProviderKey,
+  type ProviderMode,
+} from "./catalog.js";
 export { analyzeSourceSentiment } from "./sentiment.js";
 export {
   applyProviderModeFromEnv,
@@ -26,6 +33,18 @@ export {
   setProviderPaused,
   triggerProviderSync,
 } from "./admin.js";
+export {
+  calculateCreatorRelevance,
+  persistDiscoveredCommunities,
+  ensureDiscoveryTopics,
+  listDiscoveredCreators,
+  listDiscoveryTopics,
+  runSocialDiscovery,
+  setDiscoveredCreatorState,
+  setDiscoveryTopicEnabled,
+  DEFAULT_DISCOVERY_STRATEGIES,
+  DISCOVERY_MAX_RESULTS,
+} from "./discovery.js";
 export { enqueueDueProviderSyncs, ProviderSyncError, syncProvider } from "./sync.js";
 export { decideProviderSyncDue, providerSyncBucketId } from "./schedule.js";
 export { releaseProviderLease, tryAcquireProviderLease } from "./runtime.js";

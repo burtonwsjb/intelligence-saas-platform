@@ -4,7 +4,7 @@ export interface TcgMarketProvider {
   getMarketSnapshots(query: { printingExternalId?: string; language?: string }): Promise<TcgMarketRecordInput[]>;
   getSoldTransactions(query: { printingExternalId?: string; language?: string }): Promise<TcgMarketRecordInput[]>;
   getListingSnapshot(query: { printingExternalId?: string; language?: string }): Promise<TcgMarketRecordInput | null>;
-  healthCheck(): Promise<{ ok: true; mode: "sandbox_fixture" }>;
+  healthCheck(): Promise<{ ok: true; mode: "sandbox_fixture" | "live" }>;
 }
 
 export class FixtureTcgMarketProvider implements TcgMarketProvider {

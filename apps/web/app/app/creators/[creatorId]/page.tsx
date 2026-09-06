@@ -32,6 +32,16 @@ export default async function CreatorDetailPage({
     <>
       <h1>{profile.creator.displayName ?? profile.creator.id}</h1>
       <p>Trust: {profile.trustState}</p>
+      <p className="muted">
+        Authority is not popularity. Reach is audience size; authority uses evaluated calls and sample size.
+      </p>
+      {profile.discovery.length > 0 ? (
+        <p>
+          Discovery: {profile.discovery.map((row) => `${row.providerKey} ${row.relevanceState} (${row.topicHits} topics)`).join(" · ")}
+          {" · "}
+          reach views {profile.discovery[0]?.reachViews ?? "—"} · subscribers {profile.discovery[0]?.reachSubscribers ?? "—"}
+        </p>
+      ) : null}
       <p>
         Sample size {sample} · resolved {profile.resolved} / {profile.totalCalls} calls · awaiting outcome{" "}
         {profile.awaitingOutcome}

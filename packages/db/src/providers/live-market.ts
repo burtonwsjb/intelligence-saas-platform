@@ -53,7 +53,7 @@ export class LiveTcgMarketProvider implements TcgMarketProvider {
   }
 
   async healthCheck() {
-    return { ok: true as const, mode: "sandbox_fixture" as const };
+    return { ok: true as const, mode: "live" as const };
   }
 
   async liveHealth(): Promise<{ ok: boolean; remaining: number | null; resetAt: Date | null }> {
@@ -63,7 +63,70 @@ export class LiveTcgMarketProvider implements TcgMarketProvider {
     return { ok: response.status < 500, remaining: rate.remaining, resetAt: rate.resetAt };
   }
 
-  async getMarketSnapshots(query: { printingExternalId?: string; language?: string; limit?: number }) {
+  private nativeHost(): boolean {
+    const host = this.auth.baseUrl.replace(/\/$/, "");
+    if (this.provider === "tcgplayer") {
+      return host.includes("api.tcgplayer.com");
+    }
+    if (this.provider === "ebay") {
+      return host.includes("api.ebay.com");
+    }
+    return false;
+  }
+
+  private async tcgplayerToken(): Promise<string> {
+    if (this.auth.token) {
+      return this.auth.token;
+    }
+    const response = await this.transport.fetch(`${this.auth.baseUrl.replace(/\/$/, "")}/token`, {
+      method: "POST",
+      headers: { accept: "application/json", "content-type": "application/x-www-form-urlencoded" },
+      body: `grant_type=client_credentials&client_id=${encodeURIComponent(this.auth.publicKey ?? "")}&client_secret=${encodeURIComponent(this.auth.privateKey ?? "")}`,
+    });
+    const json = requireOkJson(response, (value) => value as { access_token?: string });
+    if (!json.access_token) {
+      throw new Error("TCGplayer access token missing.");
+    }
+    this.auth.token = json.access_token;
+    return this.auth.token;
+  }
+
+  private async getNative(path: string, headers: Record<string, string>): Promise<TcgMarketRecordInput[]> {
+    const url = `${this.auth.baseUrl.replace(/\/$/, "")}${path}`;
+    const response = await this.transport.fetch(url, { headers });
+    void parseRateLimitHeaders(response.headers);
+    return requireOkJson(response, (value) => normalizeMarketVendorList(this.provider, value));
+  }
+
+  async getMarketSnapshots(query: { printingExternalId?: string; language?: string; limit?: number; q?: string }) {
+    const limit = Math.min(query.limit ?? 25, 50);
+    if (this.provider === "tcgplayer" && this.nativeHost()) {
+      const ids = (query.printingExternalId ?? process.env.TCGPLAYER_PRODUCT_IDS ?? "")
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .slice(0, 10);
+      if (ids.length === 0) {
+        return [];
+      }
+      const token = await this.tcgplayerToken();
+      return this.getNative(`/pricing/product/${ids.join(",")}`, {
+        accept: "application/json",
+        authorization: `Bearer ${token}`,
+      });
+    }
+    if (this.provider === "ebay" && this.nativeHost()) {
+      const q = (query.q ?? query.printingExternalId ?? process.env.EBAY_SEARCH_QUERY ?? "Pokemon TCG").trim();
+      const token = this.auth.token;
+      if (!token) {
+        return [];
+      }
+      return this.getNative(`/buy/browse/v1/item_summary/search?q=${encodeURIComponent(q)}&limit=${Math.min(limit, 10)}`, {
+        accept: "application/json",
+        authorization: `Bearer ${token}`,
+        "x-ebay-c-marketplace-id": "EBAY_US",
+      });
+    }
     const params = new URLSearchParams();
     if (query.printingExternalId) {
       params.set("printing_id", query.printingExternalId);
@@ -71,8 +134,14 @@ export class LiveTcgMarketProvider implements TcgMarketProvider {
     if (query.language) {
       params.set("language", query.language);
     }
-    params.set("limit", String(Math.min(query.limit ?? 25, 50)));
-    return this.get(`/v1/market/snapshots?${params.toString()}`);
+    params.set("limit", String(limit));
+    const first = await this.get(`/v1/market/snapshots?${params.toString()}`);
+    if (first.length < limit) {
+      return first;
+    }
+    params.set("page", "2");
+    const second = await this.get(`/v1/market/snapshots?${params.toString()}`);
+    return [...first, ...second].slice(0, limit);
   }
 
   async getSoldTransactions(query: { printingExternalId?: string; language?: string; limit?: number }) {

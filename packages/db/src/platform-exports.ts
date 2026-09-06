@@ -79,6 +79,7 @@ export {
   sameDatabaseIdentity,
 } from "./platform/db-identity.js";
 export {
+  PROVIDER_ADAPTER_NOTES,
   PROVIDER_KEYS,
   PROVIDER_MODES,
   assertStagingSourceCommandAllowed,
@@ -119,8 +120,15 @@ export {
   retryProviderJob,
   reviewMarketQuarantine,
   resolveIntelligenceQuarantine,
+  runSocialDiscovery,
   runStagingIngest,
   runStagingSourceSmoke,
+  setDiscoveredCreatorState,
+  setDiscoveryTopicEnabled,
+  listDiscoveredCreators,
+  listDiscoveryTopics,
+  persistDiscoveredCommunities,
+  ensureDiscoveryTopics,
   setProviderEnabled,
   setProviderPaused,
   StagingSourceCommandError,

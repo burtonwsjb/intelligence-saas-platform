@@ -11,6 +11,7 @@ import {
   setNotificationPreference,
   upsertCrmOrganizationProfile,
   upsertCrmUserProfile,
+  disableOrganizationAccount,
   withOrganizationContext,
 } from "@isp/db";
 
@@ -72,4 +73,15 @@ export async function updatePreferenceAction(formData: FormData) {
     throw error;
   }
   redirect("/app/settings");
+}
+
+export async function disableOrganizationAction(formData: FormData) {
+  const { session, organizationId } = await requireAppActor("canManageMembers");
+  if (String(formData.get("confirm") ?? "") !== "DISABLE") {
+    redirect("/app/settings?error=invalid");
+  }
+  await withOrganizationContext(getDb(), { organizationId, userId: session.user.id }, (scoped) =>
+    disableOrganizationAccount(scoped, organizationId),
+  );
+  redirect("/app/settings?error=disabled");
 }

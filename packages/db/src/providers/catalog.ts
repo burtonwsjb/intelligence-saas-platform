@@ -30,6 +30,16 @@ export const PROVIDER_TYPE_BY_KEY: Record<ProviderKey, ProviderType> = {
   youtube: "social",
 };
 
+export const PROVIDER_ADAPTER_NOTES: Record<ProviderKey, string> = {
+  tcg_card_central:
+    "First-party snapshot contract only. There is no public TCC marketplace SDK in this repo.",
+  tcgplayer:
+    "Native product pricing when product IDs are supplied. Unbounded catalog crawl is not implemented.",
+  ebay: "Bounded Browse search. Unbounded marketplace crawl is not implemented.",
+  reddit: "Topic search discovers posts and communities. Subreddit lists are optional seeds, not required.",
+  youtube: "Topic search discovers videos and channel IDs. Channel ID lists are optional seeds, not required.",
+};
+
 export const DEFAULT_SCHEDULE_SECONDS: Record<ProviderKey, number> = {
   tcg_card_central: 300,
   tcgplayer: 300,

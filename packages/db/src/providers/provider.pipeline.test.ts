@@ -282,6 +282,34 @@ describe("vendor normalization", () => {
     expect(youtube.content.excerpt).toBeNull();
     expect(reddit.mentions?.[0]?.raw_entity_text).toBe("Pikachu is going crazy");
   });
+
+  it("normalizes native TCGplayer pricing and eBay Browse shapes", () => {
+    const tcgplayer = normalizeMarketVendorPayload("tcgplayer", {
+      productId: 214167,
+      lowPrice: 38,
+      midPrice: 41,
+      highPrice: 45,
+      marketPrice: 40.5,
+      subTypeName: "Normal",
+    });
+    expect(tcgplayer.provider).toBe("tcgplayer");
+    expect(tcgplayer.price).toBe(40.5);
+    expect(tcgplayer.currency).toBe("USD");
+    expect(tcgplayer.external_id?.identifier_value).toBe("214167");
+
+    const ebay = normalizeMarketVendorPayload("ebay", {
+      itemId: "v1|123|0",
+      title: "Pokemon Twilight Masquerade Greninja 214 EN",
+      price: { value: "42.00", currency: "USD" },
+      condition: "New",
+      itemWebUrl: "https://www.ebay.com/itm/123",
+    });
+    expect(ebay.provider).toBe("ebay");
+    expect(ebay.price).toBe(42);
+    expect(ebay.currency).toBe("USD");
+    expect(ebay.condition).toBe("nm");
+    expect(ebay.market_type).toBe("marketplace_listing");
+  });
 });
 
 describe("live adapters with mock transport", () => {

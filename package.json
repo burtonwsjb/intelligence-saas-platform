@@ -29,6 +29,8 @@
     "staging:ingest": "pnpm --filter @isp/db staging-ingest",
     "staging:db-identity": "pnpm --filter @isp/db staging-db-identity",
     "staging:redis-probe": "pnpm --filter @isp/queue staging-redis-probe",
+    "staging:youtube-discovery": "pnpm --filter @isp/db staging-youtube-discovery",
+    "staging:reddit-discovery": "pnpm --filter @isp/db staging-reddit-discovery",
     "test:load-smoke": "pnpm --filter @isp/api exec vitest run src/load.smoke.test.ts",
     "test:security-scan": "pnpm --filter @isp/web exec vitest run lib/security-scan.test.ts"
   },

@@ -1,5 +1,6 @@
 import { EmptyState } from "@/components/EmptyState";
 import { IdentityLine } from "@/components/IdentityLine";
+import { explanationText } from "@/components/TechnicalDetails";
 import { loadAppAccess } from "@/lib/app-access";
 import { getDb } from "@/lib/auth";
 import { markAllReadAction } from "@/app/notification-actions";
@@ -36,10 +37,10 @@ export default async function OverviewPage() {
 
   return (
     <>
-      <h1>Overview</h1>
+      <h1>What is moving</h1>
       <p className="muted">
-        Market catalog: {data.catalog.printings} printings · {data.catalog.scores} score snapshots. Exact language and
-        variant stay visible on every printing.
+        Opportunity, risk, and creator calls for exact printings. Language and variant stay visible. Catalog size{" "}
+        {data.catalog.printings} printings · {data.catalog.scores} scored snapshots.
       </p>
       <section>
         <h2>Top opportunities</h2>
@@ -56,7 +57,12 @@ export default async function OverviewPage() {
                   <IdentityLine identity={row.identity} />
                 </Link>
                 {" — "}
-                opportunity {Number(row.score.opportunityScore).toFixed(1)} · {row.score.recommendation}
+                opportunity {Number(row.score.opportunityScore).toFixed(1)} · risk{" "}
+                {Number(row.score.riskScore).toFixed(1)} · confidence {Number(row.score.confidenceScore).toFixed(1)} ·
+                liquidity {Number(row.score.liquidityScore).toFixed(1)} · {row.score.recommendation}
+                {Array.isArray(row.score.explanations) && row.score.explanations[0]
+                  ? ` · why ${explanationText(row.score.explanations[0])}`
+                  : ""}
               </li>
             ))}
           </ul>
@@ -85,7 +91,8 @@ export default async function OverviewPage() {
             <ul>
               {data.calls.map((call) => (
                 <li key={call.id}>
-                  {call.direction} · {call.horizonCode} · {call.publishedAt.toISOString()}
+                  {call.creatorName ?? "Creator"} · {call.direction} · {call.horizonCode} ·{" "}
+                  {call.publishedAt.toISOString()}
                 </li>
               ))}
             </ul>
