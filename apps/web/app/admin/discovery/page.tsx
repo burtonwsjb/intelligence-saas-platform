@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 export default async function AdminDiscoveryPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; queued?: string }>;
 }) {
   const operator = await requireGrantedOperator();
   const query = await searchParams;
@@ -32,6 +32,7 @@ export default async function AdminDiscoveryPage({
         not required. Relevance is not the same as authority.
       </p>
       {query.error ? <p className="form-error">Discovery update was rejected.</p> : null}
+      {query.queued === "yes" ? <p role="status">Discovery queued for the worker. Refresh to see results after processing.</p> : null}
       <h2>Topics</h2>
       <form className="inline-form" action={triggerDiscoveryRunAction}>
         <label>

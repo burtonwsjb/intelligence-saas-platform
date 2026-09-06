@@ -40,6 +40,8 @@ export {
   listDiscoveredCreators,
   listDiscoveryTopics,
   runSocialDiscovery,
+  requestDiscoveryRun,
+  DiscoveryConfigurationError,
   setDiscoveredCreatorState,
   setDiscoveryTopicEnabled,
   DEFAULT_DISCOVERY_STRATEGIES,

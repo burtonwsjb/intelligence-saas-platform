@@ -674,6 +674,8 @@ export {
   retryProviderJob,
   reviewMarketQuarantine,
   runSocialDiscovery,
+  requestDiscoveryRun,
+  DiscoveryConfigurationError,
   runStagingIngest,
   runStagingSourceSmoke,
   setDiscoveredCreatorState,

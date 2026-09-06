@@ -121,6 +121,8 @@ export {
   reviewMarketQuarantine,
   resolveIntelligenceQuarantine,
   runSocialDiscovery,
+  requestDiscoveryRun,
+  DiscoveryConfigurationError,
   runStagingIngest,
   runStagingSourceSmoke,
   setDiscoveredCreatorState,

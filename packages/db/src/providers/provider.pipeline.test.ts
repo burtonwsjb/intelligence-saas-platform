@@ -181,7 +181,7 @@ describe("staging command guards", () => {
     expect(staging).not.toMatch(/current_principal_type', 'user'/);
   });
 
-  it("bootstraps disabled provider runtime in staging mode without printing secrets", async () => {
+  it("inspects persisted provider state without live calls or persisting probe writes", async () => {
     const db = await memoryDb();
     const env = {
       ISP_ENV: "staging",
@@ -197,7 +197,7 @@ describe("staging command guards", () => {
       type: "market",
       mode: "disabled",
       enabled: false,
-      credential_status: "present",
+      credential_status: "missing",
     });
     const second = await runStagingSourceSmoke(db, env);
     expect(second.providers.map((row) => row.provider).sort()).toEqual(

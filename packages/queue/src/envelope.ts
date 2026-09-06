@@ -33,6 +33,8 @@ export const jobEnvelopeSchema = z.discriminatedUnion("job_type", [
     ...baseEnvelope,
     job_type: z.literal("provider.sync.v1"),
     provider_key: z.string().min(2).max(64),
+    discovery_query: z.string().trim().min(3).max(120).optional(),
+    trigger: z.enum(["admin", "schedule"]).optional(),
     limit: z.number().int().min(1).max(50).optional(),
   }),
   z.object({

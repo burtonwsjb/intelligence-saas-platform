@@ -1,5 +1,6 @@
 import {
   getSourceEvent,
+  getPlatformOutbox,
   getTenant,
   IdentifierCollisionError,
   InvalidConfidenceError,
@@ -67,14 +68,12 @@ async function processMarketNormalizeJob(
     status: "processing",
   });
   try {
-    const result = await withPlatformContext(db, (scoped) =>
-      normalizeTcgMarketIngest(scoped, envelope.market_ingest_id),
-    );
-    if (result.status === "processed" && result.snapshotId) {
-      await withPlatformContext(db, (scoped) => enqueueRecomputeForSnapshot(scoped, result.snapshotId!)).catch(
-        () => undefined,
-      );
-    }
+    const result = await withPlatformContext(db, async (scoped) => {
+      const normalized = await normalizeTcgMarketIngest(scoped, envelope.market_ingest_id);
+      if (normalized.snapshotId) await enqueueRecomputeForSnapshot(scoped, normalized.snapshotId);
+      await markPlatformOutboxProcessed(scoped, envelope.job_id);
+      return normalized;
+    });
     const status = result.status === "duplicate" ? ("duplicate" as const) : ("processed" as const);
     logQueueEvent("info", "job.processed", {
       job_id: envelope.job_id,
@@ -103,14 +102,12 @@ async function processSourceNormalizeJob(
     status: "processing",
   });
   try {
-    const result = await withPlatformContext(db, (scoped) =>
-      normalizeSourceIntelligenceIngest(scoped, envelope.source_ingest_id),
-    );
-    if (result.status === "processed" && result.contentId) {
-      await withPlatformContext(db, (scoped) => enqueueCreatorExtractJob(scoped, result.contentId!)).catch(
-        () => undefined,
-      );
-    }
+    const result = await withPlatformContext(db, async (scoped) => {
+      const normalized = await normalizeSourceIntelligenceIngest(scoped, envelope.source_ingest_id);
+      if (normalized.contentId) await enqueueCreatorExtractJob(scoped, normalized.contentId);
+      await markPlatformOutboxProcessed(scoped, envelope.job_id);
+      return normalized;
+    });
     const status = result.status === "duplicate" ? ("duplicate" as const) : ("processed" as const);
     logQueueEvent("info", "job.processed", {
       job_id: envelope.job_id,
@@ -137,19 +134,18 @@ async function processProviderSyncJob(
     status: "processing",
   });
   try {
-    const result = await withPlatformContext(db, (scoped) =>
-      syncProvider(scoped, {
-        providerKey: envelope.provider_key,
-        trigger: "schedule",
-        limit: envelope.limit,
-      }),
-    );
-    if (result.status === "failed") {
+    const existing = await withPlatformContext(db, (tx) => getPlatformOutbox(tx, envelope.job_id));
+    if (existing?.status === "processed") return { status: "duplicate" };
+    const result = await syncProvider(db, {
+      providerKey: envelope.provider_key,
+      trigger: envelope.trigger ?? "schedule",
+      limit: envelope.limit,
+      query: envelope.discovery_query,
+    });
+    if (result.status === "failed" || result.reason === "overlap") {
       throw new Error(result.reason ?? "provider_sync_failed");
     }
-    await withPlatformContext(db, (scoped) => markPlatformOutboxProcessed(scoped, envelope.job_id)).catch(
-      () => undefined,
-    );
+    await withPlatformContext(db, (scoped) => markPlatformOutboxProcessed(scoped, envelope.job_id));
     return { status: result.status === "skipped" ? "duplicate" : "processed" };
   } catch (error) {
     toUnrecoverable(error);
@@ -162,9 +158,7 @@ async function processCreatorExtractQueueJob(
 ): Promise<{ status: "processed" | "duplicate" }> {
   try {
     await withPlatformContext(db, (scoped) => processCreatorExtractJob(scoped, envelope.content_id));
-    await withPlatformContext(db, (scoped) => markPlatformOutboxProcessed(scoped, envelope.job_id)).catch(
-      () => undefined,
-    );
+    await withPlatformContext(db, (scoped) => markPlatformOutboxProcessed(scoped, envelope.job_id));
     return { status: "processed" };
   } catch (error) {
     toUnrecoverable(error);
@@ -182,9 +176,7 @@ async function processIntelligenceRecomputeQueueJob(
         asOf: new Date(envelope.as_of),
       }),
     );
-    await withPlatformContext(db, (scoped) => markPlatformOutboxProcessed(scoped, envelope.job_id)).catch(
-      () => undefined,
-    );
+    await withPlatformContext(db, (scoped) => markPlatformOutboxProcessed(scoped, envelope.job_id));
     return { status: "processed" };
   } catch (error) {
     toUnrecoverable(error);

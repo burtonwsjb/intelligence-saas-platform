@@ -1,4 +1,5 @@
 import { Queue } from "bullmq";
+import { createHash } from "node:crypto";
 import type { Redis } from "ioredis";
 import {
   getOutboxJob,
@@ -20,6 +21,11 @@ import { logQueueEvent, safeLoopErrorFields } from "./logger.js";
 import type { JobEnvelope } from "./envelope.js";
 
 export type IngestQueue = Queue<JobEnvelope>;
+
+/** Keep database/envelope IDs intact, but give BullMQ a delimiter-safe key. */
+export function bullmqJobId(outboxId: string): string {
+  return `ispjob_${createHash("sha256").update(outboxId).digest("hex")}`;
+}
 
 const ownedQueueConnections = new WeakMap<IngestQueue, Redis>();
 
@@ -74,7 +80,7 @@ export async function publishOutboxJob(
     owned = input.queue ?? createIngestQueue(input.env, { failFast: true });
     try {
       await owned.add(row.jobType, row.payload as JobEnvelope, {
-        jobId: row.id,
+        jobId: bullmqJobId(row.id),
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
@@ -110,9 +116,7 @@ export async function publishOutboxJob(
     });
     return { published: true };
   } catch (error) {
-    const message = (error instanceof Error ? error.message : "queue unavailable")
-      .replace(/redis:\/\/[^@\s]+@/gi, "redis://[redacted]@")
-      .replace(/postgresql:\/\/[^@\s]+@/gi, "postgresql://[redacted]@");
+    const message = safeLoopErrorFields(error).error_class;
     await withSystemContext(db, { organizationId: input.organizationId }, (scoped) =>
       markOutboxPublishFailed(scoped, {
         organizationId: input.organizationId,
@@ -150,7 +154,7 @@ export async function publishPlatformOutboxJob(
   try {
     owned = input.queue ?? createIngestQueue(input.env, { failFast: true });
     try {
-      await owned.add(row.jobType, row.payload as JobEnvelope, { jobId: row.id });
+      await owned.add(row.jobType, row.payload as JobEnvelope, { jobId: bullmqJobId(row.id) });
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
       if (!/already exists|duplicat/i.test(message)) {
@@ -165,9 +169,7 @@ export async function publishPlatformOutboxJob(
     });
     return { published: true };
   } catch (error) {
-    const message = (error instanceof Error ? error.message : "queue unavailable")
-      .replace(/redis:\/\/[^@\s]+@/gi, "redis://[redacted]@")
-      .replace(/postgresql:\/\/[^@\s]+@/gi, "postgresql://[redacted]@");
+    const message = safeLoopErrorFields(error).error_class;
     await withPlatformContext(db, (scoped) =>
       markPlatformOutboxPublishFailed(scoped, input.outboxId, message),
     );

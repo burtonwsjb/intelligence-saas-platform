@@ -202,6 +202,7 @@ export async function bootstrapRoles(
       $grant$;
       GRANT USAGE ON SCHEMA public TO ${DB_ROLES.migrate}, ${DB_ROLES.user}, ${DB_ROLES.worker}, ${DB_ROLES.admin};
       GRANT USAGE ON SCHEMA app TO ${DB_ROLES.migrate}, ${DB_ROLES.user}, ${DB_ROLES.worker}, ${DB_ROLES.admin};
+      GRANT CREATE ON SCHEMA public, app TO ${DB_ROLES.migrate};
       REVOKE CREATE ON SCHEMA public FROM PUBLIC;
       REVOKE CREATE ON SCHEMA public FROM ${DB_ROLES.user}, ${DB_ROLES.worker};
     `);
@@ -538,6 +539,24 @@ export async function bootstrapRoles(
       FROM ${DB_ROLES.user}, ${DB_ROLES.worker};
       REVOKE SELECT, INSERT, UPDATE, DELETE ON TABLE "stripe_event" FROM ${DB_ROLES.user}, ${DB_ROLES.worker};
       GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ${DB_ROLES.migrate}, ${DB_ROLES.admin};
+      DO $repair_grants$
+      BEGIN
+        IF to_regclass('public.discovery_request_budget') IS NOT NULL THEN
+          GRANT SELECT, INSERT, UPDATE ON discovery_request_budget, discovery_creator_topic TO app_migrate, app_admin, app_worker;
+          REVOKE ALL ON discovery_request_budget, discovery_creator_topic FROM app_user;
+          REVOKE DELETE ON discovery_request_budget, discovery_creator_topic FROM app_worker;
+        END IF;
+        IF to_regclass('public.discovery_topic') IS NOT NULL THEN
+          GRANT SELECT, INSERT, UPDATE ON discovery_topic, discovery_run, discovered_creator TO app_worker;
+          GRANT SELECT ON discovered_creator TO app_user;
+          REVOKE INSERT, UPDATE, DELETE ON discovery_topic, discovery_run, discovered_creator FROM app_user;
+          REVOKE DELETE ON discovery_topic, discovery_run, discovered_creator FROM app_worker;
+        END IF;
+        IF to_regclass('public._isp_migration_history') IS NOT NULL THEN
+          REVOKE ALL ON TABLE public._isp_migration_history FROM app_user, app_worker, app_admin;
+        END IF;
+      END
+      $repair_grants$;
       GRANT ALL ON ALL FUNCTIONS IN SCHEMA app TO ${DB_ROLES.migrate}, ${DB_ROLES.admin};
       GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO ${DB_ROLES.migrate}, ${DB_ROLES.admin};
       GRANT EXECUTE ON FUNCTION app.current_organization_id() TO ${DB_ROLES.user}, ${DB_ROLES.worker}, ${DB_ROLES.migrate}, ${DB_ROLES.admin};

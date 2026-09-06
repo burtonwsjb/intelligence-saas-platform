@@ -62,16 +62,19 @@ export async function runGracefulStop(
     if (remaining <= 0) {
       return { completed, timedOut: true, failedStep: step.name };
     }
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       await Promise.race([
-        step.run(),
+        Promise.resolve().then(() => step.run()),
         new Promise<void>((_, reject) => {
-          setTimeout(() => reject(new Error("shutdown_step_timeout")), remaining);
+          timer = setTimeout(() => reject(new Error("shutdown_step_timeout")), remaining);
         }),
       ]);
       completed.push(step.name);
     } catch {
       return { completed, timedOut: true, failedStep: step.name };
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
     }
   }
   return { completed, timedOut: false, failedStep: null };
@@ -83,33 +86,29 @@ export function createShutdownLatch(options?: {
   setTimer?: (fn: () => void, ms: number) => ReturnType<typeof setTimeout>;
   clearTimer?: (id: ReturnType<typeof setTimeout>) => void;
 }) {
-  let shuttingDown = false;
-  let forceTimer: ReturnType<typeof setTimeout> | undefined;
+  let pending: Promise<void> | undefined;
   const exit = options?.exit ?? ((code: number) => process.exit(code));
   const setTimer = options?.setTimer ?? setTimeout;
   const clearTimer = options?.clearTimer ?? clearTimeout;
   const forceExitMs = options?.forceExitMs ?? WORKER_SHUTDOWN_FORCE_MS;
-
   return {
-    isShuttingDown: () => shuttingDown,
-    async request(stop: () => Promise<void>): Promise<void> {
-      if (shuttingDown) {
-        return;
-      }
-      shuttingDown = true;
-      forceTimer = setTimer(() => exit(1), forceExitMs);
-      try {
-        await stop();
-        if (forceTimer) {
-          clearTimer(forceTimer);
-        }
-        exit(0);
-      } catch {
-        if (forceTimer) {
-          clearTimer(forceTimer);
-        }
-        exit(1);
-      }
+    isShuttingDown: () => pending !== undefined,
+    request(stop: () => Promise<void>): Promise<void> {
+      if (pending) return pending;
+      let resolveRequest!: () => void;
+      // Assign before callbacks so even re-entrant requests share one drain.
+      pending = new Promise<void>((resolve) => { resolveRequest = resolve; });
+      let finished = false;
+      let forceTimer: ReturnType<typeof setTimeout> | undefined;
+      const finish = (code: number) => {
+        if (finished) return;
+        finished = true;
+        if (forceTimer !== undefined) clearTimer(forceTimer);
+        try { exit(code); } finally { resolveRequest(); }
+      };
+      forceTimer = setTimer(() => finish(1), forceExitMs);
+      void Promise.resolve().then(stop).then(() => finish(0), () => finish(1));
+      return pending;
     },
   };
 }

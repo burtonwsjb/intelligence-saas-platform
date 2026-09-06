@@ -15,7 +15,7 @@ import { tcgMarketQuarantine } from "../schema/tcg-market.js";
 import { isProviderKey, type ProviderKey } from "./catalog.js";
 import { retryFailedPlatformJob } from "./outbox.js";
 import { setProviderControl } from "./runtime.js";
-import { syncProvider } from "./sync.js";
+import { enqueuePlatformJob, PLATFORM_JOB_VERSION, platformJobCreatedAt } from "./outbox.js";
 import { safePayloadSummary } from "./safe.js";
 
 export class ProviderAdminError extends Error {
@@ -95,11 +95,13 @@ export async function triggerProviderSync(
     throw new ProviderAdminError("Confirmation is required to trigger a provider sync.");
   }
   return withPlatformContext(db, async (scoped) => {
-    const result = await syncProvider(scoped, {
-      providerKey: input.providerKey,
-      trigger: "admin",
-      limit: input.limit ?? 10,
-    });
+    const id = `provider_admin_${crypto.randomUUID()}`;
+    const queued = await enqueuePlatformJob(scoped, { id, jobType: "provider.sync.v1", payload: {
+      job_version: PLATFORM_JOB_VERSION, job_type: "provider.sync.v1", job_id: id,
+      provider_key: input.providerKey, trigger: "admin", limit: Math.min(input.limit ?? 10, 10),
+      created_at: platformJobCreatedAt(),
+    }});
+    const result = { ...queued, status: "queued" as const, jobId: id };
     await insertBreakGlassAudit(scoped, {
       actorUserId: input.actorUserId,
       action: "provider.sync",

@@ -4,9 +4,9 @@ import { tcgPrediction } from "../schema/prediction.js";
 import { sql } from "drizzle-orm";
 import { withPlatformContext } from "../rls.js";
 import { credentialReadinessReport } from "./credentials.js";
-import { applyProviderModeFromEnv, listProviderRuntime } from "./runtime.js";
+import { ensureProviderRuntimeRows, listProviderRuntime } from "./runtime.js";
 import { enqueueDueProviderSyncs, syncProvider } from "./sync.js";
-import { enqueuePlatformJob, listPendingPlatformOutbox, PLATFORM_JOB_VERSION, platformJobCreatedAt } from "./outbox.js";
+import { enqueuePlatformJob, getPlatformOutbox, PLATFORM_JOB_VERSION, platformJobCreatedAt } from "./outbox.js";
 import { isProviderKey } from "./catalog.js";
 
 export class StagingSourceCommandError extends Error {
@@ -30,8 +30,12 @@ export async function runStagingSourceSmoke(
   env: NodeJS.ProcessEnv = process.env,
 ) {
   assertStagingSourceCommandAllowed(env);
-  return withPlatformContext(db, async (scoped) => {
-    await applyProviderModeFromEnv(scoped, env);
+  // Probe writes are deliberately rolled back. Smoke must never change provider
+  // controls or dispatch real ingest just because a developer has a credential.
+  const rollback = new Error("staging_smoke_rollback");
+  let report: Awaited<ReturnType<typeof collect>> | undefined;
+  async function collect(scoped: Database) {
+    await ensureProviderRuntimeRows(scoped, env);
     const providers = await listProviderRuntime(scoped);
     const probeId = `smoke.queue.${Date.now()}`;
     await enqueuePlatformJob(scoped, {
@@ -45,23 +49,12 @@ export async function runStagingSourceSmoke(
         created_at: platformJobCreatedAt(),
       },
     });
-    const pending = await listPendingPlatformOutbox(scoped, 20);
+    const probe = await getPlatformOutbox(scoped, probeId);
     const [published] = await scoped
       .select({ n: sql<number>`count(*)::int` })
       .from(tcgPrediction)
       .where(sql`${tcgPrediction.visibility} <> 'shadow'`);
     const liveSamples: Array<{ provider: string; received: number; status: string }> = [];
-    for (const row of providers) {
-      if (row.mode === "live" && row.enabled && !row.paused) {
-        const sample = await syncProvider(scoped, {
-          providerKey: row.providerKey,
-          trigger: "smoke",
-          limit: 1,
-          env,
-        });
-        liveSamples.push({ provider: row.providerKey, received: sample.received, status: sample.status });
-      }
-    }
     return {
       environment: "staging",
       production_refused: false,
@@ -85,19 +78,31 @@ export async function runStagingSourceSmoke(
         configured: row.configured,
         required: row.required,
       })),
-      queue_probe_enqueued: pending.some((row) => row.id === probeId),
+      queue_probe_enqueued: false,
+      queue_probe_verified: probe?.id === probeId,
+      probe_rolled_back: true,
       live_bounded_samples: liveSamples,
       published_predictions: Number(published?.n ?? 0),
       tenant_writes: 0,
     };
-  });
+  }
+  try {
+    await withPlatformContext(db, async (tx) => {
+      report = await collect(tx);
+      throw rollback;
+    });
+  } catch (error) {
+    if (error !== rollback) throw error;
+  }
+  if (!report) throw new StagingSourceCommandError("Source smoke did not complete.");
+  return report;
 }
 
 export function formatStagingSourceSmokeReport(report: Awaited<ReturnType<typeof runStagingSourceSmoke>>): string {
   return [
     "staging source smoke",
     `providers: ${report.providers.map((row) => `${row.provider}=${row.mode}/${row.health}`).join(", ")}`,
-    `queue probe: ${report.queue_probe_enqueued ? "ok" : "missing"}`,
+    `queue outbox probe (rolled back): ${report.queue_probe_verified ? "ok" : "missing"}`,
     `published predictions: ${report.published_predictions}`,
     `tenant writes: ${report.tenant_writes}`,
     `live samples: ${report.live_bounded_samples.length}`,
@@ -117,28 +122,16 @@ export async function runStagingIngest(
   if (!Number.isFinite(input.limit) || input.limit < 1 || input.limit > 50) {
     throw new StagingSourceCommandError("--limit must be a small bound (1-50).");
   }
-  return withPlatformContext(db, async (scoped) => {
-    await applyProviderModeFromEnv(scoped, env);
+  const runtime = await withPlatformContext(db, async (scoped) => {
     const { getProviderRuntime } = await import("./runtime.js");
-    const runtime = await getProviderRuntime(scoped, provider);
-    if (runtime?.mode !== "live") {
-      throw new StagingSourceCommandError("Provider mode must be live for staging ingest.");
-    }
-    const result = await syncProvider(scoped, {
-      providerKey: provider,
-      trigger: "staging_ingest",
-      limit: input.limit,
-      env,
-    });
-    return {
-      provider,
-      limit: input.limit,
-      status: result.status,
-      received: result.received,
-      quarantined: result.quarantined,
-      reason: result.reason,
-    };
+    return getProviderRuntime(scoped, provider);
   });
+  if (runtime?.mode !== "live" || !runtime.enabled || runtime.paused) {
+    throw new StagingSourceCommandError("Provider must already be live, enabled, and unpaused for staging ingest.");
+  }
+  const result = await syncProvider(db, { providerKey: provider, trigger: "staging_ingest", limit: input.limit, env });
+  return { provider, limit: input.limit, status: result.status, received: result.received,
+    quarantined: result.quarantined, reason: result.reason };
 }
 
 export function parseStagingIngestArgs(argv: string[]) {

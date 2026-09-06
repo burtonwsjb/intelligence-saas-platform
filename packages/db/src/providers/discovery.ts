@@ -1,7 +1,9 @@
-import { createHash } from "node:crypto";
+import { isHostedRuntime } from "@isp/shared";
+import { createHash, randomUUID } from "node:crypto";
 import { asc, eq, sql } from "drizzle-orm";
 import type { Database } from "../client.js";
 import { ensureCreatorForSourceAccount } from "../creator/ingest.js";
+import { latestTrustState } from "../creator/authority.js";
 import {
   DISCOVERY_RELEVANCE_STATES,
   discoveredCreator,
@@ -16,12 +18,30 @@ import { stableSourceId, type SourceContentRecordInput } from "../source/identit
 import { sourceIntelligenceFixtures } from "../source/fixtures.js";
 import { FixtureRedditSourceProvider, FixtureYoutubeSourceProvider } from "../source/provider.js";
 import { createLiveRedditProvider, createLiveYoutubeProvider } from "./live-social.js";
-import type { HttpTransport } from "./transport.js";
+import { ProviderHttpError, type HttpTransport } from "./transport.js";
+import { withPlatformContext } from "../rls.js";
+import { providerCredentialStatus, resolveProviderMode } from "./catalog.js";
+import { getProviderRuntime } from "./runtime.js";
+import { budgetedDiscoveryTransport, DiscoveryBudgetError } from "./discovery-budget.js";
+import { enqueuePlatformJob, PLATFORM_JOB_VERSION, platformJobCreatedAt } from "./outbox.js";
+import { insertBreakGlassAudit } from "../platform/audit.js";
 
-export const DISCOVERY_VERSION = "discovery.v1";
+export const DISCOVERY_VERSION = "discovery.v2";
 export const DISCOVERY_MAX_RESULTS = 10;
 export const DISCOVERY_QUOTA_BUDGET = 200;
+// Legacy exported estimate is not used for enforcement. Request buckets are the
+// operational limit; Google quotas must also be checked in the provider console.
 export const YOUTUBE_SEARCH_QUOTA_UNITS = 100;
+export class DiscoveryConfigurationError extends Error {
+  constructor(message: string) { super(message); this.name = "DiscoveryConfigurationError"; }
+}
+export function normalizeDiscoveryQuery(query: string): string {
+  const value = query.normalize("NFKC").trim().replace(/\s+/g, " ");
+  if (value.length < 3 || value.length > 120 || [...query].some((char) => char.charCodeAt(0) < 32) || /AIza[\w-]+|[?&](?:key|token)=/i.test(value)) {
+    throw new DiscoveryConfigurationError("Discovery query must be 3-120 characters and contain no credentials.");
+  }
+  return value;
+}
 
 export const DEFAULT_DISCOVERY_STRATEGIES = [
   { strategyKey: "pokemon_tcg", query: "Pokemon TCG" },
@@ -70,7 +90,7 @@ export function calculateCreatorRelevance(input: {
   const investingScore = INVESTING_LANGUAGE.test(hay) ? 0.2 : 0;
   const hitScore = Math.min(0.2, Math.max(0, (input.topicHits ?? 1) - 1) * 0.1);
   const reachScore = input.views && input.views >= 10_000 ? 0.1 : 0;
-  const score = Number((tokenScore + tcgScore + investingScore + hitScore + reachScore).toFixed(4));
+  const score = Number(Math.min(1, tokenScore + tcgScore + investingScore + hitScore + reachScore).toFixed(4));
   if (score >= 0.5) {
     return { score, state: "monitored" };
   }
@@ -104,16 +124,16 @@ export async function ensureDiscoveryTopics(db: Database): Promise<number> {
 
 export async function listDiscoveryTopics(db: Database, providerKey?: DiscoveryProviderKey) {
   if (providerKey) {
-    return db.select().from(discoveryTopic).where(eq(discoveryTopic.providerKey, providerKey));
+    return db.select().from(discoveryTopic).where(eq(discoveryTopic.providerKey, providerKey)).limit(200);
   }
-  return db.select().from(discoveryTopic);
+  return db.select().from(discoveryTopic).limit(200);
 }
 
 export async function listDiscoveredCreators(db: Database, state?: DiscoveryRelevanceState) {
   if (state) {
-    return db.select().from(discoveredCreator).where(eq(discoveredCreator.relevanceState, state));
+    return db.select().from(discoveredCreator).where(eq(discoveredCreator.relevanceState, state)).limit(200);
   }
-  return db.select().from(discoveredCreator);
+  return db.select().from(discoveredCreator).limit(200);
 }
 
 export async function setDiscoveryTopicEnabled(
@@ -186,7 +206,7 @@ async function collectDiscoveryRecords(input: {
 
 function subscriberCount(record: SourceContentRecordInput): number | null {
   const raw = record.account.metadata?.subscriber_count;
-  return typeof raw === "number" && Number.isFinite(raw) ? raw : null;
+  return typeof raw === "number" && Number.isSafeInteger(raw) && raw >= 0 ? raw : null;
 }
 
 function redditCommunityNames(records: SourceContentRecordInput[]): string[] {
@@ -255,9 +275,11 @@ export type SocialDiscoveryReport = {
   channels_seen: number;
   creators_linked: number;
   content_ingested: number;
+  /** Legacy field; since discovery.v2 this is HTTP requests, not vendor quota units. */
   quota_units: number;
   status: "completed" | "failed" | "skipped";
   discovered_creator_ids: string[];
+  reason?: string | null;
 };
 
 export async function persistDiscoveryFromRecords(
@@ -269,6 +291,8 @@ export async function persistDiscoveryFromRecords(
     trigger: "schedule" | "admin" | "staging";
     records: SourceContentRecordInput[];
     ingestContent?: boolean;
+    runId?: string;
+    requestCount?: number;
   },
 ): Promise<SocialDiscoveryReport> {
   const records = dedupeRecords(input.records);
@@ -276,8 +300,8 @@ export async function persistDiscoveryFromRecords(
   for (const record of records) {
     channels.set(record.account.external_account_id, record);
   }
-  const runId = stableDiscoveryId("drn", [input.providerKey, input.query, String(Date.now()), String(records.length)]);
-  await db.insert(discoveryRun).values({
+  const runId = input.runId ?? `drn_${randomUUID()}`;
+  if (!input.runId) await db.insert(discoveryRun).values({
     id: runId,
     topicId: input.topicId ?? null,
     providerKey: input.providerKey,
@@ -286,7 +310,7 @@ export async function persistDiscoveryFromRecords(
     status: "started",
     videosSeen: records.length,
     channelsSeen: channels.size,
-    quotaUnits: input.providerKey === "youtube" ? YOUTUBE_SEARCH_QUOTA_UNITS + records.length : records.length,
+    quotaUnits: input.requestCount ?? 0,
     metadata: { version: DISCOVERY_VERSION, channel_ids_required: false },
   });
 
@@ -318,22 +342,9 @@ export async function persistDiscoveryFromRecords(
         lastSeenAt: now,
       })
       .onConflictDoNothing();
-    let linked: Awaited<ReturnType<typeof ensureCreatorForSourceAccount>> | null = null;
-    try {
-      linked = await ensureCreatorForSourceAccount(db, accountId);
-    } catch (error) {
-      await db
-        .update(discoveryRun)
-        .set({
-          errorClass: error instanceof Error ? error.name : "creator_link_failed",
-          metadata: { version: DISCOVERY_VERSION, channel_ids_required: false, creator_link_failed: true },
-        })
-        .where(eq(discoveryRun.id, runId));
-      continue;
-    }
-    if (!linked) {
-      continue;
-    }
+    // A database failure must roll back this persistence transaction, rather
+    // than being swallowed and followed by writes in an aborted transaction.
+    const linked = await ensureCreatorForSourceAccount(db, accountId);
     creatorsLinked += 1;
     const existing = await db
       .select()
@@ -342,7 +353,13 @@ export async function persistDiscoveryFromRecords(
         sql`${discoveredCreator.providerKey} = ${input.providerKey} AND ${discoveredCreator.externalAccountId} = ${record.account.external_account_id}`,
       )
       .limit(1);
-    const topicHits = (existing[0]?.topicHits ?? 0) + 1;
+    const topicKey = normalizeDiscoveryQuery(input.query).toLowerCase();
+    await db.execute(sql`INSERT INTO discovery_creator_topic (creator_id,provider_key,topic_key)
+      VALUES (${linked.creator.id},${input.providerKey},${topicKey}) ON CONFLICT DO NOTHING`);
+    const hitResult = await db.execute(sql`SELECT count(*)::int AS count FROM discovery_creator_topic
+      WHERE creator_id=${linked.creator.id} AND provider_key=${input.providerKey}`);
+    const hitRows = Array.isArray(hitResult) ? hitResult : (hitResult as unknown as { rows: { count: number }[] }).rows;
+    const topicHits = Number((hitRows[0] as { count: number } | undefined)?.count ?? 1);
     const relevance = calculateCreatorRelevance({
       query: input.query,
       title: record.content.title,
@@ -351,7 +368,7 @@ export async function persistDiscoveryFromRecords(
       views: record.engagement?.views ?? null,
     });
     const nextState =
-      existing[0]?.relevanceState === "excluded" ? "excluded" : relevance.state;
+      existing[0]?.relevanceState === "excluded" || (await latestTrustState(db, linked.creator.id)) === "excluded" ? "excluded" : relevance.state;
     const id =
       existing[0]?.id ??
       stableDiscoveryId("dcr", [input.providerKey, record.account.external_account_id]);
@@ -418,6 +435,9 @@ export async function persistDiscoveryFromRecords(
     .update(discoveryRun)
     .set({
       status: "completed",
+      videosSeen: records.length,
+      channelsSeen: channels.size,
+      quotaUnits: input.requestCount ?? 0,
       creatorsLinked,
       contentIngested,
       completedAt: new Date(),
@@ -432,7 +452,7 @@ export async function persistDiscoveryFromRecords(
     channels_seen: channels.size,
     creators_linked: creatorsLinked,
     content_ingested: contentIngested,
-    quota_units: input.providerKey === "youtube" ? YOUTUBE_SEARCH_QUOTA_UNITS + records.length : records.length,
+    quota_units: input.requestCount ?? 0,
     status: "completed",
     discovered_creator_ids: discoveredIds,
   };
@@ -441,79 +461,93 @@ export async function persistDiscoveryFromRecords(
 export async function runSocialDiscovery(
   db: Database,
   input: {
-    providerKey: DiscoveryProviderKey;
-    query?: string;
-    limit?: number;
-    trigger?: "schedule" | "admin" | "staging";
-    env?: NodeJS.ProcessEnv;
-    transport?: HttpTransport;
-    records?: SourceContentRecordInput[];
-    ingestContent?: boolean;
+    providerKey: DiscoveryProviderKey; query?: string; limit?: number;
+    trigger?: "schedule" | "admin" | "staging"; env?: NodeJS.ProcessEnv;
+    transport?: HttpTransport; records?: SourceContentRecordInput[]; ingestContent?: boolean;
   },
 ): Promise<SocialDiscoveryReport> {
-  await ensureDiscoveryTopics(db);
-  const limit = Math.min(Math.max(input.limit ?? 10, 1), DISCOVERY_MAX_RESULTS);
   const env = input.env ?? process.env;
-  let topicId: string | null = null;
-  let query = input.query?.trim() ?? "";
-  if (!query) {
-    const topic = await nextDiscoveryTopic(db, input.providerKey);
-    query = topic?.query ?? DEFAULT_DISCOVERY_STRATEGIES[0].query;
-    topicId = topic?.id ?? null;
-  } else {
-    const id = stableDiscoveryId("dtp", [input.providerKey, query]);
-    await db
-      .insert(discoveryTopic)
-      .values({
-        id,
-        providerKey: input.providerKey,
-        query,
-        strategyKey: "ad_hoc",
-        priority: 50,
-      })
-      .onConflictDoNothing();
-    topicId = id;
+  if (!isDiscoveryProviderKey(input.providerKey)) throw new DiscoveryConfigurationError("Unknown discovery provider.");
+  if (input.limit != null && (!Number.isInteger(input.limit) || input.limit < 1 || input.limit > DISCOVERY_MAX_RESULTS)) {
+    throw new DiscoveryConfigurationError("Discovery limit must be an integer from 1 to 10.");
   }
-  const quota =
-    input.providerKey === "youtube" ? YOUTUBE_SEARCH_QUOTA_UNITS + limit : limit;
-  if (quota > DISCOVERY_QUOTA_BUDGET) {
-    return {
-      provider_key: input.providerKey,
-      query,
-      topic_id: topicId,
-      videos_seen: 0,
-      channels_seen: 0,
-      creators_linked: 0,
-      content_ingested: 0,
-      quota_units: quota,
-      status: "skipped",
-      discovered_creator_ids: [],
-    };
+  const limit = input.limit ?? DISCOVERY_MAX_RESULTS;
+  const hosted = isHostedRuntime(env);
+  const mode = resolveProviderMode(input.providerKey, env);
+  if (hosted && (input.records || mode === "fixture")) throw new DiscoveryConfigurationError("Fixture discovery is forbidden in hosted environments.");
+  if (mode === "disabled") throw new DiscoveryConfigurationError("Discovery provider is disabled; credentials alone do not activate it.");
+  if (mode === "live" && !providerCredentialStatus(input.providerKey, env).present) {
+    throw new DiscoveryConfigurationError("Live discovery credentials are missing. Fixture fallback is forbidden.");
   }
-  const records = await collectDiscoveryRecords({
-    providerKey: input.providerKey,
-    query,
-    limit,
-    env,
-    transport: input.transport,
-    records: input.records,
+  const runtime = await withPlatformContext(db, (tx) => getProviderRuntime(tx, input.providerKey));
+  if ((runtime?.paused || (hosted && (!runtime?.enabled || runtime.mode !== "live")))) {
+    throw new DiscoveryConfigurationError("Discovery is paused or not enabled by the operator.");
+  }
+  const requestedQuery = input.query ? normalizeDiscoveryQuery(input.query) : null;
+  const topic = await withPlatformContext(db, async (tx) => {
+    await ensureDiscoveryTopics(tx);
+    if (!requestedQuery) return nextDiscoveryTopic(tx, input.providerKey);
+    const id = stableDiscoveryId("dtp", [input.providerKey, requestedQuery]);
+    await tx.insert(discoveryTopic).values({ id, providerKey: input.providerKey, query: requestedQuery, strategyKey: "ad_hoc", priority: 50 }).onConflictDoNothing();
+    const [row] = await tx.select().from(discoveryTopic).where(eq(discoveryTopic.id, id)).limit(1);
+    return row ?? null;
   });
-  if (input.providerKey === "reddit" && !input.records) {
-    const live = createLiveRedditProvider(env, input.transport);
-    if (live) {
-      const communities = await live.searchCommunities({ q: query, limit: Math.min(5, limit) });
-      await persistDiscoveredCommunities(db, {
-        query,
-        names: communities.map((row) => row.name),
-      });
+  if (!topic?.enabled) throw new DiscoveryConfigurationError("No enabled discovery topic is available.");
+  const runId = `drn_${randomUUID()}`;
+  await withPlatformContext(db, (tx) => tx.insert(discoveryRun).values({
+    id: runId, topicId: topic.id, providerKey: input.providerKey, query: topic.query,
+    trigger: input.trigger ?? "schedule", status: "started", metadata: { version: DISCOVERY_VERSION, channel_ids_required: false },
+  }));
+  const budgeted = budgetedDiscoveryTransport(db, input.providerKey, env, input.transport);
+  try {
+    const records = await collectDiscoveryRecords({ providerKey: input.providerKey, query: topic.query,
+      limit, env: mode === "fixture" ? { ...env, YOUTUBE_API_KEY: undefined, REDDIT_CLIENT_ID: undefined } : env,
+      transport: mode === "live" ? budgeted.transport : input.transport, records: input.records });
+    let communities: string[] = [];
+    if (input.providerKey === "reddit" && mode === "live" && !input.records) {
+      const live = createLiveRedditProvider(env, budgeted.transport);
+      communities = (await live!.searchCommunities({ q: topic.query, limit: Math.min(5, limit) })).map((r) => r.name);
     }
+    return await withPlatformContext(db, async (tx) => {
+      // Serialize identity linkage across concurrent discoveries, without holding
+      // a database transaction open during external HTTP requests.
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(1769172993, 1)`);
+      if (communities.length) await persistDiscoveredCommunities(tx, { query: topic.query, names: communities });
+      return persistDiscoveryFromRecords(tx, { providerKey: input.providerKey, query: topic.query, topicId: topic.id,
+        trigger: input.trigger ?? "schedule", records: records.slice(0, limit), ingestContent: input.ingestContent,
+        runId, requestCount: budgeted.requestCount() });
+    });
+  } catch (error) {
+    const reason = error instanceof DiscoveryBudgetError ? "budget_exhausted" : error instanceof ProviderHttpError ? error.errorClass : "discovery_failed";
+    await withPlatformContext(db, async (tx) => {
+      await tx.update(discoveryRun).set({ status: "failed", errorClass: reason, quotaUnits: budgeted.requestCount(), completedAt: new Date() }).where(eq(discoveryRun.id, runId));
+      await tx.update(discoveryTopic).set({ lastRunAt: new Date(), lastErrorClass: reason, updatedAt: new Date() }).where(eq(discoveryTopic.id, topic.id));
+    });
+    return { provider_key: input.providerKey, query: topic.query, topic_id: topic.id, videos_seen: 0,
+      channels_seen: 0, creators_linked: 0, content_ingested: 0, quota_units: budgeted.requestCount(),
+      status: "failed", reason, discovered_creator_ids: [] };
   }
-  return persistDiscoveryFromRecords(db, {
-    providerKey: input.providerKey,
-    query,
-    topicId,
-    trigger: input.trigger ?? "schedule",
-    records,
-    ingestContent: input.ingestContent,
+}
+
+/** Vercel queues intent only. Credentials and network calls stay in the worker. */
+export async function requestDiscoveryRun(db: Database, input: {
+  providerKey: string; query: string; actorUserId: string; confirm: boolean;
+}) {
+  if (!input.confirm || !isDiscoveryProviderKey(input.providerKey)) throw new DiscoveryConfigurationError("Confirmed discovery provider is required.");
+  const providerKey = input.providerKey;
+  const query = normalizeDiscoveryQuery(input.query);
+  return withPlatformContext(db, async (tx) => {
+    const runtime = await getProviderRuntime(tx, providerKey);
+    if (!runtime?.enabled || runtime.paused || runtime.mode !== "live" || runtime.credentialStatus !== "present") {
+      throw new DiscoveryConfigurationError("Provider must be live, enabled, unpaused, and credentialed in the worker.");
+    }
+    const id = stableDiscoveryId("discovery", [providerKey, query.toLowerCase(), String(Math.floor(Date.now() / 60_000))]);
+    const result = await enqueuePlatformJob(tx, { id, jobType: "provider.sync.v1", payload: {
+      job_version: PLATFORM_JOB_VERSION, job_type: "provider.sync.v1", job_id: id, provider_key: providerKey,
+      discovery_query: query, trigger: "admin", limit: 10, created_at: platformJobCreatedAt(),
+    }});
+    if (result.enqueued) await insertBreakGlassAudit(tx, { actorUserId: input.actorUserId, action: "discovery.run",
+      targetType: "platform_outbox", targetId: id, metadata: { provider: providerKey, limit: 10 } });
+    return { jobId: id, status: "queued" as const, enqueued: result.enqueued };
   });
 }
