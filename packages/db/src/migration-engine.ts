@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { BaselineDiagnostics } from "./migration-drift.js";
 
 /** The adapter runs every operation on one transaction-bound connection. */
 export interface MigrationConnection {
@@ -9,6 +10,7 @@ export type MigrationFile = { name: string; sql: string; checksum: string };
 export type MigrationOptions = {
   plan?: boolean;
   detectBaseline?: boolean;
+  inspectBaseline?: (db: MigrationConnection, files: MigrationFile[]) => Promise<number>;
   baselineThrough?: string;
   confirmExistingSchema?: boolean;
   verifyBaseline?: (db: MigrationConnection, files: MigrationFile[]) => Promise<void>;
@@ -17,7 +19,7 @@ export class MigrationSafetyError extends Error {
   constructor(message: string) { super(message); this.name = "MigrationSafetyError"; }
 }
 export class LegacySchemaMismatchError extends MigrationSafetyError {
-  constructor(message: string) { super(message); this.name = "LegacySchemaMismatchError"; }
+  constructor(message: string, readonly diagnostics?: BaselineDiagnostics) { super(message); this.name = "LegacySchemaMismatchError"; }
 }
 export function migrationChecksum(sql: string): string {
   // Git checkouts on Windows and Linux must describe the same migration.
@@ -57,7 +59,13 @@ export async function migrateOnConnection(db: MigrationConnection, files: Migrat
       [LEDGER],
     );
     if (tables.length > 0) {
-      if (options.detectBaseline && options.verifyBaseline) {
+      if (options.detectBaseline && options.inspectBaseline) {
+        const count = await options.inspectBaseline(db, ordered);
+        if (!Number.isInteger(count) || count < 1 || count > ordered.length) {
+          throw new MigrationSafetyError("Baseline inspection did not return an exact historical prefix. No writes were made.");
+        }
+        baseline = ordered.slice(0, count);
+      } else if (options.detectBaseline && options.verifyBaseline) {
         // Check newest to oldest against an isolated reference. A match only
         // proposes a baseline; this path cannot write or adopt history.
         for (let end = ordered.length; end > 0; end -= 1) {

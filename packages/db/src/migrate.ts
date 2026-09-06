@@ -1,6 +1,6 @@
 import { isHostedRuntime } from "@isp/shared";
 import { applyMigrations } from "./migrate-lib.js";
-import { MigrationSafetyError, type MigrationOptions } from "./migration-engine.js";
+import { LegacySchemaMismatchError, MigrationSafetyError, type MigrationOptions } from "./migration-engine.js";
 
 export function migrationUrl(env: NodeJS.ProcessEnv = process.env): string {
   const raw = env.DATABASE_MIGRATE_URL?.trim() || (!isHostedRuntime(env) ? env.DATABASE_ADMIN_URL?.trim() : undefined);
@@ -37,6 +37,9 @@ async function main() {
 // CLI errors are sanitized: Postgres messages may contain input values/URLs.
 if (process.argv[1]?.replace(/\\/g, "/").match(/\/(?:src|dist)\/migrate\.(?:ts|js)$/)) {
   void main().catch((error: unknown) => {
+    if (error instanceof LegacySchemaMismatchError && error.diagnostics) {
+      console.error(JSON.stringify({ event: "db.migration_drift", ...error.diagnostics }));
+    }
     console.error(error instanceof MigrationSafetyError ? error.message : "Migration failed and was rolled back. Inspect the migration plan and schema-owner permissions; no credentials were printed.");
     process.exitCode = 1;
   });
