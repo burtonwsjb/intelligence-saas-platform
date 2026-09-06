@@ -38,6 +38,19 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @isp/db... build
       - run: pnpm test:isolation
+  preflight:
+    name: Maintenance prompt (${{ matrix.os }})
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            shell: pwsh
+          - os: windows-latest
+            shell: powershell
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
       - name: Read-only maintenance prompt safety
-        shell: pwsh
+        shell: ${{ matrix.shell }}
         run: ./scripts/test-staging-repair-preflight.ps1
