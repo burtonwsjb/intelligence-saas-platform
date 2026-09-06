@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { eq } from "drizzle-orm";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
+import { providerRuntime } from "../schema/provider.js";
+import { setProviderControl } from "./runtime.js";
 import {
   analyzeSourceSentiment,
   applyProviderModeFromEnv,
@@ -49,6 +52,88 @@ async function memoryDb() {
   await client.exec(await readMigrationSql());
   return drizzle(client) as unknown as Database;
 }
+
+describe("applyProviderModeFromEnv", () => {
+  it("enables YouTube only when live mode is explicit and the API key is present", async () => {
+    const db = await memoryDb();
+    await applyProviderModeFromEnv(db, {
+      ISP_ENV: "staging",
+      PROVIDER_YOUTUBE_MODE: "live",
+      YOUTUBE_API_KEY: "yt-test-not-used-for-requests",
+    });
+    const rows = await listProviderRuntime(db);
+    expect(rows.find((row) => row.providerKey === "youtube")).toMatchObject({
+      mode: "live",
+      enabled: true,
+      credentialStatus: "present",
+    });
+    expect(
+      rows
+        .filter((row) => row.providerKey !== "youtube")
+        .every((row) => row.mode === "disabled" && row.enabled === false),
+    ).toBe(true);
+  });
+
+  it("keeps YouTube disabled when live is set without credentials", async () => {
+    const db = await memoryDb();
+    await applyProviderModeFromEnv(db, {
+      ISP_ENV: "staging",
+      PROVIDER_YOUTUBE_MODE: "live",
+    });
+    expect(await listProviderRuntime(db).then((rows) => rows.find((row) => row.providerKey === "youtube"))).toMatchObject({
+      mode: "live",
+      enabled: false,
+      credentialStatus: "disabled_pending_credentials",
+    });
+  });
+
+  it("does not infer live from a YouTube key without PROVIDER_YOUTUBE_MODE", async () => {
+    const db = await memoryDb();
+    await applyProviderModeFromEnv(db, {
+      ISP_ENV: "staging",
+      YOUTUBE_API_KEY: "yt-test-not-used-for-requests",
+    });
+    expect(await listProviderRuntime(db).then((rows) => rows.find((row) => row.providerKey === "youtube"))).toMatchObject({
+      mode: "disabled",
+      enabled: false,
+      credentialStatus: "present",
+    });
+  });
+
+  it("stays disabled with no credentials and no mode", async () => {
+    const db = await memoryDb();
+    await applyProviderModeFromEnv(db, { ISP_ENV: "staging" });
+    const youtube = (await listProviderRuntime(db)).find((row) => row.providerKey === "youtube");
+    expect(youtube).toMatchObject({
+      mode: "disabled",
+      enabled: false,
+      credentialStatus: "missing",
+    });
+  });
+
+  it("normalizes stale mode=disabled + enabled=true", async () => {
+    const db = await memoryDb();
+    await applyProviderModeFromEnv(db, { ISP_ENV: "staging" });
+    await db.update(providerRuntime).set({ enabled: true }).where(eq(providerRuntime.providerKey, "youtube"));
+    expect((await listProviderRuntime(db)).find((row) => row.providerKey === "youtube")).toMatchObject({
+      mode: "disabled",
+      enabled: true,
+    });
+    await applyProviderModeFromEnv(db, { ISP_ENV: "staging" });
+    expect((await listProviderRuntime(db)).find((row) => row.providerKey === "youtube")).toMatchObject({
+      mode: "disabled",
+      enabled: false,
+    });
+    const attempted = await setProviderControl(db, { providerKey: "youtube", enabled: true });
+    expect(attempted).toMatchObject({ mode: "disabled", enabled: false });
+  });
+
+  it("does not call live provider transports", () => {
+    const source = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "runtime.ts"), "utf8");
+    expect(source).toMatch(/export async function applyProviderModeFromEnv/);
+    expect(source).not.toMatch(/createLiveYoutubeProvider|fetch\(|youtube\.googleapis/);
+  });
+});
 
 describe("provider mode and credentials", () => {
   it("never infers live mode from credential presence", () => {

@@ -60,18 +60,20 @@ export async function setProviderControl(
   db: Database,
   input: { providerKey: ProviderKey; enabled?: boolean; paused?: boolean; mode?: "disabled" | "fixture" | "live" },
 ) {
+  const current = await getProviderRuntime(db, input.providerKey);
+  const nextMode = input.mode ?? current?.mode ?? "disabled";
   const patch: Record<string, unknown> = { updatedAt: new Date() };
-  if (input.enabled != null) {
-    patch.enabled = input.enabled;
-  }
   if (input.paused != null) {
     patch.paused = input.paused;
   }
   if (input.mode) {
     patch.mode = input.mode;
-    if (input.mode === "disabled") {
-      patch.enabled = false;
-    }
+  }
+  // mode=disabled + enabled=true is invalid. Disabled always wins.
+  if (nextMode === "disabled") {
+    patch.enabled = false;
+  } else if (input.enabled != null) {
+    patch.enabled = input.enabled;
   }
   await db.update(providerRuntime).set(patch).where(eq(providerRuntime.providerKey, input.providerKey));
   return getProviderRuntime(db, input.providerKey);

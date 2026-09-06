@@ -1,6 +1,7 @@
 import { Worker } from "bullmq";
 import { UnrecoverableError } from "bullmq";
 import {
+  applyProviderModeFromEnv,
   createDbConnection,
   createDbFromWorkerEnv,
   enqueueDueProviderSyncs,
@@ -57,6 +58,30 @@ function logLoopFailure(event: string, operation: string, error: unknown) {
     ...safeLoopErrorFields(error),
     retry: "next_cycle",
   });
+}
+
+export async function reconcileProviderRuntimeFromEnv(
+  db: Database,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<{ ok: boolean; errorClass: string | null }> {
+  try {
+    await withPlatformContext(db, (scoped) => applyProviderModeFromEnv(scoped, env));
+    logQueueEvent("info", "worker.provider_runtime_synced", { status: "ok" });
+    return { ok: true, errorClass: null };
+  } catch (error) {
+    logLoopFailure("worker.provider_runtime_sync_failed", "provider_runtime_sync", error);
+    return { ok: false, errorClass: safeLoopErrorFields(error).error_class };
+  }
+}
+
+export async function startProviderScheduleLoop(input: {
+  db: Database;
+  env?: NodeJS.ProcessEnv;
+  onScheduleArm: () => void;
+}): Promise<{ ok: boolean; errorClass: string | null }> {
+  const result = await reconcileProviderRuntimeFromEnv(input.db, input.env);
+  input.onScheduleArm();
+  return result;
 }
 
 export async function runProviderSchedule(
@@ -215,11 +240,10 @@ export function startWorker(options?: {
     void runOutboxSweep(db, { queue, env });
   }, WORKER_SWEEP_INTERVAL_MS);
 
-  const schedule = setInterval(() => {
+  const heartbeat = setInterval(() => {
     if (status === "shutting_down" || status === "stopped") {
       return;
     }
-    void runProviderSchedule(db, env);
     void runWorkerHeartbeat(db, queue).then((result) => {
       if (result.ok) {
         lastHeartbeatAt = new Date().toISOString();
@@ -229,6 +253,23 @@ export function startWorker(options?: {
       }
     });
   }, WORKER_HEARTBEAT_INTERVAL_MS);
+
+  let providerSchedule: ReturnType<typeof setInterval> | undefined;
+  void startProviderScheduleLoop({
+    db,
+    env,
+    onScheduleArm: () => {
+      if (status === "shutting_down" || status === "stopped") {
+        return;
+      }
+      providerSchedule = setInterval(() => {
+        if (status === "shutting_down" || status === "stopped") {
+          return;
+        }
+        void runProviderSchedule(db, env);
+      }, WORKER_HEARTBEAT_INTERVAL_MS);
+    },
+  });
 
   void runRedisTransportProbe({ env, queue })
     .then(logRedisTransportProbe)
@@ -277,7 +318,10 @@ export function startWorker(options?: {
             name: "intervals",
             run: async () => {
               clearInterval(sweep);
-              clearInterval(schedule);
+              clearInterval(heartbeat);
+              if (providerSchedule) {
+                clearInterval(providerSchedule);
+              }
             },
           },
           {

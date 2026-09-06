@@ -5,8 +5,10 @@ import { describe, expect, it, vi } from "vitest";
 import { MissingRedisUrlError } from "@isp/queue";
 import {
   collectQueueCounts,
+  reconcileProviderRuntimeFromEnv,
   runProviderSchedule,
   runWorkerHeartbeat,
+  startProviderScheduleLoop,
   startWorker,
   workerHealthPayload,
 } from "./worker.js";
@@ -235,15 +237,80 @@ describe("startup redis transport probe", () => {
     expect(source.match(/runRedisTransportProbe/g)?.length).toBe(2);
     const startWorker = source.slice(source.indexOf("export function startWorker"));
     const heartbeatLoop = startWorker.slice(
-      startWorker.indexOf("const schedule = setInterval"),
-      startWorker.indexOf("void runRedisTransportProbe"),
+      startWorker.indexOf("const heartbeat = setInterval"),
+      startWorker.indexOf("let providerSchedule"),
     );
     expect(heartbeatLoop).toContain("runWorkerHeartbeat(db, queue)");
+    expect(heartbeatLoop).not.toContain("runProviderSchedule");
     expect(heartbeatLoop).not.toContain("runRedisTransportProbe");
+    expect(startWorker).toContain("startProviderScheduleLoop");
+    expect(startWorker).toMatch(/onScheduleArm:[\s\S]*runProviderSchedule\(db, env\)/);
+    expect(startWorker.indexOf("startProviderScheduleLoop")).toBeLessThan(startWorker.indexOf("void runRedisTransportProbe"));
     const heartbeat = source.slice(
       source.indexOf("export async function runWorkerHeartbeat"),
       source.indexOf("export async function runOutboxSweep"),
     );
     expect(heartbeat).not.toContain("runRedisTransportProbe");
+  });
+});
+
+describe("provider runtime startup sync", () => {
+  it("completes env reconciliation before the provider scheduler is armed", async () => {
+    const order: string[] = [];
+    const db = {
+      transaction: async () => {
+        order.push("reconcile");
+        throw new Error("provider_runtime unavailable");
+      },
+    };
+    const result = await startProviderScheduleLoop({
+      db: db as never,
+      env: { ISP_ENV: "staging" },
+      onScheduleArm: () => {
+        order.push("scheduler");
+      },
+    });
+    expect(order).toEqual(["reconcile", "scheduler"]);
+    expect(result.ok).toBe(false);
+  });
+
+  it("logs a sanitized reconciliation failure and keeps the worker operational", async () => {
+    const lines: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((line) => {
+      lines.push(String(line));
+    });
+    const result = await reconcileProviderRuntimeFromEnv(
+      {
+        transaction: async () => {
+          throw new Error("Failed query YOUTUBE_API_KEY=yt-secret-do-not-log");
+        },
+      } as never,
+      { ISP_ENV: "staging", YOUTUBE_API_KEY: "yt-secret-do-not-log", PROVIDER_YOUTUBE_MODE: "live" },
+    );
+    expect(result.ok).toBe(false);
+    expect(result.errorClass).toBeTruthy();
+    const blob = lines.join("\n");
+    expect(blob).toContain("worker.provider_runtime_sync_failed");
+    expect(blob).toContain("provider_runtime_sync");
+    expect(blob).not.toContain("yt-secret-do-not-log");
+    expect(blob).not.toContain("YOUTUBE_API_KEY=");
+    spy.mockRestore();
+  });
+
+  it("arms the scheduler after a failed reconcile so the worker stays up", async () => {
+    let armed = false;
+    const result = await startProviderScheduleLoop({
+      db: {
+        transaction: async () => {
+          throw new Error("permission denied for table provider_runtime");
+        },
+      } as never,
+      env: { ISP_ENV: "staging" },
+      onScheduleArm: () => {
+        armed = true;
+      },
+    });
+    expect(result.ok).toBe(false);
+    expect(armed).toBe(true);
   });
 });
