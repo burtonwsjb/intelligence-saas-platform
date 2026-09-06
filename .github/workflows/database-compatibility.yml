@@ -38,3 +38,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @isp/db... build
       - run: pnpm test:isolation
+      - name: Read-only maintenance prompt safety
+        shell: pwsh
+        run: ./scripts/test-staging-repair-preflight.ps1
