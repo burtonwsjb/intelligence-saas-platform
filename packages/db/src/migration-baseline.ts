@@ -56,7 +56,9 @@ export async function verifyLegacyBaseline(db: MigrationConnection, files: Migra
     const actual = await readCatalogSnapshot(db);
     const difference = compareCatalogs(expected, actual, files.at(-1)!.name);
     if (difference.differenceCount) {
-      throw new LegacySchemaMismatchError("Legacy schema does not match the requested baseline. No changes were committed; review the safe catalog differences, not a guessed baseline.", baselineDiagnostics([difference]));
+      const firstGroup = difference.groups[0]!.catalog;
+      const groupNumber = Object.keys(QUERIES).indexOf(firstGroup) + 1;
+      throw new LegacySchemaMismatchError(`Legacy schema does not match the requested baseline (catalog group ${groupNumber}: ${firstGroup}). No changes were committed; review the safe catalog differences, not a guessed baseline.`, baselineDiagnostics([difference]));
     }
   } finally {
     await reference.close();
