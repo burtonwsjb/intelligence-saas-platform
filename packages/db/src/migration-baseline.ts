@@ -1,6 +1,7 @@
-import type { MigrationConnection, MigrationFile } from "./migration-engine.js";
+import type { MigrationConnection, MigrationFile, MigrationOptions } from "./migration-engine.js";
 import { LegacySchemaMismatchError, MigrationSafetyError } from "./migration-engine.js";
 import { baselineDiagnostics, compareCatalogs, type CandidateDrift, type CatalogGroup, type CatalogSnapshot } from "./migration-drift.js";
+import { prepareNeonSampleReference } from "./migration-neon-sample.js";
 
 // Only schema catalogs are read from the target. Historical SQL is executed in
 // the isolated reference, never against the existing database.
@@ -44,10 +45,11 @@ export async function readCatalogSnapshot(db: MigrationConnection): Promise<Cata
     await db.query("SELECT pg_catalog.set_config('search_path', $1, true)", [previous.path]);
   }
 }
-export async function verifyLegacyBaseline(db: MigrationConnection, files: MigrationFile[]) {
+export async function verifyLegacyBaseline(db: MigrationConnection, files: MigrationFile[], options: Pick<MigrationOptions, "includeNeonSample"> = {}) {
   const { PGlite } = await import("@electric-sql/pglite");
   const reference = new PGlite();
   try {
+    await prepareNeonSampleReference(db, reference, options.includeNeonSample);
     await reference.exec(files.map((f) => f.sql).join("\n"));
     const expected = await reference.transaction((tx) => readCatalogSnapshot({
       query: async <T extends Record<string, unknown>>(text: string, params: unknown[] = []) => (await tx.query<T>(text, params)).rows,
@@ -66,13 +68,14 @@ export async function verifyLegacyBaseline(db: MigrationConnection, files: Migra
 }
 /** Inspect the target once, and build all historical prefixes in ONE isolated
  * reference. A near match is only diagnostic; it can never authorize adoption. */
-export async function detectLegacyBaseline(db: MigrationConnection, files: MigrationFile[]): Promise<number> {
+export async function detectLegacyBaseline(db: MigrationConnection, files: MigrationFile[], options: Pick<MigrationOptions, "includeNeonSample"> = {}): Promise<number> {
   const actual = await readCatalogSnapshot(db);
   const { PGlite } = await import("@electric-sql/pglite");
   const reference = new PGlite();
   const candidates: CandidateDrift[] = [];
   let matchedPrefix = 0;
   try {
+    await prepareNeonSampleReference(db, reference, options.includeNeonSample);
     for (const [i, file] of files.entries()) {
       await reference.exec(file.sql);
       const expected = await reference.transaction((tx) => readCatalogSnapshot({

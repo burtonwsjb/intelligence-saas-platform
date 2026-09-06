@@ -10,6 +10,7 @@ export type MigrationFile = { name: string; sql: string; checksum: string };
 export type MigrationOptions = {
   plan?: boolean;
   detectBaseline?: boolean;
+  includeNeonSample?: boolean;
   inspectBaseline?: (db: MigrationConnection, files: MigrationFile[]) => Promise<number>;
   baselineThrough?: string;
   confirmExistingSchema?: boolean;
@@ -30,6 +31,9 @@ const LEDGER = "_isp_migration_history";
 export async function migrateOnConnection(db: MigrationConnection, files: MigrationFile[], options: MigrationOptions = {}) {
   if (options.detectBaseline && (!options.plan || options.baselineThrough || options.confirmExistingSchema)) {
     throw new MigrationSafetyError("Automatic baseline detection is read-only and requires --plan without adoption arguments.");
+  }
+  if (options.includeNeonSample && !(options.detectBaseline || (options.baselineThrough && options.confirmExistingSchema))) {
+    throw new MigrationSafetyError("The Neon sample profile is only valid for legacy baseline detection or explicitly confirmed adoption.");
   }
   const ordered = [...files].sort((a, b) => a.name.localeCompare(b.name));
   if (new Set(ordered.map((f) => f.name.slice(0, 4))).size !== ordered.length ||
@@ -94,6 +98,9 @@ export async function migrateOnConnection(db: MigrationConnection, files: Migrat
   } else if (options.baselineThrough) {
     throw new MigrationSafetyError("A migration ledger already exists; legacy adoption is not allowed.");
   }
+  if (options.includeNeonSample && !baseline.length) {
+    throw new MigrationSafetyError("The Neon sample profile requires an untracked legacy database and an exact verified baseline.");
+  }
   const pending = ordered.slice(recorded.length + baseline.length);
   // Catch the actual ownership issue before applying ANY pending migration.
   // No automatic grants, ownership transfer, or runtime-role elevation.
@@ -113,7 +120,7 @@ export async function migrateOnConnection(db: MigrationConnection, files: Migrat
       }
     }
   }
-  const report = { role: who.role, baselineCandidate: baseline.at(-1)?.name ?? null, adopted: options.plan ? [] as string[] : baseline.map((f) => f.name), pending: pending.map((f) => f.name), applied: [] as string[], plan: options.plan === true };
+  const report = { role: who.role, baselineCandidate: baseline.at(-1)?.name ?? null, adopted: options.plan ? [] as string[] : baseline.map((f) => f.name), pending: pending.map((f) => f.name), applied: [] as string[], plan: options.plan === true, preservedExternalProfiles: options.includeNeonSample ? ["neon_sample.v1"] : [] as string[] };
   if (options.plan) return report;
   await db.exec(`CREATE TABLE IF NOT EXISTS public.${LEDGER} (
     name text PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now(),

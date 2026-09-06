@@ -31,18 +31,25 @@ try {
     if ($env:DATABASE_MIGRATE_URL -ne 'original-value' -or $env:ISP_ENV -ne 'original-environment') {
         throw 'Preflight failed to restore the local environment.'
     }
+    & "$PSScriptRoot/staging-repair-preflight.ps1" -IncludeNeonSample
+    if (($global:IspPreflightTestState.Captured -join ' ') -ne 'db:migrate -- --plan --detect-baseline --include-neon-sample') {
+        throw 'The explicit sample profile must preserve both read-only plan arguments.'
+    }
+    if ($env:DATABASE_MIGRATE_URL -ne 'original-value' -or $env:ISP_ENV -ne 'original-environment') {
+        throw 'Profile preflight failed to restore the local environment.'
+    }
     $global:IspPreflightTestState.ExitCode = 23
     $failedSafely = $false
-    try { & "$PSScriptRoot/staging-repair-preflight.ps1" } catch {
+    try { & "$PSScriptRoot/staging-repair-preflight.ps1" -IncludeNeonSample } catch {
         $failedSafely = $_.Exception.Message -like 'Preflight did not pass.*'
     }
-    if (-not $failedSafely -or $global:IspPreflightTestState.Calls -ne 2) {
+    if (-not $failedSafely -or $global:IspPreflightTestState.Calls -ne 3) {
         throw 'Preflight must surface the failed migration plan, not an unrelated test error.'
     }
     if ($env:DATABASE_MIGRATE_URL -ne 'original-value' -or $env:ISP_ENV -ne 'original-environment') {
         throw 'Failed preflight failed to restore the local environment.'
     }
-    Write-Host 'PowerShell preflight safety: PASS (read-only arguments, hidden prompt, success/failure restoration).'
+    Write-Host 'PowerShell preflight safety: PASS (read-only arguments, explicit sample profile, hidden prompt, success/failure restoration).'
 } finally {
     $env:DATABASE_MIGRATE_URL = $oldUrl
     $env:ISP_ENV = $oldEnvironment

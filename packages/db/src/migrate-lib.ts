@@ -29,8 +29,8 @@ export async function applyMigrations(url: string, options: MigrationOptions = {
         exec: async (text) => { await tx.unsafe(text).simple(); },
       }, files, {
         ...options,
-        verifyBaseline: options.verifyBaseline ?? verifyLegacyBaseline,
-        inspectBaseline: options.inspectBaseline ?? (options.verifyBaseline ? undefined : detectLegacyBaseline),
+        verifyBaseline: options.verifyBaseline ?? ((db, migrations) => verifyLegacyBaseline(db, migrations, options)),
+        inspectBaseline: options.inspectBaseline ?? (options.verifyBaseline ? undefined : (db, migrations) => detectLegacyBaseline(db, migrations, options)),
       });
     });
   } finally {

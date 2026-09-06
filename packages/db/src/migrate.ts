@@ -18,14 +18,18 @@ export function parseMigrationArgs(argv: string[]): MigrationOptions {
   const result: MigrationOptions = {};
   for (let i = 0; i < args.length; i += 1) {
     if (args[i] === "--plan") result.plan = true;
+    else if (args[i] === "--include-neon-sample") result.includeNeonSample = true;
     else if (args[i] === "--detect-baseline") result.detectBaseline = true;
     else if (args[i] === "--confirm-existing-schema") result.confirmExistingSchema = true;
     else if (args[i] === "--baseline-through" && /^\d{4}(?:_[A-Za-z0-9_-]+\.sql)?$/.test(args[i + 1] ?? "")) result.baselineThrough = args[++i];
-    else throw new MigrationSafetyError("Unknown migration argument. Allowed: --plan, --detect-baseline, --baseline-through <version>, --confirm-existing-schema.");
+    else throw new MigrationSafetyError("Unknown migration argument. Allowed: --plan, --detect-baseline, --include-neon-sample, --baseline-through <version>, --confirm-existing-schema.");
   }
   if (Boolean(result.baselineThrough) !== Boolean(result.confirmExistingSchema)) throw new MigrationSafetyError("Legacy adoption requires both --baseline-through and --confirm-existing-schema.");
   if (result.detectBaseline && (!result.plan || result.baselineThrough || result.confirmExistingSchema)) {
     throw new MigrationSafetyError("Automatic baseline detection is read-only and requires --plan without adoption arguments.");
+  }
+  if (result.includeNeonSample && !(result.detectBaseline || (result.baselineThrough && result.confirmExistingSchema))) {
+    throw new MigrationSafetyError("The Neon sample profile is only valid for legacy baseline detection or explicitly confirmed adoption.");
   }
   return result;
 }
