@@ -32,7 +32,7 @@ export const PROVIDER_TYPE_BY_KEY: Record<ProviderKey, ProviderType> = {
 
 export const PROVIDER_ADAPTER_NOTES: Record<ProviderKey, string> = {
   tcg_card_central:
-    "First-party snapshot contract only. There is no public TCC marketplace SDK in this repo.",
+    "TCC shared daily cache via its authenticated API. TCC alone refreshes missing prices; SSI never calls pricing vendors for a cache miss.",
   tcgplayer:
     "Native product pricing when product IDs are supplied. Unbounded catalog crawl is not implemented.",
   ebay: "Bounded Browse search. Unbounded marketplace crawl is not implemented.",

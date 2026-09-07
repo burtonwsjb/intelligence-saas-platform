@@ -36,6 +36,15 @@ Money rules: canonical major units, explicit currency, no silent currency mixing
 
 Target market sources include authorized integrations such as TCG Card Central, TCGplayer, eBay, and future providers. No scraping workaround should replace a proper provider/API integration.
 
+### TCG Card Central cache-first gateway (owner clarification)
+
+For normal market-price operation, Social Signal IQ must request data through an authenticated TCG Card Central API. TCG Card Central checks its existing shared daily cache first. If the exact requested quote is absent or stale, TCG Card Central, not Social Signal IQ, uses its existing provider resolver to fetch and centrally cache it. Concurrent requests reuse TCG Card Central's existing per-identity refresh lease. Social Signal IQ must not bypass that cache, duplicate the upstream provider fetch, or require a separate direct vendor subscription merely to consume this integration.
+
+The products keep separate databases, authentication and billing. The API exposes only public catalog/market data, never tenant collections, provider keys or database credentials. A dedicated server-to-server credential is separate from all user passwords and upstream keys. Requests preserve game, set, collector number as text, language, variant, condition and grade. Unsupported or ambiguous dimensions must return an explicit non-price result, not a fabricated match. Responses preserve original observation time, freshness and provenance. A reference quote is not a completed sale, volume measurement or historical series. Social Signal IQ may persist the received observations in its existing intelligence pipeline without creating another upstream-fetch/cache authority.
+
+Credentials alone do not enable this provider. Activate and validate the TCG Card Central gateway in staging with bounded cache-hit, cache-miss, repeat-request and exact-identity tests before production use. Existing direct adapters may remain available for separately authorized future integrations, but are not fallback paths for a TCG Card Central cache miss.
+
+
 ## Creator/influencer intelligence
 
 Creator intelligence is core functionality. The system must automatically discover creators by topic, maintain canonical platform identities, ingest relevant content, extract structured calls/claims, capture the market state at call time, evaluate later outcomes without look-ahead, and calculate sample-size-aware authority/trust by category.
