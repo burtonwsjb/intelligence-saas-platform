@@ -93,15 +93,17 @@ export async function markPlatformOutboxProcessed(db: Database, id: string): Pro
     .where(eq(platformOutbox.id, id));
 }
 
-export async function markPlatformOutboxFailed(db: Database, id: string, error: string): Promise<void> {
-  await db
+export async function markPlatformOutboxFailed(
+  db: Database, id: string, error: string, options?: { onlyIfPublished?: boolean },
+): Promise<number> {
+  const updated = await db
     .update(platformOutbox)
-    .set({
-      status: "failed",
-      failedAt: new Date(),
-      lastError: error.slice(0, 300),
-    })
-    .where(eq(platformOutbox.id, id));
+    .set({ status: "failed", failedAt: new Date(), lastError: error.slice(0, 300) })
+    .where(options?.onlyIfPublished
+      ? and(eq(platformOutbox.id, id), eq(platformOutbox.status, "published"))
+      : eq(platformOutbox.id, id))
+    .returning({ id: platformOutbox.id });
+  return updated.length;
 }
 
 export async function retryFailedPlatformJob(db: Database, id: string): Promise<boolean> {
