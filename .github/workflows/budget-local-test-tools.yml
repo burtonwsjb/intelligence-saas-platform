@@ -1,0 +1,25 @@
+name: Budget local test tools
+on:
+  pull_request:
+    paths: [.github/workflows/budget-local-test-tools.yml]
+permissions:
+  contents: read
+jobs:
+  tools:
+    if: github.head_ref == 'fix/redis-free-tier-budget-guard'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - name: Collect disposable local Redis test runtime
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y redis-server
+          mkdir -p /tmp/budget-redis/lib
+          cp /usr/bin/redis-server /tmp/budget-redis/
+          ldd /usr/bin/redis-server | awk '/=> \/.* \(/ {print $3}' | while read p; do cp -L "$p" /tmp/budget-redis/lib/; done
+          tar -czf /tmp/budget-redis.tar.gz -C /tmp/budget-redis .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: budget-local-redis
+          path: /tmp/budget-redis.tar.gz
+          retention-days: 1
