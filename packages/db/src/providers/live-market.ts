@@ -161,12 +161,9 @@ export function createLiveMarketProvider(
   transport?: HttpTransport,
 ): LiveTcgMarketProvider | null {
   if (provider === "tcg_card_central") {
-    const baseUrl = env.TCC_API_BASE_URL?.trim();
-    const token = env.TCC_API_TOKEN?.trim();
-    if (!baseUrl || !token) {
-      return null;
-    }
-    return new LiveTcgMarketProvider({ provider, auth: { baseUrl, token }, transport });
+    // Live TCC runs through syncTccCachedMarket and its exact-identity POST API.
+    // Never fall back to the old guessed /v1/market/snapshots contract.
+    return null;
   }
   if (provider === "tcgplayer") {
     const baseUrl = env.TCGPLAYER_API_BASE_URL?.trim() || "https://api.tcgplayer.com";

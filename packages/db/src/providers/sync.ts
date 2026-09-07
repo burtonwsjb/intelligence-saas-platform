@@ -1,3 +1,4 @@
+import { syncTccCachedMarket } from "./tcc-cache-sync.js";
 import { runCreatorMonitoring } from "./monitoring.js";
 import { isHostedRuntime } from "@isp/shared";
 import { withPlatformContext } from "../rls.js";
@@ -108,6 +109,11 @@ type ProviderSyncInput = {
   limit?: number; env?: NodeJS.ProcessEnv; transport?: HttpTransport; query?: string;
 };
 export async function syncProvider(db: Database, input: ProviderSyncInput) {
+  // TCC owns the shared cache and every cache-miss vendor fetch. Network I/O
+  // runs outside the Postgres transaction in the dedicated bounded gateway.
+  if (input.providerKey === "tcg_card_central" && resolveProviderMode("tcg_card_central", input.env ?? process.env) === "live") {
+    return syncTccCachedMarket(db, input);
+  }
   // Social discovery manages short independent transactions so HTTP failures do
   // not roll back request reservations. Market normalization keeps its existing scope.
   if (!isDiscoveryProviderKey(input.providerKey)) return withPlatformContext(db, (tx) => syncProviderInTransaction(tx, input));
