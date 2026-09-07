@@ -79,3 +79,6 @@ try {
         Remove-Variable -Name IspPreflightTestState -Scope Global -ErrorAction SilentlyContinue
     }
 }
+# Reached only after every assertion passed. The intentional negative guard
+# probe leaves LASTEXITCODE=1; report the suite result, not that child result.
+exit 0
