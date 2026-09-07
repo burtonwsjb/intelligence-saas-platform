@@ -10,16 +10,16 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 5
     steps:
-      - name: Collect disposable local Redis test runtime
+      - name: Collect disposable local Redis 7 test runtime
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y redis-server
-          mkdir -p /tmp/budget-redis/lib
-          cp /usr/bin/redis-server /tmp/budget-redis/
-          ldd /usr/bin/redis-server | awk '/=> \/.* \(/ {print $3}' | while read p; do cp -L "$p" /tmp/budget-redis/lib/; done
+          docker pull redis:7-bookworm
+          cid=$(docker create redis:7-bookworm)
+          mkdir -p /tmp/budget-redis
+          docker cp "$cid":/usr/local/bin/redis-server /tmp/budget-redis/redis-server
+          docker rm "$cid"
           tar -czf /tmp/budget-redis.tar.gz -C /tmp/budget-redis .
       - uses: actions/upload-artifact@v4
         with:
-          name: budget-local-redis
+          name: budget-local-redis7
           path: /tmp/budget-redis.tar.gz
           retention-days: 1
