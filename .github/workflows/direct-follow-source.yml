@@ -1,0 +1,22 @@
+name: Direct follow source snapshot
+on:
+  pull_request:
+    paths: [.github/workflows/direct-follow-source.yml]
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    if: github.head_ref == 'feat/direct-influencer-follow'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: d7f4a29b42004e831ec11b240e226b88d5e02360
+          persist-credentials: false
+      - run: git archive --format=tar.gz HEAD -o /tmp/direct-follow-source.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: direct-follow-source
+          path: /tmp/direct-follow-source.tar.gz
+          retention-days: 1
