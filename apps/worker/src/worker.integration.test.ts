@@ -6,6 +6,9 @@ import {
   createDbConnection,
   DB_ROLES,
   getSourceEvent,
+  enqueuePlatformJob,
+  getPlatformOutbox,
+  markPlatformOutboxPublished,
   getObservationBySourceEvent,
   getWorkerHeartbeat,
   insertOutboxJob,
@@ -22,7 +25,8 @@ import {
   withSystemContext,
   type Database,
 } from "@isp/db";
-import { createNormalizeEnvelope, publishOutboxJob, requireRedisUrl } from "@isp/queue";
+import { createIngestQueue, createNormalizeEnvelope, createProviderSyncEnvelope, publishOutboxJob, requireRedisUrl } from "@isp/queue";
+import { inspectRetainedFailures } from "./failure-observation.js";
 import { startWorker } from "./worker.js";
 
 const passwords = testRolePasswords();
@@ -138,6 +142,40 @@ describe("BullMQ worker", () => {
     );
     expect(observation?.sourceEventId).toBe(eventId);
     expect(observation?.observationType).toBe("metric.snapshot");
+  });
+
+  it("records an exhausted platform job in Postgres and preserves its Redis evidence", async () => {
+    const queue = createIngestQueue(env);
+    try {
+      const id = `terminal_${crypto.randomUUID()}`;
+      // Unknown provider fails before HTTP. This tests actual retry exhaustion,
+      // not a live vendor request or injected fixture result in hosted staging.
+      const payload = createProviderSyncEnvelope({ jobId: id, providerKey: "invalid_provider" });
+      await withPlatformContext(adminConn.db, async (tx) => {
+        await enqueuePlatformJob(tx, { id, jobType: "provider.sync.v1", payload });
+        await markPlatformOutboxPublished(tx, id);
+      });
+      // This isolated test ID contains no BullMQ separator; production
+      // publishing keeps its canonical hash mapping in the queue package.
+      const job = await queue.add("provider.sync.v1", payload, {
+        jobId: id, attempts: 2, backoff: { type: "fixed", delay: 50 }, removeOnFail: false,
+      });
+      const failed = await waitUntil(async () => {
+        const row = await withPlatformContext(adminConn.db, (tx) => getPlatformOutbox(tx, id));
+        return row?.status === "failed" ? row : null;
+      });
+      expect(failed.lastError).toBe("unknown");
+      expect(await job.getState()).toBe("failed");
+      const retained = await queue.getJob(job.id!);
+      expect(retained?.attemptsMade).toBe(2);
+      expect(retained?.failedReason).toBeTruthy();
+      const sample = await inspectRetainedFailures(queue);
+      expect(sample.status).toBe("inspected");
+      expect(sample.groups.some((group) => group.jobType === "provider.sync.v1" && group.count >= 1)).toBe(true);
+      expect(await job.getState()).toBe("failed");
+    } finally {
+      await queue.close();
+    }
   });
 
   it("persists numeric queue metrics once Redis answers", async () => {

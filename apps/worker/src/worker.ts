@@ -1,3 +1,5 @@
+import { createFailureObserver, FAILURE_INSPECTION_INTERVAL_MS, recordTerminalPlatformFailure } from "./failure-observation.js";
+import type { QueueFailureSnapshot } from "@isp/shared";
 import { Worker } from "bullmq";
 import { UnrecoverableError } from "bullmq";
 import {
@@ -122,7 +124,7 @@ export async function collectQueueCounts(
 export async function runWorkerHeartbeat(
   db: Database,
   queue: QueueCounts,
-  options?: { startup?: boolean; timeoutMs?: number },
+  options?: { startup?: boolean; timeoutMs?: number; queueFailureSnapshot?: QueueFailureSnapshot | null },
 ): Promise<{ ok: boolean; errorClass: string | null }> {
   const counts = await collectQueueCounts(queue, { timeoutMs: options?.timeoutMs });
   try {
@@ -131,6 +133,7 @@ export async function runWorkerHeartbeat(
         queueDepth: counts.queueDepth,
         failedJobs: counts.failedJobs,
         queueMetricsErrorClass: counts.errorClass,
+        queueFailureSnapshot: options?.queueFailureSnapshot,
       }),
     );
     if (options?.startup) {
@@ -266,6 +269,21 @@ export function startWorker(options?: {
     },
   );
 
+  const failures = createFailureObserver(queue);
+  void failures.refresh();
+  const failureInspection = setInterval(() => {
+    if (status !== "shutting_down" && status !== "stopped") void failures.refresh();
+  }, FAILURE_INSPECTION_INTERVAL_MS);
+  const pendingFailureWrites = new Set<Promise<unknown>>();
+  worker.on("failed", (job, error) => {
+    const pending = recordTerminalPlatformFailure(db, job, error).catch((failure) => {
+      logLoopFailure("worker.terminal_failure_record_failed", "terminal_failure_record", failure);
+    });
+    pendingFailureWrites.add(pending);
+    void pending.finally(() => pendingFailureWrites.delete(pending));
+  });
+  worker.on("error", (error) => logLoopFailure("worker.redis_error", "worker_connection", error));
+
   const sweep = setInterval(() => {
     if (status === "shutting_down" || status === "stopped") {
       return;
@@ -277,7 +295,7 @@ export function startWorker(options?: {
     if (status === "shutting_down" || status === "stopped") {
       return;
     }
-    void runWorkerHeartbeat(db, queue).then((result) => {
+    void runWorkerHeartbeat(db, queue, { queueFailureSnapshot: failures.latest() }).then((result) => {
       if (result.ok) {
         lastHeartbeatAt = new Date().toISOString();
         lastHeartbeatErrorClass = null;
@@ -314,7 +332,7 @@ export function startWorker(options?: {
       });
     });
 
-  void runWorkerHeartbeat(db, queue, { startup: true }).then((result) => {
+  void runWorkerHeartbeat(db, queue, { startup: true, queueFailureSnapshot: failures.latest() }).then((result) => {
     if (result.ok) {
       lastHeartbeatAt = new Date().toISOString();
       lastHeartbeatErrorClass = null;
@@ -352,6 +370,7 @@ export function startWorker(options?: {
             run: async () => {
               clearInterval(sweep);
               clearInterval(heartbeat);
+              clearInterval(failureInspection);
               if (providerSchedule) {
                 clearInterval(providerSchedule);
               }
@@ -362,6 +381,10 @@ export function startWorker(options?: {
             run: async () => {
               await worker.close();
             },
+          },
+          {
+            name: "terminal_failure_reporting",
+            run: async () => { await Promise.all([...pendingFailureWrites]); },
           },
           {
             name: "queue",

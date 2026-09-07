@@ -1,3 +1,4 @@
+import { readQueueFailureSnapshot, type QueueFailureSnapshot } from "@isp/shared";
 import { eq, sql } from "drizzle-orm";
 import type { Database } from "../client.js";
 import { providerRuntime, providerSyncRun, workerHeartbeat } from "../schema/provider.js";
@@ -208,6 +209,7 @@ export async function upsertWorkerHeartbeat(
     queueDepth?: number | null;
     failedJobs?: number | null;
     queueMetricsErrorClass?: string | null;
+    queueFailureSnapshot?: QueueFailureSnapshot | null;
   },
 ) {
   const workerKey = input.workerKey ?? "ingest";
@@ -215,6 +217,7 @@ export async function upsertWorkerHeartbeat(
   const metadata = {
     role: "ingest",
     queue_metrics_error_class: input.queueMetricsErrorClass ?? null,
+    queue_failure_sample: readQueueFailureSnapshot(input.queueFailureSnapshot),
   };
   await db
     .insert(workerHeartbeat)

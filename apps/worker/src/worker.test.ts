@@ -75,6 +75,18 @@ describe("collectQueueCounts", () => {
 });
 
 describe("worker operational loops", () => {
+  it("persists a sanitized failure sample without waiting for inspection during heartbeat", async () => {
+    const rows: HeartbeatRow[] = [];
+    const snapshot = { version: "queue-failures.v1" as const, status: "inspected" as const,
+      sampledAt: "2026-09-07T03:00:00.000Z", retainedCountAtRead: 0,
+      sampleLimit: 100, sampledJobs: 0, truncated: false, errorClass: null, groups: [] };
+    await runWorkerHeartbeat(capturingHeartbeatDb(rows) as never,
+      { getJobCounts: async () => ({ wait: 0, active: 0, failed: 0 }) },
+      { queueFailureSnapshot: { ...snapshot, secret: "DO_NOT_PERSIST" } as typeof snapshot });
+    expect(rows[0]?.metadata).toMatchObject({ queue_failure_sample: snapshot });
+    expect(JSON.stringify(rows)).not.toContain("DO_NOT_PERSIST");
+  });
+
   it("continues scheduling after a heartbeat failure and logs a sanitized error", async () => {
     const secret = "postgresql://app_worker:hunter2@db.example/isp";
     const heartbeatError = Object.assign(new Error(`Failed query ${secret}`), {
@@ -240,7 +252,7 @@ describe("startup redis transport probe", () => {
       startWorker.indexOf("const heartbeat = setInterval"),
       startWorker.indexOf("let providerSchedule"),
     );
-    expect(heartbeatLoop).toContain("runWorkerHeartbeat(db, queue)");
+    expect(heartbeatLoop).toContain("runWorkerHeartbeat(db, queue, { queueFailureSnapshot: failures.latest() })");
     expect(heartbeatLoop).not.toContain("runProviderSchedule");
     expect(heartbeatLoop).not.toContain("runRedisTransportProbe");
     expect(startWorker).toContain("startProviderScheduleLoop");
