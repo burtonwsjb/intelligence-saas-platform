@@ -25,7 +25,7 @@ import {
   withSystemContext,
   type Database,
 } from "@isp/db";
-import { bullmqJobId, createIngestQueue, createNormalizeEnvelope, createProviderSyncEnvelope, publishOutboxJob, requireRedisUrl } from "@isp/queue";
+import { createIngestQueue, createNormalizeEnvelope, createProviderSyncEnvelope, publishOutboxJob, requireRedisUrl } from "@isp/queue";
 import { inspectRetainedFailures } from "./failure-observation.js";
 import { startWorker } from "./worker.js";
 
@@ -155,8 +155,10 @@ describe("BullMQ worker", () => {
         await enqueuePlatformJob(tx, { id, jobType: "provider.sync.v1", payload });
         await markPlatformOutboxPublished(tx, id);
       });
+      // This isolated test ID contains no BullMQ separator; production
+      // publishing keeps its canonical hash mapping in the queue package.
       const job = await queue.add("provider.sync.v1", payload, {
-        jobId: bullmqJobId(id), attempts: 2, backoff: { type: "fixed", delay: 50 }, removeOnFail: false,
+        jobId: id, attempts: 2, backoff: { type: "fixed", delay: 50 }, removeOnFail: false,
       });
       const failed = await waitUntil(async () => {
         const row = await withPlatformContext(adminConn.db, (tx) => getPlatformOutbox(tx, id));
