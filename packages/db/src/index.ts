@@ -637,6 +637,7 @@ export {
   classifyPlatformHealth,
   classifyQueueHealth,
   classifyWorkerHeartbeat,
+  classifyScheduledWorkerHeartbeat,
   readQueueMetricsErrorClass,
   collectLiveDatabaseIdentity,
   collectStagingDatabaseIdentities,

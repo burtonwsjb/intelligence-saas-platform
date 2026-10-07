@@ -150,7 +150,9 @@ export function startScheduledWorker(options: {
     if (stopping() || pending) return;
     pending = cycle().finally(() => { pending = undefined; arm(); });
   };
-  if (scheduledSlot(new Date())) tick(); else arm();
+  // Always run once at startup: outside a slot this only records the next
+  // scheduled time, so health shows a fresh scheduled heartbeat immediately.
+  tick();
   return {
     isShuttingDown: stopping,
     diagnostics: () => ({ status, started_at: startedAt, shutting_down: stopping(),
