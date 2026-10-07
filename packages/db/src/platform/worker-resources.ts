@@ -5,7 +5,7 @@ import { insertBreakGlassAudit } from "./audit.js";
 
 export type WorkerResourceSettings = { id: string; enabled: boolean; mode: "free_only" | "metered_redis";
   interval_hours: number; max_jobs: number; updated_at: Date | string; updated_by: string | null };
-export type ScheduledRun = { id: string; mode: "free_only" | "metered_redis"; status: string;
+export type ScheduledRun = { id: string; slot?: string; mode: "free_only" | "metered_redis"; status: string;
   started_at: Date | string; deadline_at: Date | string; attempted: number; processed: number; failures: number; max_jobs: number };
 export type ScheduledJob = { kind: "platform" | "tenant"; job_id: string; organization_id: string | null;
   payload: Record<string, unknown>; attempt: number };

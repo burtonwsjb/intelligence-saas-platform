@@ -770,3 +770,18 @@ export {
   upsertBetaOrganization,
 } from "./beta/beta.js";
 export * from "./schema/index.js";
+export {
+  claimScheduledJob,
+  claimScheduledRun,
+  closeInterruptedScheduledRun,
+  finishScheduledJob,
+  finishScheduledRun,
+  getWorkerResources,
+  isWorkerResourceOwner,
+  recordScheduledWorkerState,
+  scheduledClaimAllowsRedis,
+  updateWorkerResources,
+  type ScheduledJob,
+  type ScheduledRun,
+  type WorkerResourceSettings,
+} from "./platform/worker-resources.js";

@@ -6,13 +6,10 @@ import { getWorkerResources, type Database } from "@isp/db";
 // bypass. It is issued only after reading the owner-controlled server setting.
 const permittedEnvironments = new WeakMap<NodeJS.ProcessEnv, number>();
 const permittedConnections = new WeakMap<NodeJS.ProcessEnv, Set<Redis>>();
+/** Hosted runtimes use the metered provider. Local development and CI keep
+ * their own Redis, so only staging and production need the owner's window. */
 export function redisNeedsPermission(env: NodeJS.ProcessEnv = process.env): boolean {
-  if (isHostedRuntime(env)) return true;
-  if (!env.REDIS_URL?.trim()) return false; // retain the existing missing-url error
-  try {
-    const u = new URL(env.REDIS_URL);
-    return !["localhost", "127.0.0.1", "[::1]"].includes(u.hostname);
-  } catch { return true; }
+  return isHostedRuntime(env);
 }
 export function redisIsPermitted(env: NodeJS.ProcessEnv = process.env): boolean {
   return !redisNeedsPermission(env) || (permittedEnvironments.get(env) ?? 0) > Date.now();

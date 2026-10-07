@@ -26,6 +26,8 @@ import {
   retryProviderJob,
   reviewMarketQuarantine,
   resolveIntelligenceQuarantine,
+  closeInterruptedScheduledRun,
+  updateWorkerResources,
 } from "@isp/db";
 import { requireGrantedOperator } from "@/lib/platform-admin";
 
@@ -366,4 +368,42 @@ export async function reviewQuarantineAction(formData: FormData) {
     throw error;
   }
   redirect("/admin/quarantine");
+}
+
+/** Only the original platform grant holder may change worker resource use. */
+export async function updateWorkerResourcesAction(formData: FormData) {
+  const operator = await requireGrantedOperator();
+  if (!operator.adminDb) {
+    redirect("/admin/health?resources=config");
+  }
+  try {
+    await updateWorkerResources(operator.adminDb, {
+      actorUserId: operator.session.user.id,
+      enabled: String(formData.get("enabled") ?? "") === "true",
+      mode: String(formData.get("mode") ?? ""),
+      intervalHours: Number(formData.get("intervalHours") ?? ""),
+      maxJobs: Number(formData.get("maxJobs") ?? ""),
+      confirmation: String(formData.get("confirmation") ?? "").trim() || undefined,
+    });
+  } catch {
+    redirect("/admin/health?resources=rejected");
+  }
+  redirect("/admin/health?resources=saved");
+}
+
+export async function closeInterruptedScheduledRunAction(formData: FormData) {
+  const operator = await requireGrantedOperator();
+  if (!operator.adminDb) {
+    redirect("/admin/health?resources=config");
+  }
+  try {
+    await closeInterruptedScheduledRun(operator.adminDb, {
+      actorUserId: operator.session.user.id,
+      runId: String(formData.get("runId") ?? ""),
+      confirmation: String(formData.get("confirmation") ?? "").trim(),
+    });
+  } catch {
+    redirect("/admin/health?resources=rejected");
+  }
+  redirect("/admin/health?resources=closed");
 }

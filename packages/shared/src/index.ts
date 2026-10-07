@@ -31,3 +31,12 @@ export {
   queueFailureDetails, readQueueFailureSnapshot,
   type QueueFailureClass, type QueueFailureGroup, type QueueFailureSnapshot,
 } from "./queue-failure.js";
+export {
+  FREE_REDIS_POLICY,
+  SCHEDULE_DEFAULTS,
+  WORKER_TIME_ZONE,
+  broadDiscoveryDue,
+  nextScheduledAt,
+  phoenixClock,
+  scheduledSlot,
+} from "./worker-schedule.js";

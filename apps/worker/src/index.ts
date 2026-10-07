@@ -2,16 +2,28 @@ import { createServer, type Server } from "node:http";
 import {
   assertHostedSecrets,
   assertProductionIdentifiers,
+  isHostedRuntime,
   structuredLog,
 } from "@isp/shared";
 import { createShutdownLatch, WORKER_SHUTDOWN_FORCE_MS } from "@isp/queue";
-import { startWorker, workerHealthPayload } from "./worker.js";
+import { runEmailDeliverySweep, startWorker, workerHealthPayload } from "./worker.js";
+import { startScheduledWorker } from "./scheduled-worker.js";
 
 assertHostedSecrets();
 assertProductionIdentifiers();
 
-const handle = startWorker();
-structuredLog("info", "worker.process_started", {});
+// Hosted workers never hold a standing Redis connection. They drain the
+// Postgres outboxes in owner-controlled Phoenix batches; Redis is used only in
+// a bounded metered window the owner explicitly enables.
+const scheduled = isHostedRuntime(process.env);
+const handle = scheduled
+  ? startScheduledWorker({
+      env: process.env,
+      afterBatch: (db) => runEmailDeliverySweep(db, process.env),
+      startMetered: (env, db) => startWorker({ env, db }),
+    })
+  : startWorker();
+structuredLog("info", "worker.process_started", { execution_mode: scheduled ? "scheduled" : "continuous" });
 
 const healthPort = Number.parseInt(process.env.WORKER_HEALTH_PORT ?? "", 10);
 let healthServer: Server | undefined;

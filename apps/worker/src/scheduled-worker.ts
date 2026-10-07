@@ -5,7 +5,9 @@ import {
   type Database, type ScheduledRun, type ScheduledJob,
 } from "@isp/db";
 import { nextScheduledAt, scheduledSlot, SCHEDULE_DEFAULTS } from "@isp/shared";
-import { processNormalizeJob, parseJobEnvelope, UnrecoverableJobError, withMeteredRedisPermission } from "@isp/queue";
+import {
+  markJobPermanentlyFailed, processNormalizeJob, parseJobEnvelope, UnrecoverableJobError, withMeteredRedisPermission,
+} from "@isp/queue";
 import type { WorkerDiagnostics } from "./worker.js";
 
 type Handle = { stop: () => Promise<void>; diagnostics: () => WorkerDiagnostics; isShuttingDown: () => boolean };
@@ -102,7 +104,17 @@ export function startScheduledWorker(options: {
         now: () => new Date(), stopping,
         claimRun: () => claimScheduledRun(db),
         claimJob: (id) => claimScheduledJob(db, id),
-        process: (job) => processNormalizeJob(db, job.payload, job.attempt),
+        process: async (job) => {
+          try {
+            return await processNormalizeJob(db, job.payload, job.attempt);
+          } catch (error) {
+            // Same terminal bookkeeping as the Redis worker before the claim is closed.
+            if (error instanceof UnrecoverableJobError) {
+              await markJobPermanentlyFailed(db, parseJobEnvelope(job.payload), error.message).catch(() => undefined);
+            }
+            throw error;
+          }
+        },
         finishJob: (id, job, state, error) => finishScheduledJob(db, id, job, state, error),
         finishRun: (id, state, error) => finishScheduledRun(db, id, state, error),
         prepare: async () => {

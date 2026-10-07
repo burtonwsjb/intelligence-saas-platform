@@ -53,6 +53,9 @@ export type WorkerDiagnostics = {
   shutting_down: boolean;
   last_heartbeat_at: string | null;
   last_heartbeat_error_class: string | null;
+  execution_mode?: "continuous" | "scheduled";
+  next_scheduled_at?: string;
+  time_zone?: string;
 };
 
 function logLoopFailure(event: string, operation: string, error: unknown) {
@@ -173,8 +176,13 @@ export async function runOutboxSweep(
   } catch (error) {
     logLoopFailure("worker.platform_outbox_dispatch_failed", "platform_outbox_dispatch", error);
   }
+  await runEmailDeliverySweep(db, input.env);
+}
+
+/** Sends queued notification email. Uses Postgres and Resend only, never Redis. */
+export async function runEmailDeliverySweep(db: Database, envInput?: NodeJS.ProcessEnv): Promise<void> {
   try {
-    const env = input.env ?? process.env;
+    const env = envInput ?? process.env;
     const hosted = env.ISP_ENV === "staging" || env.ISP_ENV === "production";
     const configured = Boolean(env.RESEND_API_KEY?.trim() && env.RESEND_FROM_EMAIL?.trim());
     await withPlatformContext(db, (scoped) =>

@@ -42,12 +42,11 @@ export async function listPendingPlatformOutbox(db: Database, limit = 20) {
       : "rows" in (result as object)
         ? (result as { rows: unknown[] }).rows
         : [];
-    const mapped = (rows as { id?: string; job_type?: string }[])
+    // An empty result is authoritative: the function hides jobs the scheduled
+    // worker already claimed, which a raw table scan would replay to Redis.
+    return (rows as { id?: string; job_type?: string }[])
       .filter((row) => row.id && row.job_type)
       .map((row) => ({ id: String(row.id), jobType: String(row.job_type) }));
-    if (mapped.length > 0) {
-      return mapped;
-    }
   } catch {
     // PGlite or missing function: fall through to table scan.
   }
