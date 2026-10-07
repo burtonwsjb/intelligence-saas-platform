@@ -1,7 +1,12 @@
+export type AppNavGroup = "primary" | "developer" | "account";
+
 export type AppNavItem = {
   href: string;
   label: string;
   key: string;
+  group: AppNavGroup;
+  /** Key of the primary destination this item sits under, when it is a sub-view. */
+  parent?: string;
 };
 
 export type AppNavAccess = {
@@ -16,58 +21,42 @@ export type AppNavAccess = {
   predictionsCustomerVisible: boolean;
 };
 
-const ALWAYS: AppNavItem[] = [
-  { href: "/app", label: "Overview", key: "overview" },
-  { href: "/app/usage", label: "Usage", key: "usage" },
-  { href: "/app/team", label: "Team", key: "team" },
-  { href: "/app/billing", label: "Billing", key: "billing" },
-  { href: "/app/settings", label: "Settings", key: "settings" },
-];
-
+// Five primary destinations: Overview, Cards, Markets, Creators, Watchlist.
+// Everything else is a secondary Developer or Account item, so the primary
+// navigation stays the same size however many account features exist.
 export function visibleAppNav(access: AppNavAccess): AppNavItem[] {
   const items: AppNavItem[] = [];
   if (access.canViewAnalytics) {
     items.push(
-      { href: "/app", label: "Overview", key: "overview" },
-      { href: "/app/opportunities", label: "Opportunities", key: "opportunities" },
-      { href: "/app/markets", label: "Markets", key: "markets" },
-      { href: "/app/cards", label: "Cards", key: "cards" },
+      { href: "/app", label: "Overview", key: "overview", group: "primary" },
+      { href: "/app/cards", label: "Cards", key: "cards", group: "primary" },
+      { href: "/app/markets", label: "Markets", key: "markets", group: "primary" },
     );
-    if (access.hasCreatorAnalytics) {
-      items.push({ href: "/app/creators", label: "Creators", key: "creators" });
-    }
     if (access.hasPredictionsEntitlement && access.predictionsCustomerVisible) {
-      items.push({ href: "/app/predictions", label: "Predictions", key: "predictions" });
+      items.push({ href: "/app/predictions", label: "Forecasts", key: "predictions", group: "primary", parent: "markets" });
     }
-    items.push({ href: "/app/indices", label: "Indices", key: "indices" });
+    if (access.hasCreatorAnalytics) {
+      items.push({ href: "/app/creators", label: "Creators", key: "creators", group: "primary" });
+    }
   }
   if (access.hasAlerts) {
-    items.push({ href: "/app/alerts", label: "Alerts", key: "alerts" });
+    items.push({ href: "/app/alerts", label: "Watchlist", key: "alerts", group: "primary" });
   }
-  items.push({ href: "/app/keys", label: "API", key: "keys" });
+  items.push({ href: "/app/keys", label: "API keys", key: "keys", group: "developer" });
   if (access.hasWebhooks) {
-    items.push({ href: "/app/webhooks", label: "Webhooks", key: "webhooks" });
+    items.push({ href: "/app/webhooks", label: "Webhooks", key: "webhooks", group: "developer" });
   }
   items.push(
-    { href: "/app/usage", label: "Usage", key: "usage" },
-    { href: "/app/feedback", label: "Feedback", key: "feedback" },
-    { href: "/app/onboarding-checklist", label: "Onboarding", key: "onboarding" },
-    { href: "/app/team", label: "Team", key: "team" },
-    { href: "/app/billing", label: "Billing", key: "billing" },
-    { href: "/app/settings", label: "Settings", key: "settings" },
+    { href: "/app/usage", label: "Usage", key: "usage", group: "developer" },
+    { href: "/app/team", label: "Team", key: "team", group: "account" },
+    { href: "/app/billing", label: "Billing", key: "billing", group: "account" },
+    { href: "/app/settings", label: "Settings", key: "settings", group: "account" },
+    { href: "/app/onboarding-checklist", label: "Getting started", key: "onboarding", group: "account" },
+    { href: "/app/feedback", label: "Feedback", key: "feedback", group: "account" },
   );
-  const seen = new Set<string>();
-  return items.filter((item) => {
-    if (seen.has(item.key)) {
-      return false;
-    }
-    seen.add(item.key);
-    return true;
-  });
+  return items;
 }
 
 export function isPredictionsNavVisible(access: Pick<AppNavAccess, "hasPredictionsEntitlement" | "predictionsCustomerVisible">) {
   return access.hasPredictionsEntitlement && access.predictionsCustomerVisible;
 }
-
-void ALWAYS;

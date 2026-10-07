@@ -95,6 +95,40 @@ describe("application navigation", () => {
   });
 });
 
+describe("five-destination navigation", () => {
+  const full = {
+    canViewAnalytics: true,
+    canManageApiKeys: true,
+    canManageMembers: true,
+    canManageBilling: true,
+    hasAlerts: true,
+    hasWebhooks: true,
+    hasCreatorAnalytics: true,
+    hasPredictionsEntitlement: false,
+    predictionsCustomerVisible: false,
+  };
+
+  it("keeps exactly five primary destinations and groups everything else", () => {
+    const items = visibleAppNav(full);
+    const primary = items.filter((item) => item.group === "primary" && !item.parent);
+    expect(primary.map((item) => item.label)).toEqual(["Overview", "Cards", "Markets", "Creators", "Watchlist"]);
+    expect(items.filter((item) => item.group === "developer").map((item) => item.key)).toEqual([
+      "keys",
+      "webhooks",
+      "usage",
+    ]);
+    expect(items.map((item) => item.key)).not.toContain("opportunities");
+    expect(items.map((item) => item.key)).not.toContain("indices");
+    expect(new Set(items.map((item) => item.key)).size).toBe(items.length);
+  });
+
+  it("does not offer analytics destinations to roles without analytics access", () => {
+    const items = visibleAppNav({ ...full, canViewAnalytics: false });
+    expect(items.map((item) => item.key)).not.toContain("cards");
+    expect(items.map((item) => item.key)).not.toContain("creators");
+  });
+});
+
 describe("team RBAC helpers", () => {
   it("blocks viewers from managing members and protects the last owner", () => {
     expect(() => assertCanManageTeam(false)).toThrow(/Permission denied/);
