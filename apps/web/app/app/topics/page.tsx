@@ -15,7 +15,7 @@ import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
-const EXAMPLES = ["Ascended Heroes", "Charizard ex", "Pokemon sealed", "Bitcoin"];
+const EXAMPLES = ["Ascended Heroes", "Charizard ex", "One Piece OP01", "Twilight Masquerade booster box"];
 
 export default async function TopicsPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const { access, organizationId, userId } = await loadAppAccess();

@@ -61,10 +61,3 @@ EXCEPTION
     NULL;
 END;
 $$;
-
-INSERT INTO "market_asset" ("id", "asset_key", "kind", "display_name", "aliases", "price_source_key", "price_source_ref")
-VALUES
-  ('mas_crypto_btc', 'crypto:btc', 'crypto', 'Bitcoin', ARRAY['bitcoin', 'btc'], 'coingecko', 'bitcoin'),
-  ('mas_crypto_eth', 'crypto:eth', 'crypto', 'Ethereum', ARRAY['ethereum', 'eth', 'ether'], 'coingecko', 'ethereum'),
-  ('mas_crypto_sol', 'crypto:sol', 'crypto', 'Solana', ARRAY['solana'], 'coingecko', 'solana')
-ON CONFLICT ("asset_key") DO NOTHING;

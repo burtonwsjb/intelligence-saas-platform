@@ -27,7 +27,7 @@ export const ASSET_CLOSE_MAX_AGE_DAYS = 7;
  * days, roughly the "next few months" most such calls mean. The outcome's
  * data_quality records that the default was used.
  */
-export const DEFAULT_EVALUATION_DAYS = 90;
+export const DEFAULT_EVALUATION_DAYS = 30;
 
 export function horizonDays(code: string, customDays: string | null): number | null {
   if (code === "custom") {

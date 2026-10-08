@@ -10,7 +10,6 @@ import {
   processQueuedEmailDeliveries,
   requireWorkerDatabaseUrl,
   scoreDueCreatorCalls,
-  syncAssetPrices,
   syncSealedProducts,
   upsertWorkerHeartbeat,
   withPlatformContext,
@@ -110,30 +109,6 @@ export async function runSealedCatalogSync(db: Database) {
     return report;
   } catch (error) {
     logLoopFailure("worker.sealed_catalog_failed", "sealed_catalog", error);
-    return null;
-  }
-}
-
-/**
- * Collects asset prices when MARKET_ASSET_PRICE_MODE=live (off by default),
- * at most ASSET_PRICE_MAX_REQUESTS requests a run. Runs outside a transaction
- * so a slow request never holds one open.
- */
-export async function runAssetPriceSync(db: Database, env: NodeJS.ProcessEnv = process.env) {
-  try {
-    const report = await syncAssetPrices(db, { env });
-    if (report.status !== "skipped") {
-      logQueueEvent(report.status === "failed" ? "warn" : "info", "worker.asset_prices", {
-        status: report.status,
-        reason: report.reason,
-        requests: report.requests,
-        inserted: report.inserted,
-        backfilled: report.backfilled.join(","),
-      });
-    }
-    return report;
-  } catch (error) {
-    logLoopFailure("worker.asset_prices_failed", "asset_prices", error);
     return null;
   }
 }
@@ -388,14 +363,13 @@ export function startWorker(options?: {
     },
   });
 
-  // Hourly, and once a minute after startup: sealed catalog, asset prices
-  // (only when enabled), then scoring of calls that have come due.
+  // Hourly, and once a minute after startup: sealed catalog, then scoring of
+  // calls that have come due.
   const runMarketWork = () => {
     if (status === "shutting_down" || status === "stopped") {
       return;
     }
     void runSealedCatalogSync(db)
-      .then(() => runAssetPriceSync(db, env))
       .then(() => runCallScoring(db));
   };
   const firstMarketWork = setTimeout(runMarketWork, 60_000);

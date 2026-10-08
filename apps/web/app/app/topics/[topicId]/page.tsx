@@ -245,7 +245,7 @@ export default async function TopicPage({
       <p className="notice info">
         Sentiment here is read from post titles and descriptions with rule-based buy, sell, up and down language. It does
         not understand sarcasm and works best in English. Coverage is YouTube, Reddit and, when the operator turns it on, Google web search.
-        {result.asset ? "" : " Calls are scored for cards and for tracked assets such as Bitcoin, Ethereum and Solana."}
+        {result.asset ? "" : " Calls are scored for cards and for sealed products."}
       </p>
     </>
   );

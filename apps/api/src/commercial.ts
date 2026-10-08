@@ -536,7 +536,7 @@ export function registerCommercialRoutes(
     const requestId = resolveRequestId(c.req.header("x-request-id"));
     try {
       const kind = c.req.query("kind") || undefined;
-      if (kind && !["sealed", "crypto", "stock", "commodity", "index", "other"].includes(kind)) {
+      if (kind && !["sealed", "other"].includes(kind)) {
         throw new CommercialFilterError("kind is not recognized.");
       }
       await meter(c.get("db"), c.get("machine"), requestId);

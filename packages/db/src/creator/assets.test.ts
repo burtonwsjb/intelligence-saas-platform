@@ -8,10 +8,6 @@ import { extractAssetCallsFromContent, findAssetForTopic, listActiveAssets, matc
 import { scoreDueCreatorCalls } from "./due.js";
 import { getCreatorAuthorityProfile } from "./authority.js";
 import { getTopicCalls, getTopicSentiment } from "../topics/topics.js";
-import { syncAssetPrices } from "../providers/asset-prices.js";
-import type { HttpTransport } from "../providers/transport.js";
-
-const DAY = 86_400_000;
 
 describe("asset names in text", () => {
   const assets = [
@@ -57,6 +53,8 @@ describe("calls about non-card assets", () => {
     await client.exec(await readMigrationSql());
     db = drizzle(client) as unknown as Database;
     await client.exec(`
+      INSERT INTO market_asset (id, asset_key, kind, display_name, aliases) VALUES
+        ('mas_crypto_btc', 'crypto:btc', 'crypto', 'Bitcoin', ARRAY['bitcoin', 'btc']);
       INSERT INTO source_account (id, source_type, external_account_id, display_name, first_seen_at, last_seen_at) VALUES
         ('sa_good', 'youtube', 'UCgood', 'Good Caller', now(), now()),
         ('sa_late', 'youtube', 'UClate', 'Late Caller', now(), now());
@@ -70,8 +68,8 @@ describe("calls about non-card assets", () => {
     await client?.close();
   });
 
-  it("ships with Bitcoin, Ethereum and Solana and maps topics onto them", async () => {
-    expect((await listActiveAssets(db)).map((row) => row.assetKey)).toEqual(["crypto:btc", "crypto:eth", "crypto:sol"]);
+  it("maps topics onto an asset by its exact names", async () => {
+    expect((await listActiveAssets(db)).map((row) => row.assetKey)).toEqual(["crypto:btc"]);
     expect((await findAssetForTopic(db, "  BTC "))?.assetKey).toBe("crypto:btc");
     expect((await findAssetForTopic(db, "Bitcoin price"))).toBeNull();
   });
@@ -115,61 +113,5 @@ describe("calls about non-card assets", () => {
     expect(result.asset?.assetKey).toBe("crypto:btc");
     expect(result.summary.contentItems).toBe(1);
     expect(result.voices[0]).toMatchObject({ name: "Good Caller", rated: true });
-  });
-});
-
-describe("asset price feed", () => {
-  let client: PGlite;
-  let db: Database;
-
-  beforeAll(async () => {
-    client = new PGlite();
-    await client.exec(await readMigrationSql());
-    db = drizzle(client) as unknown as Database;
-  }, 30_000);
-  afterAll(async () => {
-    await client?.close();
-  });
-
-  function fakeTransport(urls: string[]): HttpTransport {
-    const now = Date.parse("2026-10-01T00:00:00Z");
-    return {
-      async fetch(url) {
-        urls.push(url);
-        if (url.includes("/market_chart")) {
-          const body = { prices: [[now - 2 * DAY, 100], [now - DAY, 110], [now, 120]] };
-          return { status: 200, headers: {}, bodyText: JSON.stringify(body) };
-        }
-        const body = {
-          bitcoin: { usd: 125, last_updated_at: now / 1000 + 3600 },
-          ethereum: { usd: 5, last_updated_at: now / 1000 + 3600 },
-          solana: { usd: 2, last_updated_at: now / 1000 + 3600 },
-        };
-        return { status: 200, headers: {}, bodyText: JSON.stringify(body) };
-      },
-    };
-  }
-
-  it("makes no requests unless the operator turns it on", async () => {
-    const urls: string[] = [];
-    const report = await syncAssetPrices(db, { env: {}, transport: fakeTransport(urls) });
-    expect(report).toMatchObject({ status: "skipped", reason: "disabled", requests: 0 });
-    expect(urls).toEqual([]);
-  });
-
-  it("backfills a bounded number of assets per run, then adds current prices", async () => {
-    const env = { MARKET_ASSET_PRICE_MODE: "live" };
-    const urls: string[] = [];
-    const first = await syncAssetPrices(db, { env, transport: fakeTransport(urls) });
-    expect(first).toMatchObject({ status: "completed", requests: 3, backfilled: ["crypto:btc", "crypto:eth"] });
-    expect(first.inserted).toBe(8); // 3 history points each, plus a current price for both
-    expect(urls.at(-1)).toContain("ids=bitcoin%2Cethereum");
-
-    const second = await syncAssetPrices(db, { env, transport: fakeTransport(urls) });
-    expect(second).toMatchObject({ status: "completed", requests: 2, backfilled: ["crypto:sol"] });
-    expect(second.inserted).toBe(4); // Solana's history and current price; the others are already stored
-
-    const failing: HttpTransport = { fetch: async () => ({ status: 429, headers: {}, bodyText: "" }) };
-    expect(await syncAssetPrices(db, { env, transport: failing })).toMatchObject({ status: "failed", reason: "rate_limited" });
   });
 });
