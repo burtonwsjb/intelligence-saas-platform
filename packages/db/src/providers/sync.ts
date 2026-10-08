@@ -1,4 +1,6 @@
 import { runCreatorMonitoring } from "./monitoring.js";
+import { promoteFollowedCreators, resolvePendingCreatorFollows } from "../creator/list.js";
+import { syncWorkspaceTopics } from "../topics/topics.js";
 import { isHostedRuntime } from "@isp/shared";
 import { withPlatformContext } from "../rls.js";
 import { createHash } from "node:crypto";
@@ -24,6 +26,7 @@ import {
 } from "./catalog.js";
 import { decideProviderSyncDue, providerSyncBucketId } from "./schedule.js";
 import { createLiveMarketProvider } from "./live-market.js";
+import { collectTccQuotes } from "./tcc-quotes.js";
 import {
   isDiscoveryProviderKey,
   runSocialDiscovery,
@@ -129,6 +132,14 @@ export async function syncProvider(db: Database, input: ProviderSyncInput) {
   const leased = await withPlatformContext(db, (tx) => tryAcquireProviderLease(tx, providerKey));
   if (!leased) return { status: "skipped" as const, reason: "overlap", received: 0, quarantined: 0 };
   try {
+    if (input.trigger === "schedule") {
+      // Workspace follows: resolve a few pending handles under the same budget,
+      // then keep followed creators monitored. Failures here never block monitoring.
+      await resolvePendingCreatorFollows(db, { providerKey, env, transport: input.transport }).catch(() => null);
+      await promoteFollowedCreators(db, providerKey).catch(() => 0);
+      // Workspace topics join the discovery rotation before this tick picks a topic.
+      await syncWorkspaceTopics(db).catch(() => null);
+    }
     const monitoring = input.trigger === "schedule" ? await runCreatorMonitoring(db, { providerKey, env, transport: input.transport }) : null;
     const report = await runSocialDiscovery(db, { providerKey, query: input.query,
       trigger: input.trigger === "admin" ? "admin" : input.trigger === "schedule" ? "schedule" : "staging",
@@ -202,14 +213,27 @@ async function syncProviderInTransaction(
   let lastSourceTimestamp: Date | null = runtime?.lastSourceTimestamp ?? null;
 
   try {
-    const provider = resolveMarketProvider(input.providerKey, mode, env, input.transport);
-    if (!provider) {
-      throw new ProviderSyncError("Live market provider is not configured.", "disabled_pending_credentials");
+    let records: TcgMarketRecordInput[];
+    if (input.providerKey === "tcg_card_central" && mode === "live") {
+      // TCC prices the cards and sealed products creators made calls about,
+      // once a day each, through its daily-cached TCGplayer feed.
+      const report = await collectTccQuotes(db, {
+        baseUrl: env.TCC_API_BASE_URL?.trim() ?? "",
+        token: env.TCC_API_TOKEN?.trim() ?? "",
+        transport: input.transport,
+        limit: input.limit,
+      });
+      records = report.records;
+    } else {
+      const provider = resolveMarketProvider(input.providerKey, mode, env, input.transport);
+      if (!provider) {
+        throw new ProviderSyncError("Live market provider is not configured.", "disabled_pending_credentials");
+      }
+      const after = runtime?.lastSourceId;
+      records = (await provider.getMarketSnapshots({}))
+        .filter((row) => !after || row.provider_record_id > after)
+        .slice(0, limit);
     }
-    const after = runtime?.lastSourceId;
-    const records: TcgMarketRecordInput[] = (await provider.getMarketSnapshots({}))
-      .filter((row) => !after || row.provider_record_id > after)
-      .slice(0, limit);
     for (const record of records) {
       try {
         const accepted = await receiveTcgMarketRecord(db, record);

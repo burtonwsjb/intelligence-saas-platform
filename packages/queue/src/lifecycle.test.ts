@@ -49,12 +49,14 @@ describe("runGracefulStop", () => {
           name: "worker",
           run: async () => {
             seen.push("worker");
-            await new Promise((resolve) => setTimeout(resolve, 30));
+            // Far longer than the budget, so a slow CI runner cannot let it finish.
+            await new Promise((resolve) => setTimeout(resolve, 2_000));
           },
         },
         { name: "redis", run: async () => { seen.push("redis"); } },
       ],
-      { timeoutMs: 10 },
+      // Generous enough that the first step always starts inside the budget.
+      { timeoutMs: 200 },
     );
     expect(seen).toEqual(["intervals", "worker"]);
     expect(result.completed).toEqual(["intervals"]);

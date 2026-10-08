@@ -73,8 +73,15 @@ function inferTargetPrice(text: string, candidatePrice?: string | null): number 
       return n;
     }
   }
-  const match = text.match(/target\s*\$?\s*([0-9]+(?:\.[0-9]+)?)/i) ?? text.match(/\$\s*([0-9]+(?:\.[0-9]+)?)/);
-  return match ? Number(match[1]) : null;
+  // "$100", "target 1,250", "$100k", "$1.2m".
+  const match =
+    text.match(/target\s*\$?\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*([km])?\b/i) ??
+    text.match(/\$\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*([km])?\b/i);
+  if (!match) return null;
+  const base = Number(match[1]!.replaceAll(",", ""));
+  if (!Number.isFinite(base)) return null;
+  const scale = match[2]?.toLowerCase() === "k" ? 1_000 : match[2]?.toLowerCase() === "m" ? 1_000_000 : 1;
+  return base * scale;
 }
 
 function inferTargetPercent(text: string, candidatePercent?: string | null): number | null {

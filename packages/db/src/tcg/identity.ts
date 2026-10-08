@@ -1,8 +1,7 @@
 export const TCG_GAME_KEYS = [
   "pokemon",
   "one_piece",
-  "magic",
-  "lorcana",
+  "dragon_ball",
   "yugioh",
   "other",
 ] as const;

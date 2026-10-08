@@ -42,9 +42,12 @@ export function budgetedDiscoveryTransport(db: Database, provider: DiscoveryProv
         // Inspect only an allowlisted provider path. No URL or credential enters logs.
         let parsed: URL;
         try { parsed = new URL(url); } catch { throw new ProviderHttpError({ status: 0, errorClass: "invalid_endpoint" }); }
-        const allowed = provider === "youtube" ? parsed.hostname === "www.googleapis.com" : ["www.reddit.com","oauth.reddit.com"].includes(parsed.hostname);
+        const allowed = provider === "youtube" ? parsed.hostname === "www.googleapis.com"
+          : provider === "google" ? parsed.hostname === "www.googleapis.com" && parsed.pathname === "/customsearch/v1"
+          : ["www.reddit.com","oauth.reddit.com"].includes(parsed.hostname);
         if (!allowed || parsed.protocol !== "https:") throw new ProviderHttpError({ status: 0, errorClass: "invalid_endpoint" });
-        const bucket = /\/search$/.test(parsed.pathname) ? "search" : "data";
+        // Every Google request is a search; it shares the search bucket's daily limit.
+        const bucket = provider === "google" || /\/search$/.test(parsed.pathname) ? "search" : "data";
         await reserveDiscoveryRequest(db, provider, bucket, discoveryRequestBudget(env, provider, bucket));
         requests += 1;
         return transport.fetch(url, init);

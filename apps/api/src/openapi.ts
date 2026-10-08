@@ -2,7 +2,7 @@ export function commercialOpenApi() {
   return {
     openapi: "3.1.0",
     info: {
-      title: "Intelligence Platform Commercial API",
+      title: "Sentiment API",
       version: "v1",
       description: "Tenant-authenticated commercial intelligence API. Internal ingest and Stripe webhooks are not included.",
     },
@@ -36,13 +36,16 @@ export function commercialOpenApi() {
         },
       },
       "/v1/printings/{id}/signals": { get: { summary: "Market signal flags", security: [{ bearerAuth: [] }] } },
+      "/v1/printings/{id}/sentiment": { get: { summary: "Accuracy-weighted sentiment for a printing with history and call accuracy; ?window=7d|30d|90d. Raw and graded copies share the card's sentiment; graded calls are judged on sales of their grade", security: [{ bearerAuth: [] }] } },
+      "/v1/products": { get: { summary: "Sealed products (booster packs, boxes, bundles, elite trainer boxes); ?kind=, ?game=, ?set=", security: [{ bearerAuth: [] }] } },
+      "/v1/products/{key}/sentiment": { get: { summary: "Accuracy-weighted sentiment for a product with history, call accuracy and latest price; ?window=7d|30d|90d", security: [{ bearerAuth: [] }] } },
       "/v1/printings/{id}/opportunity": { get: { summary: "Opportunity scores", security: [{ bearerAuth: [] }] } },
       "/v1/printings/{id}/predictions": { get: { summary: "Predictions (shadow-disabled)", security: [{ bearerAuth: [] }] } },
       "/v1/markets": { get: { summary: "Language-separated market catalogs", security: [{ bearerAuth: [] }] } },
       "/v1/indices": { get: { summary: "Index definitions", security: [{ bearerAuth: [] }] } },
       "/v1/indices/{index_key}": { get: { summary: "Index definition and latest point", security: [{ bearerAuth: [] }] } },
       "/v1/indices/{index_key}/history": { get: { summary: "Index history", security: [{ bearerAuth: [] }] } },
-      "/v1/creators": { get: { summary: "Creator profiles", security: [{ bearerAuth: [] }] } },
+      "/v1/creators": { get: { summary: "Creator profiles, without creators this workspace hid; ?list=following returns only followed creators", security: [{ bearerAuth: [] }] } },
       "/v1/creators/{id}": { get: { summary: "Creator authority summary", security: [{ bearerAuth: [] }] } },
       "/v1/creators/{id}/calls": { get: { summary: "Creator calls", security: [{ bearerAuth: [] }] } },
       "/v1/webhooks": {

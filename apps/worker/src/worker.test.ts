@@ -7,6 +7,7 @@ import {
   collectQueueCounts,
   reconcileProviderRuntimeFromEnv,
   runProviderSchedule,
+  runCallScoring,
   runWorkerHeartbeat,
   startProviderScheduleLoop,
   startWorker,
@@ -120,6 +121,29 @@ describe("worker operational loops", () => {
     expect(blob).not.toContain("hunter2");
     expect(blob).not.toContain("postgresql://");
     spy.mockRestore();
+  });
+
+  it("skips call scoring while another replica holds the lock and never throws", async () => {
+    const lines: string[] = [];
+    const info = vi.spyOn(console, "log").mockImplementation((line) => lines.push(String(line)));
+    const error = vi.spyOn(console, "error").mockImplementation((line) => lines.push(String(line)));
+    const lockedDb = {
+      transaction: async (run: (tx: { execute: () => Promise<unknown> }) => Promise<unknown>) =>
+        run({ execute: async () => [{ locked: false }] }),
+    };
+    expect(await runCallScoring(lockedDb as never)).toBeNull();
+    const failingDb = {
+      transaction: async () => {
+        throw new Error("Failed query postgresql://app_worker:hunter2@db.example/isp");
+      },
+    };
+    expect(await runCallScoring(failingDb as never)).toBeNull();
+    const blob = lines.join("\n");
+    expect(blob).toContain("overlap");
+    expect(blob).toContain("worker.call_scoring_failed");
+    expect(blob).not.toContain("hunter2");
+    info.mockRestore();
+    error.mockRestore();
   });
 
   it("logs a sanitized startup heartbeat success once", async () => {

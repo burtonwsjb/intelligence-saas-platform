@@ -183,6 +183,41 @@
       "when": 25,
       "tag": "0026_creator_monitoring",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 26,
+      "tag": "0027_tenant_creator_list",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 27,
+      "tag": "0028_tenant_topic",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 28,
+      "tag": "0029_market_asset",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 29,
+      "tag": "0030_sealed_products",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 30,
+      "tag": "0031_google_discovery",
+      "breakpoints": true
     }
   ]
 }

@@ -111,6 +111,23 @@ export class LiveRedditSourceProvider implements RedditSourceProvider {
     return rows.filter((row) => row.account.external_account_id.replace(/^u\//, "").toLowerCase() === author.toLowerCase()).slice(0, limit);
   }
 
+  /** One data request. Returns the account's canonical name, or null when it does not exist. */
+  async getUser(username: string): Promise<{ external_account_id: string; display_name: string } | null> {
+    const name = username.replace(/^u\//i, "");
+    if (!/^[A-Za-z0-9_-]{3,20}$/.test(name)) {
+      throw new ProviderHttpError({ status: 0, errorClass: "invalid_account" });
+    }
+    const token = await this.token();
+    const response = await this.transport.fetch(`https://oauth.reddit.com/user/${encodeURIComponent(name)}/about`, {
+      headers: { authorization: `Bearer ${token}`, "user-agent": this.auth.userAgent, accept: "application/json" },
+    });
+    if (response.status === 404) return null;
+    const json = requireOkJson(response, (value) => value as { data?: { name?: string; is_suspended?: boolean } });
+    const canonical = json.data?.name;
+    if (!canonical || json.data?.is_suspended) return null;
+    return { external_account_id: canonical, display_name: canonical };
+  }
+
   async getPost(externalContentId: string) {
     const rows = await this.listing(`/by_id/t3_${externalContentId}`);
     return rows[0] ?? null;
@@ -258,6 +275,26 @@ export class LiveYoutubeSourceProvider implements YoutubeSourceProvider {
     const rows = await this.videos(new URLSearchParams({ part: "snippet,statistics", id: ids.join(",") }));
     // Never attach a response for another channel to this monitored identity.
     return rows.filter((row) => row.account.external_account_id === externalAccountId).slice(0, limit);
+  }
+
+  /**
+   * Resolve a channel ID (UC...) or @handle to its channel. One data request,
+   * never a search request. Returns null when YouTube has no such channel.
+   */
+  async resolveChannel(input: string): Promise<{ external_account_id: string; display_name: string; handle: string | null } | null> {
+    const params = new URLSearchParams({ part: "snippet" });
+    if (/^UC[A-Za-z0-9_-]{22}$/.test(input)) params.set("id", input);
+    else if (/^@[A-Za-z0-9._-]{3,30}$/.test(input)) params.set("forHandle", input);
+    else throw new ProviderHttpError({ status: 0, errorClass: "invalid_account" });
+    const response = await this.transport.fetch(`https://www.googleapis.com/youtube/v3/channels?${params.toString()}`, {
+      headers: { accept: "application/json", "x-goog-api-key": this.auth.apiKey },
+    });
+    const json = requireOkJson(response, (value) => value as {
+      items?: Array<{ id?: string; snippet?: { title?: string; customUrl?: string } }>;
+    });
+    const item = (json.items ?? []).find((row) => typeof row.id === "string" && /^UC[A-Za-z0-9_-]{22}$/.test(row.id));
+    if (!item?.id) return null;
+    return { external_account_id: item.id, display_name: item.snippet?.title ?? item.id, handle: item.snippet?.customUrl ?? null };
   }
 
   async getChannel(externalAccountId: string) {

@@ -311,12 +311,78 @@ export {
   listCallsByDate,
   listCallsByDirection,
   listCallsByPrinting,
+  listCreatorAccountLinks,
   listCreatorAccounts,
   listCreators,
   listUnresolvedCalls,
 } from "./creator/query.js";
 export { creatorCallSourceFixtures } from "./creator/fixtures.js";
-export { evaluateCreatorCallOutcome, earlyCallScore } from "./creator/outcomes.js";
+export {
+  CreatorHandleError,
+  CreatorListLimitError,
+  TENANT_CREATOR_LIST_MAX,
+  listHiddenCreatorIds,
+  listTenantCreatorList,
+  parseCreatorHandle,
+  promoteFollowedCreators,
+  removeFromCreatorList,
+  requestCreatorFollow,
+  resolvePendingCreatorFollows,
+  setCreatorPreference,
+  type CreatorFollowResolutionReport,
+  type CreatorPlatform,
+  type CreatorPreference,
+  type TenantCreatorListRow,
+} from "./creator/list.js";
+export {
+  TENANT_TOPIC_MAX,
+  TOPIC_WINDOWS,
+  TopicInputError,
+  addTenantTopic,
+  getTenantTopic,
+  getPrintingCalls,
+  getTopicCalls,
+  getTopicSentiment,
+  listTenantTopics,
+  removeTenantTopic,
+  setTenantTopicStatus,
+  syncWorkspaceTopics,
+  topicTokens,
+  type TenantTopicRow,
+  type TopicBucket,
+  type TopicCall,
+  type TopicCalls,
+  type TopicPost,
+  type TopicSentiment,
+  type TopicVoice,
+  type TopicWindow,
+} from "./topics/topics.js";
+export { DEFAULT_EVALUATION_DAYS, evaluateCreatorCallOutcome, earlyCallScore } from "./creator/outcomes.js";
+export { scoreDueCreatorCalls, type DueCallScoringReport } from "./creator/due.js";
+export {
+  ASSET_CALL_RESOLUTION,
+  extractAssetCallsFromContent,
+  findAssetForTopic,
+  getMarketAssetByKey,
+  listActiveAssets,
+  listMarketAssets,
+  matchAssets,
+  type MarketAssetRow,
+} from "./creator/assets.js";
+export { ASSET_SLICE_GAME_KEY } from "./creator/authority.js";
+export { callGradeFromEvidence, detectCallGrade, type CallGrade } from "./creator/grade.js";
+export {
+  SEALED_PRODUCT_NAMES,
+  SEALED_PRODUCT_TYPES,
+  listSealedProducts,
+  sealedAssetKey,
+  syncSealedProducts,
+  type SealedProductType,
+} from "./tcg/sealed.js";
+export {
+  AssetPriceInputError,
+  ingestAssetPrice,
+} from "./providers/asset-prices.js";
 export {
   getCreatorAuthorityProfile,
   latestTrustState,
@@ -595,6 +661,10 @@ export {
   countAdvancedFilters,
   explorerQueryToSearch,
   getCardSentiment,
+  getCardSentimentWithHistory,
+  sentimentBucketDays,
+  sentimentHistory,
+  type SentimentHistoryPoint,
   listCardCreatorCalls,
   listCardEvidence,
   listCardExplorerPage,
@@ -627,6 +697,10 @@ export {
   type SentimentKey,
   type SentimentLabel,
   type SentimentSummary,
+  getCreatorTrackRecord,
+  listCreatorCallHistory,
+  type CreatorCallHistoryItem,
+  type CreatorTrackRecord,
 } from "./dashboard/explorer.js";
 export { sparklinePath } from "./dashboard/sparkline.js";
 export {

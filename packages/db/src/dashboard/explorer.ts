@@ -1,5 +1,6 @@
 import { sql, type SQL } from "drizzle-orm";
 import type { Database } from "../client.js";
+import { callGradeFromEvidence } from "../creator/grade.js";
 
 // Card explorer read model. Every number returned here comes from persisted,
 // versioned records (score snapshots, market snapshots, resolved mentions).
@@ -380,7 +381,7 @@ function filterClauses(query: ExplorerQuery): SQL[] {
 export async function listCardExplorerPage(
   db: Database,
   query: ExplorerQuery,
-  options: { now?: Date } = {},
+  options: { now?: Date; hiddenCreatorIds?: string[] } = {},
 ): Promise<ExplorerPage> {
   const pageSize = Math.min(Math.max(1, query.pageSize), EXPLORER_MAX_PAGE_SIZE);
   const page = Math.min(Math.max(1, Math.trunc(query.page)), EXPLORER_MAX_PAGE);
@@ -452,7 +453,7 @@ export async function listCardExplorerPage(
   const ids = raw.map((row) => String(row.printing_id));
   const [seriesByPrinting, sentimentByPrinting] = await Promise.all([
     loadComparableSeries(db, raw, { from, to: now }),
-    loadSentimentSummaries(db, ids, { from, to: now }),
+    loadSentimentSummaries(db, ids, { from, to: now }, { hiddenCreatorIds: options.hiddenCreatorIds }),
   ]);
   const rows: ExplorerRow[] = raw.map((row) => {
     const printingId = String(row.printing_id);
@@ -602,6 +603,8 @@ export type SentimentEvidenceRow = {
   weight: number;
   /** True when the account belongs to a creator with a persisted authority slice. */
   rated: boolean;
+  /** When the post was published, for history buckets. */
+  publishedAt?: Date;
 };
 
 /**
@@ -736,8 +739,10 @@ export async function listSentimentEvidence(
   db: Database,
   printingIds: string[],
   range: { from: Date; to: Date },
+  options: { hiddenCreatorIds?: string[] } = {},
 ): Promise<SentimentEvidenceRow[]> {
   if (printingIds.length === 0) return [];
+  const hidden = options.hiddenCreatorIds ?? [];
   const result = await db.execute(sql`
     WITH candidate AS (
       SELECT DISTINCT a.mention_id FROM entity_resolution_attempt a
@@ -758,21 +763,21 @@ export async function listSentimentEvidence(
       ) trust ON TRUE
       WHERE trust.trust_state = 'excluded'
     )
-    SELECT l.chosen_printing_id AS printing_id, sm.content_id, sc.account_id, sm.sentiment,
+    SELECT l.chosen_printing_id AS printing_id, sm.content_id, sc.account_id, sm.sentiment, sc.published_at,
       authority.authority_weight, authority.creator_id IS NOT NULL AS rated
     FROM latest l
     JOIN source_mention sm ON sm.id = l.mention_id
     JOIN source_content sc ON sc.id = sm.content_id
     JOIN tcg_printing p ON p.id = l.chosen_printing_id
     -- Same slice choice as scoring/gather.ts: newest slice in the printing's
-    -- language, else the newest all-language slice, else the newest slice.
+    -- language, else the newest overall slice, else the newest slice.
     LEFT JOIN LATERAL (
       SELECT s.creator_id, s.authority_weight
       FROM creator_source_account csa
       JOIN creator_authority_slice s ON s.creator_id = csa.creator_id
       WHERE csa.source_account_id = sc.account_id
       ORDER BY (s.language_code = p.language_code) DESC NULLS LAST,
-        (s.language_code IS NULL AND s.price_tier = 'all') DESC,
+        (s.language_code IS NULL AND s.price_tier = 'all' AND s.game_key IS NULL) DESC,
         s.created_at DESC, s.id DESC
       LIMIT 1
     ) authority ON TRUE
@@ -781,6 +786,11 @@ export async function listSentimentEvidence(
       AND sc.published_at > ${ts(range.from)}
       AND sc.published_at <= ${ts(range.to)}
       AND sc.account_id NOT IN (SELECT source_account_id FROM excluded_account)
+      ${hidden.length
+        ? sql`AND sc.account_id NOT IN (
+            SELECT source_account_id FROM creator_source_account WHERE creator_id IN (${inList(hidden)})
+          )`
+        : sql``}
     LIMIT 5000
   `);
   return asRows(result).map((row) => ({
@@ -790,6 +800,7 @@ export async function listSentimentEvidence(
     sentiment: String(row.sentiment),
     weight: row.authority_weight == null ? SENTIMENT_BASELINE_WEIGHT : Number(row.authority_weight),
     rated: row.rated === true || row.rated === "t",
+    publishedAt: toDate(row.published_at),
   }));
 }
 
@@ -797,8 +808,9 @@ async function loadSentimentSummaries(
   db: Database,
   ids: string[],
   range: { from: Date; to: Date },
+  options: { hiddenCreatorIds?: string[] } = {},
 ): Promise<Map<string, SentimentSummary>> {
-  const evidence = await listSentimentEvidence(db, ids, range);
+  const evidence = await listSentimentEvidence(db, ids, range, options);
   const grouped = new Map<string, SentimentEvidenceRow[]>();
   for (const row of evidence) {
     const list = grouped.get(row.printingId) ?? [];
@@ -808,15 +820,77 @@ async function loadSentimentSummaries(
   return new Map(ids.map((id) => [id, summarizeSentiment(grouped.get(id) ?? [], range)]));
 }
 
+export type SentimentHistoryPoint = {
+  start: Date;
+  end: Date;
+  label: SentimentLabel;
+  /** Classified posts in the period. */
+  posts: number;
+  /** Share of track-record weight per sentiment, 0..1; all zero when the period has no classified posts. */
+  shares: Record<SentimentKey, number>;
+};
+
+/** Days per history point for each window: daily for a week, otherwise a few days or a week. */
+export function sentimentBucketDays(windowDays: number): number {
+  return windowDays <= 7 ? 1 : windowDays <= 30 ? 3 : 7;
+}
+
+/**
+ * Splits evidence into equal periods ending at range.to and summarizes each
+ * the same way as the headline summary, oldest first.
+ */
+export function sentimentHistory(
+  rows: SentimentEvidenceRow[],
+  range: { from: Date; to: Date },
+  bucketDays: number,
+): SentimentHistoryPoint[] {
+  const bucketMs = bucketDays * 86_400_000;
+  const count = Math.max(1, Math.ceil((range.to.getTime() - range.from.getTime()) / bucketMs));
+  const groups: SentimentEvidenceRow[][] = Array.from({ length: count }, () => []);
+  for (const row of rows) {
+    if (!row.publishedAt) continue;
+    const index = Math.min(count - 1, Math.max(0, Math.floor((row.publishedAt.getTime() - range.from.getTime()) / bucketMs)));
+    groups[index]!.push(row);
+  }
+  return groups.map((group, index) => {
+    const start = new Date(range.from.getTime() + index * bucketMs);
+    const end = new Date(Math.min(range.to.getTime(), start.getTime() + bucketMs));
+    const summary = summarizeSentiment(group, { from: start, to: end });
+    const share = (key: SentimentKey) => (summary.weightTotal > 0 ? summary.weighted[key] / summary.weightTotal : 0);
+    return {
+      start,
+      end,
+      label: summary.label,
+      posts: summary.classified,
+      shares: { positive: share("positive"), neutral: share("neutral"), negative: share("negative"), mixed: share("mixed") },
+    };
+  });
+}
+
+/** A card's sentiment for the window plus its history, for the public API. */
+export async function getCardSentimentWithHistory(
+  db: Database,
+  printingId: string,
+  window: ExplorerWindow,
+  options: { now?: Date; hiddenCreatorIds?: string[] } = {},
+): Promise<{ summary: SentimentSummary; history: SentimentHistoryPoint[]; bucketDays: number }> {
+  const now = options.now ?? new Date();
+  const days = EXPLORER_WINDOW_DAYS[window];
+  const range = { from: new Date(now.getTime() - days * 86_400_000), to: now };
+  const rows = await listSentimentEvidence(db, [printingId], range, options);
+  const bucketDays = sentimentBucketDays(days);
+  return { summary: summarizeSentiment(rows, range), history: sentimentHistory(rows, range, bucketDays), bucketDays };
+}
+
 export async function getCardSentiment(
   db: Database,
   printingId: string,
   window: ExplorerWindow,
-  options: { now?: Date } = {},
+  options: { now?: Date; hiddenCreatorIds?: string[] } = {},
 ): Promise<SentimentSummary> {
   const now = options.now ?? new Date();
   const range = { from: new Date(now.getTime() - EXPLORER_WINDOW_DAYS[window] * 86_400_000), to: now };
-  return summarizeSentiment(await listSentimentEvidence(db, [printingId], range), range);
+  return summarizeSentiment(await listSentimentEvidence(db, [printingId], range, options), range);
 }
 
 export type MarketConfirmationState = "confirmed" | "unconfirmed" | "insufficient" | "no_score";
@@ -934,15 +1008,17 @@ export type CardCreatorCall = {
 export async function listCardCreatorCalls(
   db: Database,
   printingId: string,
-  input: { page?: number } = {},
+  input: { page?: number; hiddenCreatorIds?: string[] } = {},
 ): Promise<{ items: CardCreatorCall[]; hasMore: boolean; page: number }> {
   const page = Math.min(Math.max(1, Math.trunc(input.page ?? 1)), EXPLORER_MAX_PAGE);
+  const hidden = input.hiddenCreatorIds ?? [];
   const result = await db.execute(sql`
     SELECT cc.id, cc.creator_id, cr.display_name, cc.direction, cc.horizon_code, cc.published_at,
       cc.price_at_call, cc.price_currency
     FROM creator_call cc
     LEFT JOIN creator cr ON cr.id = cc.creator_id
     WHERE cc.printing_id = ${printingId}
+      ${hidden.length ? sql`AND cc.creator_id NOT IN (${inList(hidden)})` : sql``}
     ORDER BY cc.published_at DESC, cc.id DESC
     LIMIT ${EVIDENCE_PAGE_SIZE + 1} OFFSET ${(page - 1) * EVIDENCE_PAGE_SIZE}
   `);
@@ -959,6 +1035,127 @@ export async function listCardCreatorCalls(
       publishedAt: toDate(row.published_at),
       priceAtCall: row.price_at_call == null ? null : String(row.price_at_call),
       priceCurrency: row.price_currency == null ? null : String(row.price_currency),
+    })),
+  };
+}
+
+export type CreatorCallHistoryItem = {
+  id: string;
+  publishedAt: Date;
+  direction: string;
+  horizonCode: string;
+  printingId: string | null;
+  cardName: string | null;
+  /** Set instead of the card fields when the call is about an asset such as Bitcoin. */
+  assetName: string | null;
+  /** "PSA 10" when the call was about a graded copy, else null. */
+  grade: string | null;
+  setName: string | null;
+  languageCode: string | null;
+  priceAtCall: string | null;
+  priceCurrency: string | null;
+  /** pending | evaluated | insufficient_data | ..., or null when no outcome row exists yet. */
+  outcomeStatus: string | null;
+  /** correct | incorrect | neutral | ..., only for evaluated calls. */
+  directionalCorrect: string | null;
+  returnPct: number | null;
+  contentUrl: string | null;
+};
+
+export type CreatorTrackRecord = {
+  totalCalls: number;
+  evaluated: number;
+  correct: number;
+  incorrect: number;
+  pending: number;
+  unmatched: number;
+};
+
+/** Counts for the creator's call record. Correct/incorrect only count evaluated directional calls. */
+export async function getCreatorTrackRecord(db: Database, creatorId: string): Promise<CreatorTrackRecord> {
+  const rows = asRows(
+    await db.execute(sql`
+      SELECT
+        count(*)::int AS total,
+        count(*) FILTER (WHERE o.evaluation_status = 'evaluated')::int AS evaluated,
+        count(*) FILTER (WHERE o.evaluation_status = 'evaluated' AND o.directional_correct = 'correct')::int AS correct,
+        count(*) FILTER (WHERE o.evaluation_status = 'evaluated' AND o.directional_correct = 'incorrect')::int AS incorrect,
+        count(*) FILTER (WHERE (cc.printing_id IS NOT NULL OR cc.asset_id IS NOT NULL)
+          AND (o.id IS NULL OR o.evaluation_status = 'pending'))::int AS pending,
+        count(*) FILTER (WHERE cc.printing_id IS NULL AND cc.asset_id IS NULL)::int AS unmatched
+      FROM creator_call cc
+      LEFT JOIN creator_call_outcome o ON o.call_id = cc.id
+      WHERE cc.creator_id = ${creatorId}
+    `),
+  );
+  const row = rows[0] ?? {};
+  return {
+    totalCalls: Number(row.total ?? 0),
+    evaluated: Number(row.evaluated ?? 0),
+    correct: Number(row.correct ?? 0),
+    incorrect: Number(row.incorrect ?? 0),
+    pending: Number(row.pending ?? 0),
+    unmatched: Number(row.unmatched ?? 0),
+  };
+}
+
+function gradeLabel(raw: unknown): string | null {
+  let value = raw;
+  if (typeof raw === "string") {
+    try {
+      value = JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+  const grade = callGradeFromEvidence({ grade: value });
+  return grade ? `${grade.company.toUpperCase()} ${grade.grade}` : null;
+}
+
+/** A creator's calls, newest first, with the card or asset they named and how each call turned out. */
+export async function listCreatorCallHistory(
+  db: Database,
+  creatorId: string,
+  input: { page?: number } = {},
+): Promise<{ items: CreatorCallHistoryItem[]; hasMore: boolean; page: number }> {
+  const page = Math.min(Math.max(1, Math.trunc(input.page ?? 1)), EXPLORER_MAX_PAGE);
+  const rows = asRows(
+    await db.execute(sql`
+      SELECT cc.id, cc.published_at, cc.direction, cc.horizon_code, cc.printing_id, cc.price_at_call, cc.price_currency,
+        c.canonical_name AS card_name, st.name AS set_name, p.language_code, ma.display_name AS asset_name, cc.evidence -> 'grade' AS grade,
+        o.evaluation_status, o.directional_correct, o.return_pct, sc.canonical_url
+      FROM creator_call cc
+      LEFT JOIN market_asset ma ON ma.id = cc.asset_id
+      LEFT JOIN tcg_printing p ON p.id = cc.printing_id
+      LEFT JOIN tcg_card_concept c ON c.id = p.card_id
+      LEFT JOIN tcg_set st ON st.id = p.set_id
+      LEFT JOIN creator_call_outcome o ON o.call_id = cc.id
+      LEFT JOIN source_content sc ON sc.id = cc.content_id
+      WHERE cc.creator_id = ${creatorId}
+      ORDER BY cc.published_at DESC, cc.id DESC
+      LIMIT ${EVIDENCE_PAGE_SIZE + 1} OFFSET ${(page - 1) * EVIDENCE_PAGE_SIZE}
+    `),
+  );
+  return {
+    page,
+    hasMore: rows.length > EVIDENCE_PAGE_SIZE,
+    items: rows.slice(0, EVIDENCE_PAGE_SIZE).map((row) => ({
+      id: String(row.id),
+      publishedAt: toDate(row.published_at),
+      direction: String(row.direction),
+      horizonCode: String(row.horizon_code),
+      printingId: row.printing_id == null ? null : String(row.printing_id),
+      cardName: row.card_name == null ? null : String(row.card_name),
+      assetName: row.asset_name == null ? null : String(row.asset_name),
+      grade: gradeLabel(row.grade),
+      setName: row.set_name == null ? null : String(row.set_name),
+      languageCode: row.language_code == null ? null : String(row.language_code),
+      priceAtCall: row.price_at_call == null ? null : String(row.price_at_call),
+      priceCurrency: row.price_currency == null ? null : String(row.price_currency),
+      outcomeStatus: row.evaluation_status == null ? null : String(row.evaluation_status),
+      directionalCorrect: row.directional_correct == null ? null : String(row.directional_correct),
+      returnPct: row.return_pct == null || !Number.isFinite(Number(row.return_pct)) ? null : Number(row.return_pct),
+      contentUrl: row.canonical_url == null ? null : String(row.canonical_url),
     })),
   };
 }

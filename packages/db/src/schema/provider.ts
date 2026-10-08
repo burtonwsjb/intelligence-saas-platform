@@ -18,6 +18,7 @@ export const PROVIDER_KEYS = [
   "ebay",
   "reddit",
   "youtube",
+  "google",
 ] as const;
 export type ProviderKey = (typeof PROVIDER_KEYS)[number];
 

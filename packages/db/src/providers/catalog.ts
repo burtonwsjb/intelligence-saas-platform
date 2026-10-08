@@ -20,6 +20,7 @@ export const PROVIDER_ENV_MODE: Record<ProviderKey, string> = {
   ebay: "PROVIDER_EBAY_MODE",
   reddit: "PROVIDER_REDDIT_MODE",
   youtube: "PROVIDER_YOUTUBE_MODE",
+  google: "PROVIDER_GOOGLE_MODE",
 };
 
 export const PROVIDER_TYPE_BY_KEY: Record<ProviderKey, ProviderType> = {
@@ -28,16 +29,19 @@ export const PROVIDER_TYPE_BY_KEY: Record<ProviderKey, ProviderType> = {
   ebay: "market",
   reddit: "social",
   youtube: "social",
+  google: "social",
 };
 
 export const PROVIDER_ADAPTER_NOTES: Record<ProviderKey, string> = {
   tcg_card_central:
-    "First-party snapshot contract only. There is no public TCC marketplace SDK in this repo.",
+    "Daily TCGplayer market prices for the cards and sealed products creators made calls about, from TCG Card Central's price feed.",
   tcgplayer:
     "Native product pricing when product IDs are supplied. Unbounded catalog crawl is not implemented.",
   ebay: "Bounded Browse search. Unbounded marketplace crawl is not implemented.",
   reddit: "Topic search discovers posts and communities. Subreddit lists are optional seeds, not required.",
   youtube: "Topic search discovers videos and channel IDs. Channel ID lists are optional seeds, not required.",
+  google:
+    "Programmable Search finds web articles for a topic; each website becomes a creator. Marketplaces and social sites covered elsewhere are skipped.",
 };
 
 export const DEFAULT_SCHEDULE_SECONDS: Record<ProviderKey, number> = {
@@ -46,6 +50,7 @@ export const DEFAULT_SCHEDULE_SECONDS: Record<ProviderKey, number> = {
   ebay: 600,
   reddit: 900,
   youtube: 1800,
+  google: 3600,
 };
 
 export function isProviderKey(value: string): value is ProviderKey {
@@ -101,6 +106,7 @@ export const PROVIDER_CREDENTIAL_VARS: Record<ProviderKey, string[]> = {
   ebay: ["EBAY_OAUTH_TOKEN"],
   reddit: ["REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET", "REDDIT_USER_AGENT"],
   youtube: ["YOUTUBE_API_KEY"],
+  google: ["GOOGLE_SEARCH_API_KEY", "GOOGLE_SEARCH_ENGINE_ID"],
 };
 
 export function providerCredentialStatus(

@@ -2,7 +2,7 @@ import { bigint, boolean, index, integer, jsonb, numeric, pgTable, text, timesta
 import { creator } from "./creator.js";
 import { sourceAccount } from "./source.js";
 
-export const DISCOVERY_PROVIDERS = ["youtube", "reddit"] as const;
+export const DISCOVERY_PROVIDERS = ["youtube", "reddit", "google"] as const;
 export type DiscoveryProviderKey = (typeof DISCOVERY_PROVIDERS)[number];
 
 export const DISCOVERY_RELEVANCE_STATES = ["candidate", "monitored", "excluded", "low_confidence"] as const;
