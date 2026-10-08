@@ -7,13 +7,16 @@ import {
   createDbConnection,
   createDbFromWorkerEnv,
   enqueueDueProviderSyncs,
+  importTccCatalog,
   processQueuedEmailDeliveries,
   requireWorkerDatabaseUrl,
+  resolveProviderMode,
   scoreDueCreatorCalls,
   syncSealedProducts,
   upsertWorkerHeartbeat,
   withPlatformContext,
   type Database,
+  type TccCatalogReport,
 } from "@isp/db";
 import {
   JOB_TIMEOUT_MS,
@@ -80,12 +83,19 @@ export async function reconcileProviderRuntimeFromEnv(
   }
 }
 
+/**
+ * Arms the provider scheduler after reconciling provider runtime with env.
+ * With TCG Card Central live, one bounded catalog import runs first, so the
+ * first price collection already sees the imported catalog.
+ */
 export async function startProviderScheduleLoop(input: {
   db: Database;
   env?: NodeJS.ProcessEnv;
   onScheduleArm: () => void;
+  tccTransport?: TccTransport;
 }): Promise<{ ok: boolean; errorClass: string | null }> {
   const result = await reconcileProviderRuntimeFromEnv(input.db, input.env);
+  await runTccCatalogImport(input.db, input.env, input.tccTransport);
   input.onScheduleArm();
   return result;
 }
@@ -98,6 +108,50 @@ export async function runProviderSchedule(
     await withPlatformContext(db, (scoped) => enqueueDueProviderSyncs(scoped, env));
   } catch (error) {
     logLoopFailure("worker.scheduler_failed", "provider_scheduler", error);
+  }
+}
+
+type TccTransport = Parameters<typeof importTccCatalog>[1]["transport"];
+
+/**
+ * Imports a bounded slice of TCG Card Central's card catalog (at most
+ * TCC_CATALOG_MAX_REQUESTS requests). Runs only with
+ * PROVIDER_TCG_CARD_CENTRAL_MODE=live and TCC_API_BASE_URL / TCC_API_TOKEN set;
+ * an advisory lock keeps two worker replicas from importing at once.
+ */
+export async function runTccCatalogImport(
+  db: Database,
+  env: NodeJS.ProcessEnv = process.env,
+  transport?: TccTransport,
+): Promise<TccCatalogReport | null> {
+  const baseUrl = env.TCC_API_BASE_URL?.trim();
+  const token = env.TCC_API_TOKEN?.trim();
+  if (resolveProviderMode("tcg_card_central", env) !== "live" || !baseUrl || !token) {
+    return null;
+  }
+  try {
+    const report = await withPlatformContext(db, (scoped) =>
+      importTccCatalog(scoped, { baseUrl, token, transport, exclusive: true }),
+    );
+    logQueueEvent(report.status === "failed" ? "warn" : "info", "worker.tcc_catalog", {
+      status: report.status,
+      reason: report.reason,
+      requests: report.requests,
+      cards: report.cards,
+      printings: report.printings,
+      sets: report.sets,
+      already_imported: report.alreadyImported,
+      malformed: report.malformed,
+      unsupported_language: report.unsupportedLanguage,
+      collisions: report.collisions,
+      conflicts: report.conflicts,
+      rejected: report.rejected,
+      sweep_complete: report.sweepComplete,
+    });
+    return report;
+  } catch (error) {
+    logLoopFailure("worker.tcc_catalog_failed", "tcc_catalog", error);
+    return null;
   }
 }
 
@@ -363,13 +417,15 @@ export function startWorker(options?: {
     },
   });
 
-  // Hourly, and once a minute after startup: sealed catalog, then scoring of
-  // calls that have come due.
+  // Hourly, and once a minute after startup: the TCG Card Central card
+  // catalog, sealed products for any new set, then scoring of calls that have
+  // come due.
   const runMarketWork = () => {
     if (status === "shutting_down" || status === "stopped") {
       return;
     }
-    void runSealedCatalogSync(db)
+    void runTccCatalogImport(db, env)
+      .then(() => runSealedCatalogSync(db))
       .then(() => runCallScoring(db));
   };
   const firstMarketWork = setTimeout(runMarketWork, 60_000);

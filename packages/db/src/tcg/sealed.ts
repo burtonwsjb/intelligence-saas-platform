@@ -39,15 +39,21 @@ export function sealedAliases(setName: string, productType: SealedProductType): 
   return SEALED_PRODUCT_NAMES[productType].map((name) => `${setName} ${name}`.toLowerCase());
 }
 
+/** Standard products are English; a set released only in another language gets none. */
+function hasEnglishProducts(languageScope: string | null) {
+  return languageScope == null || languageScope === "en" || languageScope === "multi";
+}
+
 /**
  * Creates the standard sealed products for every active set that is not a
- * promo set. Existing rows are never changed, so an operator's edits (names,
- * aliases, pausing) are kept. Returns how many products were added.
+ * promo set or released only in another language. Existing rows are never
+ * changed, so an operator's edits (names, aliases, pausing) are kept.
+ * Returns how many products were added.
  */
 export async function syncSealedProducts(db: Database): Promise<{ added: number }> {
   const sets = await db.select().from(tcgSet).where(eq(tcgSet.status, "active"));
   const values = sets
-    .filter((set) => !/promo/i.test(set.name))
+    .filter((set) => !/promo/i.test(set.name) && hasEnglishProducts(set.languageScope))
     .flatMap((set) =>
       (STANDARD_SEALED_TYPES[set.gameKey] ?? DEFAULT_SEALED_TYPES).map((productType) => ({
         id: `mas_sealed_${set.id}_${productType}`,

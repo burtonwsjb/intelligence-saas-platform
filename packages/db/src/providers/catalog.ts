@@ -34,7 +34,7 @@ export const PROVIDER_TYPE_BY_KEY: Record<ProviderKey, ProviderType> = {
 
 export const PROVIDER_ADAPTER_NOTES: Record<ProviderKey, string> = {
   tcg_card_central:
-    "Daily TCGplayer market prices for the cards and sealed products creators made calls about, from TCG Card Central's price feed.",
+    "Daily TCGplayer market prices for the cards and sealed products creators made calls about, from TCG Card Central's price feed. The worker also imports TCC's card catalog (sets, cards, printings) in bounded runs so creator posts resolve to exact printings.",
   tcgplayer:
     "Native product pricing when product IDs are supplied. Unbounded catalog crawl is not implemented.",
   ebay: "Bounded Browse search. Unbounded marketplace crawl is not implemented.",

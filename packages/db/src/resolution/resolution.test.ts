@@ -15,7 +15,10 @@ import {
   TCC_NAMESPACE,
   type Database,
 } from "../index.js";
-import { nameSimilarity, primaryScript } from "./identity.js";
+import { FUZZY_PROBABLE_THRESHOLD, nameSimilarity, normalizeMatchText, primaryScript } from "./identity.js";
+import { findNameConcepts } from "./resolve.js";
+import { inferSetFromText } from "./signals.js";
+import { insertTcgCardConcept, insertTcgCardNameAlias } from "../tcg/catalog.js";
 
 describe("entity resolution", () => {
   async function setup() {
@@ -305,5 +308,57 @@ describe("entity resolution", () => {
     const again = await listSourceMentions(db, ingested.contentId!);
     expect(again[0]?.metadata).toMatchObject({ resolution_status: "unresolved" });
     expect(again[0]?.id).toBe(mentions[0]!.id);
+  });
+
+  it("infers the longest set name, and set keys only as whole words", () => {
+    const sets = [
+      { canonicalSetKey: "sv1", name: "Scarlet & Violet" },
+      { canonicalSetKey: "svp", name: "Scarlet & Violet Promos" },
+      { canonicalSetKey: "core", name: "Core Set" },
+      { canonicalSetKey: "op01", name: "Romance Dawn" },
+    ];
+    expect(inferSetFromText("Scarlet & Violet Promos Pikachu", sets)).toBe("svp");
+    expect(inferSetFromText("Scarlet & Violet Pikachu", sets)).toBe("sv1");
+    expect(inferSetFromText("the core of my collection", sets)).toBeUndefined();
+    expect(inferSetFromText("CORE Charizard", sets)).toBe("core");
+    expect(inferSetFromText("op01 Luffy", sets)).toBe("op01");
+    expect(inferSetFromText("top012 Luffy", sets)).toBeUndefined();
+  });
+
+  it("finds name candidates in SQL exactly as scoring every catalog name would", async () => {
+    const client = new PGlite();
+    await client.exec(await readMigrationSql());
+    const db = drizzle(client) as unknown as Database;
+    const names = [
+      "Greninja ex", "Greninja", "Pikachu", "Pikachu V", "Pikachu VMAX", "Charizard ex", "Charizard",
+      "Blue-Eyes White Dragon", "Blue-Eyes Ultimate Dragon", "Dark Magician", "Monkey.D.Luffy",
+      "Roronoa Zoro", "Son Goku", "Mew ex", "Mewtwo", "Nidoran ♀", "Nidoran ♂", "Flabébé", "Professor's Research",
+      "Elemental HERO Shining Phoenix Enforcer", "N's Zoroark ex", "Iono", "Boss's Orders",
+    ];
+    const ids = new Map<string, string>();
+    for (const [index, name] of names.entries()) {
+      const concept = await insertTcgCardConcept(db, { gameKey: "pokemon", conceptKey: `c${index}`, canonicalName: name });
+      ids.set(concept.id, name);
+    }
+    const aliased = await insertTcgCardConcept(db, { gameKey: "pokemon", conceptKey: "alias", canonicalName: "Greninja ex JP" });
+    await insertTcgCardNameAlias(db, { cardId: aliased.id, language: "ja", name: "ゲッコウガex" });
+    const queries = [
+      "Grennja", "greninja", "GRENINJA EX", "pikachu", "Pikachu VMAX!!", "Charzard", "charizard ex 214",
+      "Blue Eyes White Dragon", "blue-eyes", "Dark Magican", "Luffy", "monkey d luffy", "Zoro", "goku", "mew",
+      "Nidoran", "Flabebe", "Professors Research", "ゲッコウガex", "ゲッコウガ", "🔥 Iono 🔥", "Iono🔥",
+      "i would buy english twilight masquerade greninja 214 normal", "Boss Orders", "N Zoroark", "x",
+    ];
+    for (const query of queries) {
+      const expected = new Set<string>();
+      for (const [id, name] of ids) {
+        if (normalizeMatchText(query) === normalizeMatchText(name) || nameSimilarity(query, name) >= FUZZY_PROBABLE_THRESHOLD) {
+          expected.add(id);
+        }
+      }
+      if (nameSimilarity(query, "Greninja ex JP") >= FUZZY_PROBABLE_THRESHOLD || nameSimilarity(query, "ゲッコウガex") >= FUZZY_PROBABLE_THRESHOLD) {
+        expected.add(aliased.id);
+      }
+      expect(new Set(await findNameConcepts(db, query, "pokemon")), query).toEqual(expected);
+    }
   });
 });

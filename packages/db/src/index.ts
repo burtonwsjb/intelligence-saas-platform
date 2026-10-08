@@ -384,6 +384,17 @@ export {
   ingestAssetPrice,
 } from "./providers/asset-prices.js";
 export {
+  TCC_CATALOG_GAMES,
+  TCC_CATALOG_MAX_REQUESTS,
+  TCC_CATALOG_PAGE_SIZE,
+  TCC_CATALOG_PATH,
+  TCC_CATALOG_RESWEEP_MS,
+  importTccCatalog,
+  latestTccCatalogCheckpoint,
+  type TccCatalogCheckpoint,
+  type TccCatalogReport,
+} from "./providers/tcc-catalog.js";
+export {
   getCreatorAuthorityProfile,
   latestTrustState,
   recomputeCreatorAuthority,

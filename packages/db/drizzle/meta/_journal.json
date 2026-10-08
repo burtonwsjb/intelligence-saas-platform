@@ -218,6 +218,13 @@
       "when": 30,
       "tag": "0031_google_discovery",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 31,
+      "tag": "0032_tcc_catalog_import",
+      "breakpoints": true
     }
   ]
 }

@@ -8,6 +8,7 @@ import {
   reconcileProviderRuntimeFromEnv,
   runProviderSchedule,
   runCallScoring,
+  runTccCatalogImport,
   runWorkerHeartbeat,
   startProviderScheduleLoop,
   startWorker,
@@ -348,5 +349,82 @@ describe("provider runtime startup sync", () => {
     });
     expect(result.ok).toBe(false);
     expect(armed).toBe(true);
+  });
+});
+
+describe("TCG Card Central catalog import", () => {
+  const live = {
+    ISP_ENV: "staging",
+    PROVIDER_TCG_CARD_CENTRAL_MODE: "live",
+    TCC_API_BASE_URL: "https://tcc.example.test",
+    TCC_API_TOKEN: "tcc-secret-do-not-log",
+  };
+
+  it("does nothing unless TCG Card Central is live with its URL and token", async () => {
+    let transactions = 0;
+    const db = {
+      transaction: async () => {
+        transactions += 1;
+        throw new Error("unexpected");
+      },
+    };
+    expect(await runTccCatalogImport(db as never, { ISP_ENV: "staging" })).toBeNull();
+    expect(await runTccCatalogImport(db as never, { ...live, PROVIDER_TCG_CARD_CENTRAL_MODE: "fixture" })).toBeNull();
+    expect(await runTccCatalogImport(db as never, { ...live, TCC_API_TOKEN: " " })).toBeNull();
+    expect(await runTccCatalogImport(db as never, { ...live, TCC_API_BASE_URL: undefined })).toBeNull();
+    expect(transactions).toBe(0);
+  });
+
+  it("imports before the provider scheduler (and its price collection) is armed", async () => {
+    const lines: string[] = [];
+    const info = vi.spyOn(console, "log").mockImplementation((line) => lines.push(String(line)));
+    const error = vi.spyOn(console, "error").mockImplementation((line) => lines.push(String(line)));
+    const order: string[] = [];
+    let requests = 0;
+    const db = {
+      transaction: async (run: (tx: { execute: () => Promise<unknown> }) => Promise<unknown>) => {
+        order.push(order.includes("reconcile") ? "catalog" : "reconcile");
+        if (order.length === 1) throw new Error("provider_runtime unavailable");
+        // Another replica holds the catalog lock.
+        return run({ execute: async () => [{ locked: false }] });
+      },
+    };
+    await startProviderScheduleLoop({
+      db: db as never,
+      env: live,
+      onScheduleArm: () => order.push("scheduler"),
+      tccTransport: {
+        fetch: async () => {
+          requests += 1;
+          return { status: 200, headers: {}, bodyText: "{}" };
+        },
+      },
+    });
+    expect(order).toEqual(["reconcile", "catalog", "scheduler"]);
+    expect(requests).toBe(0);
+    const blob = lines.join("\n");
+    expect(blob).toContain("worker.tcc_catalog");
+    expect(blob).toContain("overlap");
+    expect(blob).not.toContain("tcc-secret-do-not-log");
+    info.mockRestore();
+    error.mockRestore();
+  });
+
+  it("logs a sanitized failure and keeps going", async () => {
+    const lines: string[] = [];
+    const error = vi.spyOn(console, "error").mockImplementation((line) => lines.push(String(line)));
+    const report = await runTccCatalogImport(
+      {
+        transaction: async () => {
+          throw new Error("Failed query postgresql://app_worker:hunter2@db.example/isp");
+        },
+      } as never,
+      live,
+    );
+    expect(report).toBeNull();
+    const blob = lines.join("\n");
+    expect(blob).toContain("worker.tcc_catalog_failed");
+    expect(blob).not.toContain("hunter2");
+    error.mockRestore();
   });
 });

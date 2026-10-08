@@ -36,9 +36,9 @@ const VARIANT_TOKEN_MAP: Array<[RegExp, string]> = [
 const COLLECTOR_PATTERN =
   /\b((?:tg)?\d{1,3}\/(?:tg)?\d{1,3}|\d{1,4}\/\d{1,4}|p-\d{1,4}|\d{2,4})\b/i;
 
+/** Sets that may be named in the text (the resolver loads only those that appear in it). */
 export type CatalogHints = {
   sets: Array<{ canonicalSetKey: string; name: string }>;
-  names: string[];
 };
 
 export function inferLanguageFromText(text: string): string | undefined {
@@ -64,17 +64,46 @@ export function inferCollectorFromText(text: string): string | undefined {
   return match?.[1];
 }
 
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * A set key counts only as a whole word, and a key without digits ("twm")
+ * only when written in capitals ("TWM"), so ordinary words never become sets.
+ */
+function setKeyInText(text: string, key: string): boolean {
+  if (!key) {
+    return false;
+  }
+  if (/\d/.test(key)) {
+    return new RegExp(`(^|[^a-z0-9])${escapeRegex(key)}($|[^a-z0-9])`, "i").test(text);
+  }
+  return new RegExp(`(^|[^A-Za-z0-9])${escapeRegex(key.toUpperCase())}($|[^A-Za-z0-9])`).test(text);
+}
+
+/** The set named in the text: the longest set name found, else a set key written as a word. */
 export function inferSetFromText(
   text: string,
   sets: CatalogHints["sets"] | undefined,
 ): string | undefined {
   const lower = text.toLocaleLowerCase("en");
+  let best: { key: string; length: number } | undefined;
   for (const set of Array.isArray(sets) ? sets : []) {
-    if (lower.includes(set.name.toLocaleLowerCase("en")) || lower.includes(set.canonicalSetKey)) {
-      return set.canonicalSetKey;
+    const name = set.name.toLocaleLowerCase("en");
+    if (name && lower.includes(name) && (!best || name.length > best.length)) {
+      best = { key: set.canonicalSetKey, length: name.length };
     }
   }
-  return undefined;
+  if (best) {
+    return best.key;
+  }
+  for (const set of Array.isArray(sets) ? sets : []) {
+    if (setKeyInText(text, set.canonicalSetKey) && (!best || set.canonicalSetKey.length > best.length)) {
+      best = { key: set.canonicalSetKey, length: set.canonicalSetKey.length };
+    }
+  }
+  return best?.key;
 }
 
 export function stripIdentityTokens(text: string, hints: CatalogHints): string {
