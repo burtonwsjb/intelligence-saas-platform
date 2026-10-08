@@ -82,3 +82,6 @@ export async function loadAppAccess(): Promise<{
     },
   };
 }
+
+export const ANALYTICS_LOCKED_BODY =
+  "Your role in this workspace does not include market and card analytics. Ask a workspace owner or admin for access.";

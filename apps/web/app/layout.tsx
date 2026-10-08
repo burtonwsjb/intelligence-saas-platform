@@ -28,7 +28,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <main id="main" className="shell-main">
           {children}
         </main>
-        <footer className="shell-header">
+        <footer className="shell-footer">
           <nav className="shell-nav" aria-label="Legal">
             <Link href="/terms">Terms</Link>
             <Link href="/privacy">Privacy</Link>
