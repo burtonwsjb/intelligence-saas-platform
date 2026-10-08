@@ -2,16 +2,25 @@ import { createHash, randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { Database } from "../client.js";
 import { providerSyncRun } from "../schema/provider.js";
-import { tcgPrintingIdentifier } from "../schema/tcg.js";
+import { tcgCardConcept, tcgPrinting, tcgPrintingIdentifier, tcgSet } from "../schema/tcg.js";
 import {
   getTcgSet,
+  stableId,
   insertTcgCardConcept,
   insertTcgPrinting,
   insertTcgPrintingIdentifier,
   insertTcgSet,
 } from "../tcg/catalog.js";
 import { TCC_ID_TYPE, TCC_NAMESPACE } from "../tcg/fixtures.js";
-import { isTcgVariantKey, normalizeTcgName, TcgIdentifierConflictError } from "../tcg/identity.js";
+import {
+  canonicalPrintingKey,
+  isTcgVariantKey,
+  normalizeCollectorNumber,
+  normalizeTcgName,
+  parseTcgLanguage,
+  parseTcgVariant,
+  TcgIdentifierConflictError,
+} from "../tcg/identity.js";
 import { getProviderRuntime } from "./runtime.js";
 import { createFetchTransport, ProviderHttpError, requireOkJson, type HttpTransport } from "./transport.js";
 
@@ -365,6 +374,183 @@ async function importCard(
   };
 }
 
+/**
+ * Imports one page with a handful of set-based statements instead of a dozen
+ * round trips per card. Row ids are the same stable ids the insertTcg*
+ * functions use, and every insert skips rows that already exist, so the result
+ * matches importing card by card. Throws if the database refuses any row; the
+ * caller then falls back to the per-card path for that page.
+ */
+async function importPageInBulk(
+  db: Database,
+  gameKey: string,
+  cards: CatalogCard[],
+  pendingByCard: Map<CatalogCard, string[]>,
+): Promise<Counts> {
+  const counts: Counts = { printings: 0, sets: 0, collisions: 0, conflicts: 0 };
+  const setValues = new Map<string, typeof tcgSet.$inferInsert>();
+  const conceptValues = new Map<string, typeof tcgCardConcept.$inferInsert>();
+  for (const card of cards) {
+    if (!setValues.has(card.set.setKey)) {
+      setValues.set(card.set.setKey, {
+        id: stableId("set", [gameKey, card.set.setKey]),
+        gameKey,
+        canonicalSetKey: card.set.setKey,
+        name: card.set.name,
+        languageScope: card.languages.length === 1 ? card.languages[0] : "multi",
+        releaseDate: card.set.releaseDate,
+      });
+    }
+    const conceptKey = catalogConceptKey(card.name);
+    if (!conceptValues.has(conceptKey)) {
+      conceptValues.set(conceptKey, {
+        id: stableId("crd", [gameKey, conceptKey]),
+        gameKey,
+        conceptKey,
+        canonicalName: card.name,
+        normalizedName: normalizeTcgName(card.name),
+      });
+    }
+  }
+  const newSets = await db.insert(tcgSet).values([...setValues.values()]).onConflictDoNothing().returning({ id: tcgSet.id });
+  counts.sets += newSets.length;
+  await db.insert(tcgCardConcept).values([...conceptValues.values()]).onConflictDoNothing();
+  const sets = new Map(
+    (
+      await db
+        .select({ id: tcgSet.id, key: tcgSet.canonicalSetKey })
+        .from(tcgSet)
+        .where(and(eq(tcgSet.gameKey, gameKey), inArray(tcgSet.canonicalSetKey, [...setValues.keys()])))
+    ).map((row) => [row.key, row.id]),
+  );
+  const concepts = new Map(
+    (
+      await db
+        .select({ id: tcgCardConcept.id, key: tcgCardConcept.conceptKey })
+        .from(tcgCardConcept)
+        .where(and(eq(tcgCardConcept.gameKey, gameKey), inArray(tcgCardConcept.conceptKey, [...conceptValues.keys()])))
+    ).map((row) => [row.key, row.id]),
+  );
+
+  type Planned = { key: string; identifierValue: string; cardId: string };
+  const planned: Planned[] = [];
+  const printingValues = new Map<string, typeof tcgPrinting.$inferInsert>();
+  const identities = new Set<string>();
+  for (const card of cards) {
+    const setId = sets.get(card.set.setKey);
+    const conceptKey = catalogConceptKey(card.name);
+    const conceptId = concepts.get(conceptKey);
+    if (!setId || !conceptId) throw new Error("catalog set or card missing after insert");
+    const collectorNumberNormalized = normalizeCollectorNumber(card.collectorNumber);
+    const variantKey = parseTcgVariant(card.variantKey);
+    for (const rawLanguage of pendingByCard.get(card) ?? []) {
+      const language = parseTcgLanguage(rawLanguage);
+      const key = canonicalPrintingKey({
+        gameKey,
+        conceptKey,
+        setKey: card.set.setKey,
+        collectorNormalized: collectorNumberNormalized,
+        language,
+        variantKey,
+      });
+      const identity = [setId, collectorNumberNormalized, language, variantKey].join("|");
+      // Two cards of this page on one printing: the first one keeps it.
+      if (!printingValues.has(key) && identities.has(identity)) {
+        counts.collisions += 1;
+        continue;
+      }
+      identities.add(identity);
+      planned.push({ key, identifierValue: catalogIdentifierValue(card.id, rawLanguage), cardId: card.id });
+      if (!printingValues.has(key)) {
+        printingValues.set(key, {
+          id: stableId("prn", [key]),
+          cardId: conceptId,
+          setId,
+          gameKey,
+          collectorNumber: card.collectorNumber.trim(),
+          collectorNumberNormalized,
+          languageCode: language,
+          variantKey,
+          rarity: card.rarity,
+          promo: variantKey === "promo",
+          canonicalPrintingKey: key,
+        });
+      }
+    }
+  }
+  if (planned.length === 0) return counts;
+  // Chunked to stay well under Postgres's 65,535 bind parameters per statement.
+  const printingRows = [...printingValues.values()];
+  for (let start = 0; start < printingRows.length; start += 1000) {
+    await db.insert(tcgPrinting).values(printingRows.slice(start, start + 1000)).onConflictDoNothing();
+  }
+  const printings = new Map(
+    (
+      await db
+        .select({ id: tcgPrinting.id, key: tcgPrinting.canonicalPrintingKey })
+        .from(tcgPrinting)
+        .where(inArray(tcgPrinting.canonicalPrintingKey, [...printingValues.keys()]))
+    ).map((row) => [row.key, row.id]),
+  );
+  const owners = new Map<string, string[]>();
+  const printingIds = [...new Set(printings.values())];
+  if (printingIds.length) {
+    for (const row of await db
+      .select({ printingId: tcgPrintingIdentifier.printingId, value: tcgPrintingIdentifier.normalizedValue })
+      .from(tcgPrintingIdentifier)
+      .where(
+        and(
+          inArray(tcgPrintingIdentifier.printingId, printingIds),
+          eq(tcgPrintingIdentifier.sourceNamespace, TCC_NAMESPACE),
+          eq(tcgPrintingIdentifier.identifierType, TCC_ID_TYPE),
+        ),
+      )) {
+      owners.set(row.printingId, [...(owners.get(row.printingId) ?? []), row.value]);
+    }
+  }
+  const identifierValues: (typeof tcgPrintingIdentifier.$inferInsert)[] = [];
+  const claimed = new Map<string, string>();
+  for (const item of planned) {
+    // Same set, number, language and variant as a printing of another card.
+    const printingId = printings.get(item.key);
+    if (!printingId) {
+      counts.collisions += 1;
+      continue;
+    }
+    // Another TCC card already maps to this exact printing: never merge two cards.
+    const otherOwner =
+      (owners.get(printingId) ?? []).some((value) => IMPORTED_ID.test(value) && !value.startsWith(`${item.cardId}:`)) ||
+      (claimed.has(printingId) && claimed.get(printingId) !== item.cardId);
+    if (otherOwner) {
+      counts.collisions += 1;
+      continue;
+    }
+    claimed.set(printingId, item.cardId);
+    const normalizedValue = item.identifierValue.normalize("NFKC").trim().toLowerCase();
+    identifierValues.push({
+      id: stableId("tid", [TCC_NAMESPACE, TCC_ID_TYPE, normalizedValue]),
+      printingId,
+      sourceNamespace: TCC_NAMESPACE,
+      identifierType: TCC_ID_TYPE,
+      identifierValue: item.identifierValue,
+      normalizedValue,
+    });
+  }
+  if (identifierValues.length) {
+    for (let start = 0; start < identifierValues.length; start += 1000) {
+      const chunk = identifierValues.slice(start, start + 1000);
+      const inserted = await db
+        .insert(tcgPrintingIdentifier)
+        .values(chunk)
+        .onConflictDoNothing()
+        .returning({ id: tcgPrintingIdentifier.id });
+      counts.printings += inserted.length;
+      counts.conflicts += chunk.length - inserted.length;
+    }
+  }
+  return counts;
+}
+
 async function importPage(
   db: Database,
   gameKey: string,
@@ -401,12 +587,28 @@ async function importPage(
         ).map((row) => row.value)
       : [],
   );
+  const pendingByCard = new Map<CatalogCard, string[]>();
   for (const card of cards) {
     const pending = card.languages.filter(
       (language) => !imported.has(catalogIdentifierValue(card.id, language).toLowerCase()),
     );
     report.alreadyImported += card.languages.length - pending.length;
-    if (pending.length === 0) continue;
+    if (pending.length > 0) pendingByCard.set(card, pending);
+  }
+  if (pendingByCard.size === 0) return;
+  try {
+    const result = await db.transaction((tx) =>
+      importPageInBulk(tx as unknown as Database, gameKey, [...pendingByCard.keys()], pendingByCard),
+    );
+    report.printings += result.printings;
+    report.sets += result.sets;
+    report.collisions += result.collisions;
+    report.conflicts += result.conflicts;
+    return;
+  } catch {
+    // A row the database refuses: import this page card by card so only that card is skipped.
+  }
+  for (const [card, pending] of pendingByCard) {
     try {
       // A savepoint per card: a row the database refuses skips that card only.
       const result = await db.transaction((tx) => importCard(tx as unknown as Database, gameKey, card, pending, caches));
