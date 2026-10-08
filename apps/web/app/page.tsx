@@ -3,7 +3,7 @@ import { shellLabel } from "@/lib/shell";
 export default function HomePage() {
   return (
     <>
-      <h1>Intelligence Platform</h1>
+      <h1>Sentiment</h1>
       <p>
         Standalone commercial decision intelligence SaaS. Sign up to create a
         tenant workspace.

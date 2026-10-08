@@ -2,7 +2,7 @@ export function commercialOpenApi() {
   return {
     openapi: "3.1.0",
     info: {
-      title: "Intelligence Platform Commercial API",
+      title: "Sentiment API",
       version: "v1",
       description: "Tenant-authenticated commercial intelligence API. Internal ingest and Stripe webhooks are not included.",
     },
