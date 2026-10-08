@@ -197,6 +197,13 @@
       "when": 27,
       "tag": "0028_tenant_topic",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 28,
+      "tag": "0029_market_asset",
+      "breakpoints": true
     }
   ]
 }

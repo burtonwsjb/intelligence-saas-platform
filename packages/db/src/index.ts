@@ -340,6 +340,7 @@ export {
   TopicInputError,
   addTenantTopic,
   getTenantTopic,
+  getTopicCalls,
   getTopicSentiment,
   listTenantTopics,
   removeTenantTopic,
@@ -348,6 +349,8 @@ export {
   topicTokens,
   type TenantTopicRow,
   type TopicBucket,
+  type TopicCall,
+  type TopicCalls,
   type TopicPost,
   type TopicSentiment,
   type TopicVoice,
@@ -355,6 +358,22 @@ export {
 } from "./topics/topics.js";
 export { DEFAULT_EVALUATION_DAYS, evaluateCreatorCallOutcome, earlyCallScore } from "./creator/outcomes.js";
 export { scoreDueCreatorCalls, type DueCallScoringReport } from "./creator/due.js";
+export {
+  ASSET_CALL_RESOLUTION,
+  extractAssetCallsFromContent,
+  findAssetForTopic,
+  listActiveAssets,
+  matchAssets,
+  type MarketAssetRow,
+} from "./creator/assets.js";
+export { ASSET_SLICE_GAME_KEY } from "./creator/authority.js";
+export {
+  ASSET_PRICE_MAX_REQUESTS,
+  ASSET_PRICE_SOURCE,
+  resolveAssetPriceMode,
+  syncAssetPrices,
+  type AssetPriceSyncReport,
+} from "./providers/asset-prices.js";
 export {
   getCreatorAuthorityProfile,
   latestTrustState,

@@ -1,5 +1,6 @@
 import { removeTopicAction, setTopicStatusAction } from "@/app/topic-actions";
 import { Badge, StatusBadge } from "@/components/Badge";
+import { CallOutcomeBadge, callDirectionText, callHorizonText } from "@/components/CallOutcome";
 import { EmptyState, LockedFeature } from "@/components/EmptyState";
 import { SentimentDonut } from "@/components/SentimentSummary";
 import { TopicTrendChart } from "@/components/TopicTrendChart";
@@ -10,6 +11,7 @@ import {
   SENTIMENT_BASELINE_WEIGHT,
   TOPIC_WINDOWS,
   getTenantTopic,
+  getTopicCalls,
   getTopicSentiment,
   withOrganizationContext,
   type TopicWindow,
@@ -26,6 +28,20 @@ const SENTIMENT_TEXT: Record<string, { label: string; tone?: "good" | "warn" | "
   mixed: { label: "Mixed" },
   unknown: { label: "No clear sentiment" },
 };
+
+function formatPrice(value: string, currency: string): string {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return value;
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency,
+      maximumFractionDigits: n >= 100 ? 0 : 2,
+    }).format(n);
+  } catch {
+    return `${n.toLocaleString("en-US")} ${currency}`;
+  }
+}
 
 const PLATFORM_TEXT: Record<string, string> = { youtube: "YouTube", reddit: "Reddit" };
 
@@ -50,6 +66,7 @@ export default async function TopicPage({
   if (!topic) notFound();
   const hiddenCreatorIds = await loadHiddenCreatorIds(organizationId, userId);
   const result = await getTopicSentiment(db, topic.query, window, { hiddenCreatorIds });
+  const calls = result.asset ? await getTopicCalls(db, result.asset.id, { hiddenCreatorIds }) : null;
   const selfHref = `/app/topics/${encodeURIComponent(topic.id)}`;
 
   return (
@@ -62,8 +79,10 @@ export default async function TopicPage({
           <p className="eyebrow">Topic</p>
           <h1>{topic.query}</h1>
           <p className="muted">
-            Posts that mention {result.tokens.map((token) => `“${token}”`).join(" and ")} on the sources the platform
-            monitors. {topic.lastSearchedAt ? `Last searched ${formatAge(topic.lastSearchedAt)}.` : "Not searched yet; the next collection run picks it up."}
+            {result.asset
+              ? `Posts that mention ${[result.asset.displayName, ...result.asset.aliases.filter((alias) => alias.length <= 4).map((alias) => alias.toUpperCase())].join(" or ")}`
+              : `Posts that mention ${result.tokens.map((token) => `“${token}”`).join(" and ")}`}{" "}
+            on the sources the platform monitors. {topic.lastSearchedAt ? `Last searched ${formatAge(topic.lastSearchedAt)}.` : "Not searched yet; the next collection run picks it up."}
           </p>
         </div>
         <div className="badge-row" style={{ alignItems: "center", gap: "var(--space-4)" }}>
@@ -106,6 +125,61 @@ export default async function TopicPage({
         <h2>Over time</h2>
         <TopicTrendChart buckets={result.buckets} bucketDays={result.bucketDays} />
       </section>
+
+      {result.asset && calls ? (
+        <section className="panel" aria-labelledby="calls-heading">
+          <h2 id="calls-heading">Calls about {result.asset.displayName}</h2>
+          <p className="muted" style={{ marginTop: 0 }}>
+            {calls.total === 0
+              ? "No calls yet. A call is a post that says the price will go up or down."
+              : `${calls.total} ${calls.total === 1 ? "call" : "calls"} · ${calls.evaluated} judged so far` +
+                (calls.evaluated > 0
+                  ? ` · ${Math.round((calls.correct / calls.evaluated) * 100)}% came true`
+                  : "") +
+                (calls.pending > 0 ? ` · ${calls.pending} waiting for the market` : "")}
+          </p>
+          <p className="subtle">
+            {calls.latestPrice
+              ? `Latest price ${formatPrice(calls.latestPrice.price, calls.latestPrice.currency)}, ${formatAge(calls.latestPrice.observedAt)}. `
+              : "No prices collected yet, so calls wait until the price feed is turned on. "}
+            Each call is judged on the price at the time of the post against the price when its deadline passes. Those
+            results set how much each creator counts here.
+          </p>
+          {calls.calls.length > 0 ? (
+            <ul className="item-list">
+              {calls.calls.map((call) => (
+                <li key={call.callId}>
+                  <span className="item-main">
+                    <strong>
+                      <Link href={`/app/creators/${encodeURIComponent(call.creatorId)}`}>
+                        {call.creatorName ?? "Unnamed creator"}
+                      </Link>
+                    </strong>
+                    <span className="subtle">
+                      {callDirectionText(call.direction)} · {formatDate(call.publishedAt)} · {callHorizonText(call.horizonCode)}
+                      {call.priceAtCall ? ` · at ${formatPrice(call.priceAtCall, call.priceCurrency ?? "USD")}` : ""}
+                      {call.returnPct != null ? ` · price moved ${(call.returnPct * 100).toFixed(1)}%` : ""}
+                      {call.contentUrl ? (
+                        <>
+                          {" · "}
+                          <a href={call.contentUrl} rel="noreferrer noopener" target="_blank">
+                            source
+                          </a>
+                        </>
+                      ) : null}
+                    </span>
+                  </span>
+                  <CallOutcomeBadge
+                    identified
+                    outcomeStatus={call.outcomeStatus}
+                    directionalCorrect={call.directionalCorrect}
+                  />
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </section>
+      ) : null}
 
       <section className="panel" aria-labelledby="voices-heading">
         <h2 id="voices-heading">Who is talking</h2>
@@ -171,6 +245,7 @@ export default async function TopicPage({
       <p className="notice info">
         Sentiment here is read from post titles and descriptions with rule-based buy, sell, up and down language. It does
         not understand sarcasm and works best in English. Coverage is limited to YouTube and Reddit for now.
+        {result.asset ? "" : " Calls are scored for cards and for tracked assets such as Bitcoin, Ethereum and Solana."}
       </p>
     </>
   );

@@ -6,6 +6,8 @@ import { tenantTopic } from "../schema/topic.js";
 import { discoveryTopic } from "../schema/discovery.js";
 import { normalizeDiscoveryQuery, DiscoveryConfigurationError, stableDiscoveryId } from "../providers/discovery.js";
 import { analyzeSourceSentiment } from "../providers/sentiment.js";
+import { findAssetForTopic } from "../creator/assets.js";
+import { ASSET_SLICE_GAME_KEY } from "../creator/authority.js";
 import {
   SENTIMENT_BASELINE_WEIGHT,
   SENTIMENT_KEYS,
@@ -257,6 +259,8 @@ export type TopicSentiment = {
   voices: TopicVoice[];
   recent: TopicPost[];
   tokens: string[];
+  /** Set when the topic is a tracked asset; posts then match any of its names. */
+  asset: { id: string; assetKey: string; displayName: string; aliases: string[] } | null;
   truncated: boolean;
 };
 
@@ -275,6 +279,10 @@ export async function getTopicSentiment(
   const now = options.now ?? new Date();
   const from = new Date(now.getTime() - TOPIC_WINDOW_DAYS[window] * 86_400_000);
   const tokens = topicTokens(query);
+  const assetRow = await findAssetForTopic(db, query);
+  const asset = assetRow
+    ? { id: assetRow.id, assetKey: assetRow.assetKey, displayName: assetRow.displayName, aliases: assetRow.aliases }
+    : null;
   const hidden = options.hiddenCreatorIds ?? [];
   const bucketDays = window === "7d" ? 1 : window === "30d" ? 3 : 7;
   const empty: TopicSentiment = {
@@ -284,13 +292,24 @@ export async function getTopicSentiment(
     voices: [],
     recent: [],
     tokens,
+    asset,
     truncated: false,
   };
-  if (tokens.length === 0) return empty;
-  const matches = sql.join(
-    tokens.map((token) => sql`(sc.title ILIKE ${likePattern(token)} OR sc.summary ILIKE ${likePattern(token)})`),
-    sql` AND `,
-  );
+  if (tokens.length === 0 && !asset) return empty;
+  // An asset topic matches any of the asset's names as a whole word ("BTC"
+  // must not match inside another word); other topics need every word.
+  const matches = asset
+    ? sql`(${sql.join(
+        [...new Set([asset.displayName, ...asset.aliases].map((name) => name.toLowerCase()))].map((name) => {
+          const pattern = `\\m${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\M`;
+          return sql`(sc.title ~* ${pattern} OR sc.summary ~* ${pattern})`;
+        }),
+        sql` OR `,
+      )})`
+    : sql.join(
+        tokens.map((token) => sql`(sc.title ILIKE ${likePattern(token)} OR sc.summary ILIKE ${likePattern(token)})`),
+        sql` AND `,
+      );
   const result = rowsOf(
     await db.execute(sql`
       SELECT sc.id, sc.source_type, sc.account_id, sc.published_at, sc.title, sc.summary, sc.canonical_url,
@@ -301,7 +320,11 @@ export async function getTopicSentiment(
       LEFT JOIN LATERAL (
         SELECT s.authority_weight FROM creator_authority_slice s
         WHERE s.creator_id = csa.creator_id
-        ORDER BY (s.language_code IS NULL AND s.price_tier = 'all') DESC, s.created_at DESC, s.id DESC
+        -- An asset topic prefers the creator's record on that asset, then
+        -- their overall record; other topics use the overall record.
+        ORDER BY ${asset ? sql`(s.game_key = ${ASSET_SLICE_GAME_KEY} AND s.set_key = ${asset.assetKey}) DESC,` : sql``}
+          (s.game_key IS NULL AND s.language_code IS NULL AND s.price_tier = 'all') DESC,
+          s.created_at DESC, s.id DESC
         LIMIT 1
       ) authority ON TRUE
       LEFT JOIN LATERAL (
@@ -397,6 +420,116 @@ export async function getTopicSentiment(
     voices,
     recent: posts.slice(0, 10).map(({ accountId: _accountId, rated: _rated, ...post }) => post),
     tokens,
+    asset,
     truncated,
+  };
+}
+
+export type TopicCall = {
+  callId: string;
+  creatorId: string;
+  creatorName: string | null;
+  publishedAt: Date;
+  direction: string;
+  horizonCode: string;
+  priceAtCall: string | null;
+  priceCurrency: string | null;
+  outcomeStatus: string | null;
+  directionalCorrect: string | null;
+  returnPct: number | null;
+  contentUrl: string | null;
+};
+
+export type TopicCalls = {
+  total: number;
+  evaluated: number;
+  correct: number;
+  pending: number;
+  calls: TopicCall[];
+  latestPrice: { price: string; currency: string; observedAt: Date; sourceKey: string } | null;
+};
+
+export const TOPIC_CALL_LIMIT = 20;
+
+/**
+ * Calls creators made about an asset, newest first, with how each turned out,
+ * leaving out excluded creators and the ones this workspace hid.
+ */
+export async function getTopicCalls(
+  db: Database,
+  assetId: string,
+  options: { hiddenCreatorIds?: string[] } = {},
+): Promise<TopicCalls> {
+  const hidden = options.hiddenCreatorIds ?? [];
+  const filters = sql`cc.asset_id = ${assetId}
+      AND NOT EXISTS (SELECT 1 FROM creator_call r WHERE r.revises_call_id = cc.id)
+      AND (trust.trust_state IS NULL OR trust.trust_state <> 'excluded')
+      ${hidden.length ? sql`AND cc.creator_id NOT IN (${sql.join(hidden.map((id) => sql`${id}`), sql`, `)})` : sql``}`;
+  const trustJoin = sql`LEFT JOIN LATERAL (
+        SELECT te.trust_state FROM creator_trust_event te
+        WHERE te.creator_id = cc.creator_id
+        ORDER BY te.created_at DESC LIMIT 1
+      ) trust ON TRUE`;
+  const [counts] = rowsOf(
+    await db.execute(sql`
+      SELECT count(*)::int AS total,
+        count(*) FILTER (WHERE o.evaluation_status = 'evaluated')::int AS evaluated,
+        count(*) FILTER (WHERE o.evaluation_status = 'evaluated' AND o.directional_correct = 'correct')::int AS correct,
+        count(*) FILTER (WHERE o.evaluation_status = 'pending' OR o.id IS NULL)::int AS pending
+      FROM creator_call cc
+      LEFT JOIN creator_call_outcome o ON o.call_id = cc.id
+      ${trustJoin}
+      WHERE ${filters}
+    `),
+  );
+  const rows = rowsOf(
+    await db.execute(sql`
+      SELECT cc.id, cc.creator_id, cr.display_name, cc.published_at, cc.direction, cc.horizon_code,
+        coalesce(cc.price_at_call, o.starting_price) AS price_at_call, cc.price_currency,
+        o.evaluation_status, o.directional_correct, o.return_pct, sc.canonical_url
+      FROM creator_call cc
+      JOIN creator cr ON cr.id = cc.creator_id
+      LEFT JOIN creator_call_outcome o ON o.call_id = cc.id
+      LEFT JOIN source_content sc ON sc.id = cc.content_id
+      ${trustJoin}
+      WHERE ${filters}
+      ORDER BY cc.published_at DESC, cc.id DESC
+      LIMIT ${TOPIC_CALL_LIMIT}
+    `),
+  );
+  const [price] = rowsOf(
+    await db.execute(sql`
+      SELECT price, currency, observed_at, source_key FROM market_asset_price
+      WHERE asset_id = ${assetId}
+      ORDER BY observed_at DESC LIMIT 1
+    `),
+  );
+  return {
+    total: Number(counts?.total ?? 0),
+    evaluated: Number(counts?.evaluated ?? 0),
+    correct: Number(counts?.correct ?? 0),
+    pending: Number(counts?.pending ?? 0),
+    calls: rows.map((row) => ({
+      callId: String(row.id),
+      creatorId: String(row.creator_id),
+      creatorName: row.display_name == null ? null : String(row.display_name),
+      publishedAt: toDate(row.published_at),
+      direction: String(row.direction),
+      horizonCode: String(row.horizon_code),
+      priceAtCall: row.price_at_call == null ? null : String(row.price_at_call),
+      priceCurrency: row.price_currency == null ? null : String(row.price_currency),
+      outcomeStatus: row.evaluation_status == null ? null : String(row.evaluation_status),
+      directionalCorrect: row.directional_correct == null ? null : String(row.directional_correct),
+      returnPct: row.return_pct == null || !Number.isFinite(Number(row.return_pct)) ? null : Number(row.return_pct),
+      contentUrl: row.canonical_url == null ? null : String(row.canonical_url),
+    })),
+    latestPrice: price
+      ? {
+          price: String(price.price),
+          currency: String(price.currency),
+          observedAt: toDate(price.observed_at),
+          sourceKey: String(price.source_key),
+        }
+      : null,
   };
 }

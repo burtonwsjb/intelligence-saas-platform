@@ -569,6 +569,13 @@ export async function bootstrapRoles(
           REVOKE EXECUTE ON FUNCTION app.list_tracked_topic_queries(integer) FROM app_user;
           GRANT EXECUTE ON FUNCTION app.list_tracked_topic_queries(integer) TO app_worker;
         END IF;
+        IF to_regclass('public.market_asset') IS NOT NULL THEN
+          GRANT SELECT ON market_asset, market_asset_price TO app_user, app_worker;
+          GRANT INSERT ON market_asset_price TO app_worker;
+          REVOKE INSERT, UPDATE, DELETE ON market_asset FROM app_user, app_worker;
+          REVOKE INSERT, UPDATE, DELETE ON market_asset_price FROM app_user;
+          REVOKE UPDATE, DELETE ON market_asset_price FROM app_worker;
+        END IF;
         IF to_regclass('public._isp_migration_history') IS NOT NULL THEN
           REVOKE ALL ON TABLE public._isp_migration_history FROM app_user, app_worker, app_admin;
         END IF;

@@ -21,9 +21,13 @@ import {
   wilsonInterval,
 } from "./stats.js";
 import { earlyCallScore, printingContext } from "./outcomes.js";
+import { ASSET_CALL_RESOLUTION } from "./assets.js";
+import { marketAsset } from "../schema/asset.js";
 import { ALPHA_METHOD_VERSION } from "../analytics/catalog.js";
 
 export const AUTHORITY_VERSION = "authority.v1";
+/** game_key on authority slices built from non-card asset calls. */
+export const ASSET_SLICE_GAME_KEY = "asset";
 export const BENCHMARK_REQUIREMENT = "phase_13_language_era_set_tier_index";
 
 export type SliceKey = {
@@ -70,8 +74,15 @@ export async function recomputeCreatorAuthority(db: Database, creatorId: string,
   const usable = rows.filter(
     (row) =>
       row.outcome.evaluationStatus === "evaluated" &&
-      row.call.printingId &&
-      (row.call.resolutionStatus === "exact" || row.call.resolutionStatus === "high_confidence"),
+      ((row.call.printingId &&
+        (row.call.resolutionStatus === "exact" || row.call.resolutionStatus === "high_confidence")) ||
+        (row.call.assetId && row.call.resolutionStatus === ASSET_CALL_RESOLUTION)),
+  );
+  const assetKeys = new Map(
+    (await db.select({ id: marketAsset.id, assetKey: marketAsset.assetKey }).from(marketAsset)).map((row) => [
+      row.id,
+      row.assetKey,
+    ]),
   );
   const alphaRows = usable.length
     ? await db.select().from(creatorCallAlpha).where(inArray(creatorCallAlpha.callId, usable.map((row) => row.call.id)))
@@ -91,6 +102,22 @@ export async function recomputeCreatorAuthority(db: Database, creatorId: string,
   });
   buckets.set(allKey, usable);
   for (const row of usable) {
+    if (row.call.assetId) {
+      // Asset calls get their own slices (game_key "asset"), so a creator's
+      // crypto record never stands in for their card record. They still count
+      // in the creator's overall record above.
+      const assetAll = keyId({ gameKey: ASSET_SLICE_GAME_KEY, languageCode: null, setKey: null, priceTier: "all", horizonCode: null });
+      buckets.set(assetAll, [...(buckets.get(assetAll) ?? []), row]);
+      const perAsset = keyId({
+        gameKey: ASSET_SLICE_GAME_KEY,
+        languageCode: null,
+        setKey: assetKeys.get(row.call.assetId) ?? row.call.assetId,
+        priceTier: "all",
+        horizonCode: null,
+      });
+      buckets.set(perAsset, [...(buckets.get(perAsset) ?? []), row]);
+      continue;
+    }
     const ctx = await printingContext(db, row.call.printingId!);
     const slice: SliceKey = {
       gameKey: ctx?.gameKey ?? null,

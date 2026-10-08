@@ -1,4 +1,5 @@
 import { Badge, StatusBadge } from "@/components/Badge";
+import { CallOutcomeBadge, callDirectionText, callHorizonText } from "@/components/CallOutcome";
 import { CompactStat } from "@/components/CompactStat";
 import { PreferenceButtons } from "@/components/CreatorPreferenceButtons";
 import { EmptyState, LockedFeature } from "@/components/EmptyState";
@@ -7,7 +8,6 @@ import { ANALYTICS_LOCKED_BODY, loadAppAccess } from "@/lib/app-access";
 import { getDb } from "@/lib/auth";
 import { formatAge, formatDate, languageText, monogram } from "@/lib/display";
 import {
-  DEFAULT_EVALUATION_DAYS,
   SENTIMENT_BASELINE_WEIGHT,
   getCreatorAuthorityProfile,
   getCreatorTrackRecord,
@@ -15,7 +15,6 @@ import {
   listCreatorCallHistory,
   listTenantCreatorList,
   withOrganizationContext,
-  type CreatorCallHistoryItem,
 } from "@isp/db";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -31,29 +30,11 @@ const TRUST_TEXT: Record<string, { label: string; tone: "good" | "warn" | "info"
   excluded: { label: "Excluded by the operator", tone: "warn" },
 };
 
-const DIRECTION_TEXT: Record<string, string> = {
-  bullish: "Said it would go up",
-  bearish: "Said it would go down",
-  neutral: "Neutral",
-  hold: "Hold",
-};
-
 function compact(value: number | string | null | undefined): string {
   if (value == null) return "—";
   const n = Number(value);
   if (!Number.isFinite(n)) return "—";
   return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(n);
-}
-
-function outcomeBadge(call: CreatorCallHistoryItem) {
-  if (!call.printingId) return <Badge>Card not identified</Badge>;
-  if (call.outcomeStatus === "evaluated") {
-    if (call.directionalCorrect === "correct") return <StatusBadge tone="good" label="Came true" />;
-    if (call.directionalCorrect === "incorrect") return <StatusBadge tone="warn" label="Did not come true" />;
-    return <Badge>Evaluated, no clear direction</Badge>;
-  }
-  if (call.outcomeStatus && call.outcomeStatus !== "pending") return <Badge>{call.outcomeStatus.replaceAll("_", " ")}</Badge>;
-  return <Badge tone="info">Waiting for the market</Badge>;
 }
 
 export default async function CreatorDetailPage({
@@ -157,7 +138,7 @@ export default async function CreatorDetailPage({
       <section className="panel" aria-labelledby="calls-heading">
         <h2 id="calls-heading">Calls</h2>
         {history.items.length === 0 ? (
-          <EmptyState title="No calls yet" body="Calls appear when this creator says a card will go up or down." />
+          <EmptyState title="No calls yet" body="Calls appear when this creator says a card or an asset will go up or down." />
         ) : (
           <ul className="item-list">
             {history.items.map((call) => (
@@ -169,16 +150,14 @@ export default async function CreatorDetailPage({
                         {call.cardName ?? "Card"}
                       </Link>
                     ) : (
-                      "Card not identified"
+                      (call.assetName ?? "Card not identified")
                     )}
                   </strong>
                   <span className="subtle">
-                    {DIRECTION_TEXT[call.direction] ?? call.direction.replaceAll("_", " ")} · {formatDate(call.publishedAt)}
+                    {callDirectionText(call.direction)} · {formatDate(call.publishedAt)}
                     {call.setName ? ` · ${call.setName}` : ""}
                     {call.languageCode ? ` · ${languageText(call.languageCode)}` : ""}
-                    {call.horizonCode !== "unspecified"
-                      ? ` · within ${call.horizonCode.replaceAll("_", " ")}`
-                      : ` · no deadline given, judged after ${DEFAULT_EVALUATION_DAYS} days`}
+                    {` · ${callHorizonText(call.horizonCode)}`}
                     {call.returnPct != null ? ` · price moved ${(call.returnPct * 100).toFixed(1)}%` : ""}
                     {call.contentUrl ? (
                       <>
@@ -190,7 +169,11 @@ export default async function CreatorDetailPage({
                     ) : null}
                   </span>
                 </span>
-                {outcomeBadge(call)}
+                <CallOutcomeBadge
+                  identified={call.printingId != null || call.assetName != null}
+                  outcomeStatus={call.outcomeStatus}
+                  directionalCorrect={call.directionalCorrect}
+                />
               </li>
             ))}
           </ul>

@@ -2,6 +2,7 @@ import { index, jsonb, numeric, pgTable, text, timestamp, uniqueIndex } from "dr
 import { sourceAccount, sourceContent, sourceContentSegment, sourceMention } from "./source.js";
 import { tcgCardConcept, tcgPrinting } from "./tcg.js";
 import { entityResolutionAttempt } from "./resolution.js";
+import { marketAsset } from "./asset.js";
 
 export const creator = pgTable("creator", {
   id: text("id").primaryKey(),
@@ -50,6 +51,8 @@ export const creatorCall = pgTable(
     publishedAt: timestamp("published_at", { withTimezone: true }).notNull(),
     printingId: text("printing_id").references(() => tcgPrinting.id),
     conceptId: text("concept_id").references(() => tcgCardConcept.id),
+    /** Set instead of printingId when the call is about a non-card asset. */
+    assetId: text("asset_id").references(() => marketAsset.id),
     resolutionAttemptId: text("resolution_attempt_id").references(() => entityResolutionAttempt.id),
     resolutionStatus: text("resolution_status").notNull(),
     resolutionConfidence: numeric("resolution_confidence", { precision: 5, scale: 4, mode: "string" }),

@@ -3,6 +3,7 @@ import type { Database } from "../client.js";
 import { creatorCall, creatorCallOutcome } from "../schema/creator.js";
 import { tcgMarketSnapshot } from "../schema/tcg-market.js";
 import { tcgPrinting, tcgSet } from "../schema/tcg.js";
+import { assetPriceAt, assetPricesBetween } from "./assets.js";
 
 export const OUTCOME_VERSION = "outcome.v1";
 export const EARLY_CALL_VERSION = "early_call.v1";
@@ -14,6 +15,11 @@ const HORIZON_DAYS: Record<string, number> = {
   "180d": 180,
   "365d": 365,
 };
+
+/** An asset call waits this long past its horizon for a closing price before it is marked insufficient. */
+export const ASSET_CLOSE_GRACE_DAYS = 7;
+/** The closing price must be observed within this many days before the horizon end. */
+export const ASSET_CLOSE_MAX_AGE_DAYS = 3;
 
 /**
  * Calls that name no horizon ("this set will go up") are judged over this many
@@ -62,6 +68,9 @@ export async function evaluateCreatorCallOutcome(
   }
   const defaultHorizon = call.horizonCode === "unspecified";
   const days = defaultHorizon ? DEFAULT_EVALUATION_DAYS : horizonDays(call.horizonCode, call.horizonCustomDays);
+  if (call.assetId) {
+    return evaluateAssetCall(db, { call, outcomeId: outcome.id, days, defaultHorizon, asOf });
+  }
   if (!call.printingId || call.priceAtCall == null || days == null) {
     await db
       .update(creatorCallOutcome)
@@ -116,29 +125,14 @@ export async function evaluateCreatorCallOutcome(
       .where(eq(creatorCallOutcome.id, outcome.id));
     return getOutcome(db, callId);
   }
-  const end = Number(endRow.price);
-  const ret = (end - start) / start;
-  const path = usable.map((row) => (Number(row.price) - start) / start);
-  const mfe = path.length ? Math.max(...path, 0) : 0;
-  const mae = path.length ? Math.min(...path, 0) : 0;
-  let directional: string = "flat";
-  if (call.direction === "bullish") {
-    directional = ret > 0.005 ? "correct" : ret < -0.005 ? "incorrect" : "flat";
-  } else if (call.direction === "bearish") {
-    directional = ret < -0.005 ? "correct" : ret > 0.005 ? "incorrect" : "flat";
-  } else {
-    directional = "not_applicable";
-  }
-  let targetHit: string | null = null;
-  if (call.targetPrice != null) {
-    const target = Number(call.targetPrice);
-    targetHit =
-      call.direction === "bearish" ? (end <= target ? "hit" : "miss") : end >= target ? "hit" : "miss";
-  } else if (call.targetPercent != null) {
-    const target = Number(call.targetPercent) / 100;
-    targetHit =
-      call.direction === "bearish" ? (ret <= -target ? "hit" : "miss") : ret >= target ? "hit" : "miss";
-  }
+  const { ret, mfe, mae, directional, targetHit } = grade({
+    direction: call.direction,
+    start,
+    end: Number(endRow.price),
+    path: usable.map((row) => Number(row.price)),
+    targetPrice: call.targetPrice,
+    targetPercent: call.targetPercent,
+  });
   await db
     .update(creatorCallOutcome)
     .set({
@@ -156,6 +150,108 @@ export async function evaluateCreatorCallOutcome(
     })
     .where(eq(creatorCallOutcome.id, outcome.id));
   return getOutcome(db, callId);
+}
+
+function grade(input: {
+  direction: string;
+  start: number;
+  end: number;
+  path: number[];
+  targetPrice: string | null;
+  targetPercent: string | null;
+}) {
+  const ret = (input.end - input.start) / input.start;
+  const path = input.path.map((price) => (price - input.start) / input.start);
+  const mfe = path.length ? Math.max(...path, 0) : 0;
+  const mae = path.length ? Math.min(...path, 0) : 0;
+  let directional = "not_applicable";
+  if (input.direction === "bullish") {
+    directional = ret > 0.005 ? "correct" : ret < -0.005 ? "incorrect" : "flat";
+  } else if (input.direction === "bearish") {
+    directional = ret < -0.005 ? "correct" : ret > 0.005 ? "incorrect" : "flat";
+  }
+  let targetHit: string | null = null;
+  if (input.targetPrice != null) {
+    const target = Number(input.targetPrice);
+    targetHit = input.direction === "bearish" ? (input.end <= target ? "hit" : "miss") : input.end >= target ? "hit" : "miss";
+  } else if (input.targetPercent != null) {
+    const target = Number(input.targetPercent) / 100;
+    targetHit = input.direction === "bearish" ? (ret <= -target ? "hit" : "miss") : ret >= target ? "hit" : "miss";
+  }
+  return { ret, mfe, mae, directional, targetHit };
+}
+
+/**
+ * Asset calls are graded on the asset's price series. The starting price is
+ * the call's price at call, or failing that the newest price no later than the
+ * post (from a backfill), so a call made before the feed ran can still be
+ * scored. Only prices inside the call window are read.
+ */
+async function evaluateAssetCall(
+  db: Database,
+  input: {
+    call: typeof creatorCall.$inferSelect;
+    outcomeId: string;
+    days: number | null;
+    defaultHorizon: boolean;
+    asOf: Date;
+  },
+) {
+  const { call, asOf } = input;
+  const finish = async (values: Partial<typeof creatorCallOutcome.$inferInsert>) => {
+    await db
+      .update(creatorCallOutcome)
+      .set({ methodVersion: OUTCOME_VERSION, ...values })
+      .where(eq(creatorCallOutcome.id, input.outcomeId));
+    return getOutcome(db, call.id);
+  };
+  if (input.days == null) {
+    return finish({ evaluationStatus: "insufficient_data", dataQuality: "missing_horizon", evaluatedAt: asOf });
+  }
+  const endAt = new Date(call.publishedAt.getTime() + input.days * 86_400_000);
+  if (asOf.getTime() < endAt.getTime()) {
+    return finish({ evaluationStatus: "pending", dataQuality: "horizon_not_elapsed" });
+  }
+  const startRow = call.priceAtCall == null ? await assetPriceAt(db, { assetId: call.assetId!, at: call.publishedAt }) : null;
+  const startPrice = call.priceAtCall ?? startRow?.price ?? null;
+  const window = await assetPricesBetween(db, { assetId: call.assetId!, from: call.publishedAt, to: endAt });
+  const endRow = window.at(-1);
+  const closeFresh = endRow && endRow.observedAt.getTime() >= endAt.getTime() - ASSET_CLOSE_MAX_AGE_DAYS * 86_400_000;
+  if (startPrice == null || !closeFresh) {
+    const waiting = asOf.getTime() < endAt.getTime() + ASSET_CLOSE_GRACE_DAYS * 86_400_000;
+    return finish(
+      waiting
+        ? { evaluationStatus: "pending", dataQuality: "awaiting_market_data" }
+        : {
+            evaluationStatus: "insufficient_data",
+            startingPrice: startPrice,
+            dataQuality: startPrice == null ? "missing_price_at_call" : "missing_market_data",
+            evaluatedAt: asOf,
+          },
+    );
+  }
+  const start = Number(startPrice);
+  const end = Number(endRow!.price);
+  const graded = grade({
+    direction: call.direction,
+    start,
+    end,
+    path: window.map((row) => Number(row.price)),
+    targetPrice: call.targetPrice,
+    targetPercent: call.targetPercent,
+  });
+  return finish({
+    evaluationStatus: "evaluated",
+    startingPrice: startPrice,
+    endingPrice: endRow!.price,
+    returnPct: graded.ret.toFixed(6),
+    directionalCorrect: graded.directional,
+    targetHit: graded.targetHit,
+    maxFavorableExcursion: graded.mfe.toFixed(6),
+    maxAdverseExcursion: graded.mae.toFixed(6),
+    dataQuality: input.defaultHorizon ? "complete_default_horizon" : "complete",
+    evaluatedAt: asOf,
+  });
 }
 
 export async function getOutcome(db: Database, callId: string) {

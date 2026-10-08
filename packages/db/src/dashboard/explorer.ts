@@ -767,14 +767,14 @@ export async function listSentimentEvidence(
     JOIN source_content sc ON sc.id = sm.content_id
     JOIN tcg_printing p ON p.id = l.chosen_printing_id
     -- Same slice choice as scoring/gather.ts: newest slice in the printing's
-    -- language, else the newest all-language slice, else the newest slice.
+    -- language, else the newest overall slice, else the newest slice.
     LEFT JOIN LATERAL (
       SELECT s.creator_id, s.authority_weight
       FROM creator_source_account csa
       JOIN creator_authority_slice s ON s.creator_id = csa.creator_id
       WHERE csa.source_account_id = sc.account_id
       ORDER BY (s.language_code = p.language_code) DESC NULLS LAST,
-        (s.language_code IS NULL AND s.price_tier = 'all') DESC,
+        (s.language_code IS NULL AND s.price_tier = 'all' AND s.game_key IS NULL) DESC,
         s.created_at DESC, s.id DESC
       LIMIT 1
     ) authority ON TRUE
@@ -980,6 +980,8 @@ export type CreatorCallHistoryItem = {
   horizonCode: string;
   printingId: string | null;
   cardName: string | null;
+  /** Set instead of the card fields when the call is about an asset such as Bitcoin. */
+  assetName: string | null;
   setName: string | null;
   languageCode: string | null;
   priceAtCall: string | null;
@@ -1010,8 +1012,9 @@ export async function getCreatorTrackRecord(db: Database, creatorId: string): Pr
         count(*) FILTER (WHERE o.evaluation_status = 'evaluated')::int AS evaluated,
         count(*) FILTER (WHERE o.evaluation_status = 'evaluated' AND o.directional_correct = 'correct')::int AS correct,
         count(*) FILTER (WHERE o.evaluation_status = 'evaluated' AND o.directional_correct = 'incorrect')::int AS incorrect,
-        count(*) FILTER (WHERE cc.printing_id IS NOT NULL AND (o.id IS NULL OR o.evaluation_status = 'pending'))::int AS pending,
-        count(*) FILTER (WHERE cc.printing_id IS NULL)::int AS unmatched
+        count(*) FILTER (WHERE (cc.printing_id IS NOT NULL OR cc.asset_id IS NOT NULL)
+          AND (o.id IS NULL OR o.evaluation_status = 'pending'))::int AS pending,
+        count(*) FILTER (WHERE cc.printing_id IS NULL AND cc.asset_id IS NULL)::int AS unmatched
       FROM creator_call cc
       LEFT JOIN creator_call_outcome o ON o.call_id = cc.id
       WHERE cc.creator_id = ${creatorId}
@@ -1028,7 +1031,7 @@ export async function getCreatorTrackRecord(db: Database, creatorId: string): Pr
   };
 }
 
-/** A creator's calls, newest first, with the card they named and how each call turned out. */
+/** A creator's calls, newest first, with the card or asset they named and how each call turned out. */
 export async function listCreatorCallHistory(
   db: Database,
   creatorId: string,
@@ -1038,9 +1041,10 @@ export async function listCreatorCallHistory(
   const rows = asRows(
     await db.execute(sql`
       SELECT cc.id, cc.published_at, cc.direction, cc.horizon_code, cc.printing_id, cc.price_at_call, cc.price_currency,
-        c.canonical_name AS card_name, st.name AS set_name, p.language_code,
+        c.canonical_name AS card_name, st.name AS set_name, p.language_code, ma.display_name AS asset_name,
         o.evaluation_status, o.directional_correct, o.return_pct, sc.canonical_url
       FROM creator_call cc
+      LEFT JOIN market_asset ma ON ma.id = cc.asset_id
       LEFT JOIN tcg_printing p ON p.id = cc.printing_id
       LEFT JOIN tcg_card_concept c ON c.id = p.card_id
       LEFT JOIN tcg_set st ON st.id = p.set_id
@@ -1061,6 +1065,7 @@ export async function listCreatorCallHistory(
       horizonCode: String(row.horizon_code),
       printingId: row.printing_id == null ? null : String(row.printing_id),
       cardName: row.card_name == null ? null : String(row.card_name),
+      assetName: row.asset_name == null ? null : String(row.asset_name),
       setName: row.set_name == null ? null : String(row.set_name),
       languageCode: row.language_code == null ? null : String(row.language_code),
       priceAtCall: row.price_at_call == null ? null : String(row.price_at_call),

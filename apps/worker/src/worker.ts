@@ -10,6 +10,7 @@ import {
   processQueuedEmailDeliveries,
   requireWorkerDatabaseUrl,
   scoreDueCreatorCalls,
+  syncAssetPrices,
   upsertWorkerHeartbeat,
   withPlatformContext,
   type Database,
@@ -97,6 +98,30 @@ export async function runProviderSchedule(
     await withPlatformContext(db, (scoped) => enqueueDueProviderSyncs(scoped, env));
   } catch (error) {
     logLoopFailure("worker.scheduler_failed", "provider_scheduler", error);
+  }
+}
+
+/**
+ * Collects asset prices when MARKET_ASSET_PRICE_MODE=live (off by default),
+ * at most ASSET_PRICE_MAX_REQUESTS requests a run. Runs outside a transaction
+ * so a slow request never holds one open.
+ */
+export async function runAssetPriceSync(db: Database, env: NodeJS.ProcessEnv = process.env) {
+  try {
+    const report = await syncAssetPrices(db, { env });
+    if (report.status !== "skipped") {
+      logQueueEvent(report.status === "failed" ? "warn" : "info", "worker.asset_prices", {
+        status: report.status,
+        reason: report.reason,
+        requests: report.requests,
+        inserted: report.inserted,
+        backfilled: report.backfilled.join(","),
+      });
+    }
+    return report;
+  } catch (error) {
+    logLoopFailure("worker.asset_prices_failed", "asset_prices", error);
+    return null;
   }
 }
 
@@ -354,7 +379,7 @@ export function startWorker(options?: {
     if (status === "shutting_down" || status === "stopped") {
       return;
     }
-    void runCallScoring(db);
+    void runAssetPriceSync(db, env).then(() => runCallScoring(db));
   }, CALL_SCORING_INTERVAL_MS);
 
   void runRedisTransportProbe({ env, queue })
