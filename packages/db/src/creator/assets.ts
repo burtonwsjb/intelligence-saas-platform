@@ -2,6 +2,7 @@ import { and, asc, desc, eq, gt, gte, lte } from "drizzle-orm";
 import type { Database } from "../client.js";
 import { marketAsset, marketAssetPrice } from "../schema/asset.js";
 import { creatorCall, creatorCallOutcome } from "../schema/creator.js";
+import { tcgSet } from "../schema/tcg.js";
 import { sourceContent } from "../schema/source.js";
 import { DeterministicCreatorCallExtractor, type CreatorCallExtractor } from "./extract.js";
 import { CREATOR_PRICE_AT_CALL_VERSION, fingerprintCreatorCall } from "./identity.js";
@@ -158,4 +159,32 @@ export async function extractAssetCallsFromContent(
     results.push({ assetId: asset.id, status: "processed" as const, call: call! });
   }
   return results;
+}
+
+/** Active assets for the API, optionally narrowed by kind, game and set. */
+export async function listMarketAssets(
+  db: Database,
+  input: { kind?: string; gameKey?: string; setKey?: string; limit?: number } = {},
+) {
+  const clauses = [eq(marketAsset.status, "active")];
+  if (input.kind) clauses.push(eq(marketAsset.kind, input.kind));
+  if (input.gameKey) clauses.push(eq(marketAsset.gameKey, input.gameKey));
+  if (input.setKey) clauses.push(eq(tcgSet.canonicalSetKey, input.setKey));
+  return db
+    .select({ asset: marketAsset, setKey: tcgSet.canonicalSetKey, setName: tcgSet.name })
+    .from(marketAsset)
+    .leftJoin(tcgSet, eq(tcgSet.id, marketAsset.setId))
+    .where(and(...clauses))
+    .orderBy(asc(marketAsset.assetKey))
+    .limit(Math.max(1, Math.min(input.limit ?? 500, 500)));
+}
+
+export async function getMarketAssetByKey(db: Database, assetKey: string) {
+  const [row] = await db
+    .select({ asset: marketAsset, setKey: tcgSet.canonicalSetKey, setName: tcgSet.name })
+    .from(marketAsset)
+    .leftJoin(tcgSet, eq(tcgSet.id, marketAsset.setId))
+    .where(eq(marketAsset.assetKey, assetKey))
+    .limit(1);
+  return row ?? null;
 }

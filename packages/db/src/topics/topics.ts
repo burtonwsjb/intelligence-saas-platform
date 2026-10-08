@@ -11,8 +11,11 @@ import { ASSET_SLICE_GAME_KEY } from "../creator/authority.js";
 import {
   SENTIMENT_BASELINE_WEIGHT,
   SENTIMENT_KEYS,
+  sentimentBucketDays,
+  sentimentHistory,
   summarizeSentiment,
   type SentimentEvidenceRow,
+  type SentimentHistoryPoint,
   type SentimentKey,
   type SentimentSummary,
 } from "../dashboard/explorer.js";
@@ -256,6 +259,8 @@ export type TopicSentiment = {
   summary: SentimentSummary;
   buckets: TopicBucket[];
   bucketDays: number;
+  /** Accuracy-weighted shares per period, the same periods as `buckets`. */
+  history: SentimentHistoryPoint[];
   voices: TopicVoice[];
   recent: TopicPost[];
   tokens: string[];
@@ -284,11 +289,12 @@ export async function getTopicSentiment(
     ? { id: assetRow.id, assetKey: assetRow.assetKey, displayName: assetRow.displayName, aliases: assetRow.aliases }
     : null;
   const hidden = options.hiddenCreatorIds ?? [];
-  const bucketDays = window === "7d" ? 1 : window === "30d" ? 3 : 7;
+  const bucketDays = sentimentBucketDays(TOPIC_WINDOW_DAYS[window]);
   const empty: TopicSentiment = {
     summary: summarizeSentiment([], { from, to: now }),
     buckets: [],
     bucketDays,
+    history: [],
     voices: [],
     recent: [],
     tokens,
@@ -366,8 +372,10 @@ export async function getTopicSentiment(
     sentiment: post.sentiment,
     weight: post.weight,
     rated: post.rated,
+    publishedAt: post.publishedAt,
   }));
   const summary = summarizeSentiment(evidence, { from, to: now });
+  const history = sentimentHistory(evidence, { from, to: now }, bucketDays);
 
   const bucketMs = bucketDays * 86_400_000;
   const bucketCount = Math.ceil((now.getTime() - from.getTime()) / bucketMs);
@@ -417,6 +425,7 @@ export async function getTopicSentiment(
     summary,
     buckets,
     bucketDays,
+    history,
     voices,
     recent: posts.slice(0, 10).map(({ accountId: _accountId, rated: _rated, ...post }) => post),
     tokens,
@@ -460,8 +469,25 @@ export async function getTopicCalls(
   assetId: string,
   options: { hiddenCreatorIds?: string[] } = {},
 ): Promise<TopicCalls> {
+  return loadSubjectCalls(db, { assetId }, options);
+}
+
+/** Calls creators made about one card printing, the same shape as asset calls (no latest price). */
+export async function getPrintingCalls(
+  db: Database,
+  printingId: string,
+  options: { hiddenCreatorIds?: string[] } = {},
+): Promise<TopicCalls> {
+  return loadSubjectCalls(db, { printingId }, options);
+}
+
+async function loadSubjectCalls(
+  db: Database,
+  subject: { assetId: string } | { printingId: string },
+  options: { hiddenCreatorIds?: string[] },
+): Promise<TopicCalls> {
   const hidden = options.hiddenCreatorIds ?? [];
-  const filters = sql`cc.asset_id = ${assetId}
+  const filters = sql`${"assetId" in subject ? sql`cc.asset_id = ${subject.assetId}` : sql`cc.printing_id = ${subject.printingId}`}
       AND NOT EXISTS (SELECT 1 FROM creator_call r WHERE r.revises_call_id = cc.id)
       AND (trust.trust_state IS NULL OR trust.trust_state <> 'excluded')
       ${hidden.length ? sql`AND cc.creator_id NOT IN (${sql.join(hidden.map((id) => sql`${id}`), sql`, `)})` : sql``}`;
@@ -497,13 +523,16 @@ export async function getTopicCalls(
       LIMIT ${TOPIC_CALL_LIMIT}
     `),
   );
-  const [price] = rowsOf(
-    await db.execute(sql`
-      SELECT price, currency, observed_at, source_key FROM market_asset_price
-      WHERE asset_id = ${assetId}
-      ORDER BY observed_at DESC LIMIT 1
-    `),
-  );
+  const [price] =
+    "assetId" in subject
+      ? rowsOf(
+          await db.execute(sql`
+            SELECT price, currency, observed_at, source_key FROM market_asset_price
+            WHERE asset_id = ${subject.assetId}
+            ORDER BY observed_at DESC LIMIT 1
+          `),
+        )
+      : [];
   return {
     total: Number(counts?.total ?? 0),
     evaluated: Number(counts?.evaluated ?? 0),

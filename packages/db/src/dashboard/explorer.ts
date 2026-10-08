@@ -603,6 +603,8 @@ export type SentimentEvidenceRow = {
   weight: number;
   /** True when the account belongs to a creator with a persisted authority slice. */
   rated: boolean;
+  /** When the post was published, for history buckets. */
+  publishedAt?: Date;
 };
 
 /**
@@ -761,7 +763,7 @@ export async function listSentimentEvidence(
       ) trust ON TRUE
       WHERE trust.trust_state = 'excluded'
     )
-    SELECT l.chosen_printing_id AS printing_id, sm.content_id, sc.account_id, sm.sentiment,
+    SELECT l.chosen_printing_id AS printing_id, sm.content_id, sc.account_id, sm.sentiment, sc.published_at,
       authority.authority_weight, authority.creator_id IS NOT NULL AS rated
     FROM latest l
     JOIN source_mention sm ON sm.id = l.mention_id
@@ -798,6 +800,7 @@ export async function listSentimentEvidence(
     sentiment: String(row.sentiment),
     weight: row.authority_weight == null ? SENTIMENT_BASELINE_WEIGHT : Number(row.authority_weight),
     rated: row.rated === true || row.rated === "t",
+    publishedAt: toDate(row.published_at),
   }));
 }
 
@@ -815,6 +818,68 @@ async function loadSentimentSummaries(
     grouped.set(row.printingId, list);
   }
   return new Map(ids.map((id) => [id, summarizeSentiment(grouped.get(id) ?? [], range)]));
+}
+
+export type SentimentHistoryPoint = {
+  start: Date;
+  end: Date;
+  label: SentimentLabel;
+  /** Classified posts in the period. */
+  posts: number;
+  /** Share of track-record weight per sentiment, 0..1; all zero when the period has no classified posts. */
+  shares: Record<SentimentKey, number>;
+};
+
+/** Days per history point for each window: daily for a week, otherwise a few days or a week. */
+export function sentimentBucketDays(windowDays: number): number {
+  return windowDays <= 7 ? 1 : windowDays <= 30 ? 3 : 7;
+}
+
+/**
+ * Splits evidence into equal periods ending at range.to and summarizes each
+ * the same way as the headline summary, oldest first.
+ */
+export function sentimentHistory(
+  rows: SentimentEvidenceRow[],
+  range: { from: Date; to: Date },
+  bucketDays: number,
+): SentimentHistoryPoint[] {
+  const bucketMs = bucketDays * 86_400_000;
+  const count = Math.max(1, Math.ceil((range.to.getTime() - range.from.getTime()) / bucketMs));
+  const groups: SentimentEvidenceRow[][] = Array.from({ length: count }, () => []);
+  for (const row of rows) {
+    if (!row.publishedAt) continue;
+    const index = Math.min(count - 1, Math.max(0, Math.floor((row.publishedAt.getTime() - range.from.getTime()) / bucketMs)));
+    groups[index]!.push(row);
+  }
+  return groups.map((group, index) => {
+    const start = new Date(range.from.getTime() + index * bucketMs);
+    const end = new Date(Math.min(range.to.getTime(), start.getTime() + bucketMs));
+    const summary = summarizeSentiment(group, { from: start, to: end });
+    const share = (key: SentimentKey) => (summary.weightTotal > 0 ? summary.weighted[key] / summary.weightTotal : 0);
+    return {
+      start,
+      end,
+      label: summary.label,
+      posts: summary.classified,
+      shares: { positive: share("positive"), neutral: share("neutral"), negative: share("negative"), mixed: share("mixed") },
+    };
+  });
+}
+
+/** A card's sentiment for the window plus its history, for the public API. */
+export async function getCardSentimentWithHistory(
+  db: Database,
+  printingId: string,
+  window: ExplorerWindow,
+  options: { now?: Date; hiddenCreatorIds?: string[] } = {},
+): Promise<{ summary: SentimentSummary; history: SentimentHistoryPoint[]; bucketDays: number }> {
+  const now = options.now ?? new Date();
+  const days = EXPLORER_WINDOW_DAYS[window];
+  const range = { from: new Date(now.getTime() - days * 86_400_000), to: now };
+  const rows = await listSentimentEvidence(db, [printingId], range, options);
+  const bucketDays = sentimentBucketDays(days);
+  return { summary: summarizeSentiment(rows, range), history: sentimentHistory(rows, range, bucketDays), bucketDays };
 }
 
 export async function getCardSentiment(

@@ -2,7 +2,13 @@ import { and, asc, eq, gt } from "drizzle-orm";
 import type { Hono } from "hono";
 import {
   disableWebhookEndpoint,
+  getCardSentimentWithHistory,
   getCreatorAuthorityProfile,
+  getMarketAssetByKey,
+  getPrintingCalls,
+  getTopicCalls,
+  getTopicSentiment,
+  listMarketAssets,
   getIndexDefinition,
   getIndexLevelAsOf,
   getLatestScoreSnapshot,
@@ -32,6 +38,9 @@ import {
   WebhookUrlRejectedError,
   type Database,
   type DnsLookup,
+  type SentimentHistoryPoint,
+  type SentimentSummary,
+  type TopicCalls,
   type WebhookFetch,
 } from "@isp/db";
 import {
@@ -145,6 +154,90 @@ function commercialError(error: unknown, requestId: string) {
     return jsonError("entitlement_denied", "Plan entitlement denied.", 402, requestId);
   }
   throw error;
+}
+
+const SENTIMENT_WINDOWS = ["7d", "30d", "90d"] as const;
+type SentimentWindow = (typeof SENTIMENT_WINDOWS)[number];
+
+function sentimentWindow(raw: string | undefined): SentimentWindow {
+  if (raw == null || raw === "") return "30d";
+  if ((SENTIMENT_WINDOWS as readonly string[]).includes(raw)) return raw as SentimentWindow;
+  throw new CommercialFilterError("window must be one of 7d, 30d, 90d.");
+}
+
+function round4(value: number) {
+  return Math.round(value * 10_000) / 10_000;
+}
+
+/** Creators this workspace hid; their posts and calls are left out of its sentiment. */
+async function hiddenCreatorIds(db: Database, machine: MachinePrincipal) {
+  const list = await withMachineContext(
+    db,
+    { organizationId: machine.organizationId, apiKeyId: machine.apiKeyId },
+    listTenantCreatorList,
+  );
+  return list.filter((row) => row.preference === "hide" && row.creatorId).map((row) => row.creatorId!);
+}
+
+function sentimentBody(input: {
+  window: SentimentWindow;
+  summary: SentimentSummary;
+  history: SentimentHistoryPoint[];
+  bucketDays: number;
+  calls: TopicCalls;
+}) {
+  const { summary, calls } = input;
+  const share = (key: "positive" | "neutral" | "negative" | "mixed") =>
+    summary.weightTotal > 0 ? round4(summary.weighted[key] / summary.weightTotal) : 0;
+  return {
+    window: input.window,
+    as_of: summary.to.toISOString(),
+    sentiment: {
+      label: summary.label,
+      basis: summary.basis,
+      shares: { positive: share("positive"), neutral: share("neutral"), negative: share("negative"), mixed: share("mixed") },
+      counts: summary.counts,
+      posts: summary.contentItems,
+      classified_posts: summary.classified,
+      posts_from_rated_creators: summary.ratedPosts,
+      accounts: summary.uniqueAccounts,
+    },
+    history: {
+      period_days: input.bucketDays,
+      points: input.history.map((point) => ({
+        start: point.start.toISOString(),
+        end: point.end.toISOString(),
+        label: point.label,
+        posts: point.posts,
+        shares: {
+          positive: round4(point.shares.positive),
+          neutral: round4(point.shares.neutral),
+          negative: round4(point.shares.negative),
+          mixed: round4(point.shares.mixed),
+        },
+      })),
+    },
+    calls: {
+      total: calls.total,
+      evaluated: calls.evaluated,
+      came_true: calls.correct,
+      waiting_for_market: calls.pending,
+      accuracy: calls.evaluated > 0 ? round4(calls.correct / calls.evaluated) : null,
+    },
+  };
+}
+
+function productBody(row: { asset: { assetKey: string; kind: string; displayName: string; productType: string | null; gameKey: string | null; languageCode: string | null; quoteCurrency: string }; setKey: string | null; setName: string | null }) {
+  return {
+    key: row.asset.assetKey,
+    kind: row.asset.kind,
+    name: row.asset.displayName,
+    product_type: row.asset.productType,
+    game: row.asset.gameKey,
+    set: row.setKey ? { key: row.setKey, name: row.setName } : null,
+    language: row.asset.languageCode,
+    quote_currency: row.asset.quoteCurrency,
+  };
 }
 
 export function registerCommercialRoutes(
@@ -413,6 +506,76 @@ export function registerCommercialRoutes(
         reversal: candidates.reversal === true,
         anomaly: candidates.anomaly === true,
         manipulation,
+      });
+    } catch (error) {
+      return commercialError(error, requestId);
+    }
+  });
+
+  app.get("/v1/printings/:id/sentiment", requireScope("signals:read"), async (c) => {
+    const requestId = resolveRequestId(c.req.header("x-request-id"));
+    try {
+      const window = sentimentWindow(c.req.query("window"));
+      await meter(c.get("db"), c.get("machine"), requestId);
+      const row = await loadPrinting(c.get("db"), c.req.param("id"));
+      if (!row) {
+        return jsonError("not_found", "Printing not found.", 404, requestId);
+      }
+      const hidden = await hiddenCreatorIds(c.get("db"), c.get("machine"));
+      const [sentiment, calls] = await Promise.all([
+        getCardSentimentWithHistory(c.get("db"), row.printing.id, window, { hiddenCreatorIds: hidden }),
+        getPrintingCalls(c.get("db"), row.printing.id, { hiddenCreatorIds: hidden }),
+      ]);
+      return c.json({ printing: exactPrinting(row), ...sentimentBody({ window, ...sentiment, calls }) });
+    } catch (error) {
+      return commercialError(error, requestId);
+    }
+  });
+
+  app.get("/v1/products", requireScope("cards:read"), async (c) => {
+    const requestId = resolveRequestId(c.req.header("x-request-id"));
+    try {
+      const kind = c.req.query("kind") || undefined;
+      if (kind && !["sealed", "crypto", "stock", "commodity", "index", "other"].includes(kind)) {
+        throw new CommercialFilterError("kind is not recognized.");
+      }
+      await meter(c.get("db"), c.get("machine"), requestId);
+      const rows = await listMarketAssets(c.get("db"), {
+        kind,
+        gameKey: c.req.query("game") || undefined,
+        setKey: c.req.query("set") || undefined,
+      });
+      return c.json({ data: rows.map(productBody) });
+    } catch (error) {
+      return commercialError(error, requestId);
+    }
+  });
+
+  app.get("/v1/products/:key/sentiment", requireScope("signals:read"), async (c) => {
+    const requestId = resolveRequestId(c.req.header("x-request-id"));
+    try {
+      const window = sentimentWindow(c.req.query("window"));
+      await meter(c.get("db"), c.get("machine"), requestId);
+      const row = await getMarketAssetByKey(c.get("db"), c.req.param("key"));
+      if (!row || row.asset.status !== "active") {
+        return jsonError("not_found", "Product not found.", 404, requestId);
+      }
+      const hidden = await hiddenCreatorIds(c.get("db"), c.get("machine"));
+      const [topic, calls] = await Promise.all([
+        getTopicSentiment(c.get("db"), row.asset.displayName, window, { hiddenCreatorIds: hidden }),
+        getTopicCalls(c.get("db"), row.asset.id, { hiddenCreatorIds: hidden }),
+      ]);
+      return c.json({
+        product: productBody(row),
+        ...sentimentBody({ window, summary: topic.summary, history: topic.history, bucketDays: topic.bucketDays, calls }),
+        latest_price: calls.latestPrice
+          ? {
+              price: moneyToFiniteNumber(calls.latestPrice.price),
+              currency: calls.latestPrice.currency,
+              observed_at: calls.latestPrice.observedAt.toISOString(),
+              source: calls.latestPrice.sourceKey,
+            }
+          : null,
       });
     } catch (error) {
       return commercialError(error, requestId);
