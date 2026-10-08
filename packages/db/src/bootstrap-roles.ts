@@ -571,8 +571,9 @@ export async function bootstrapRoles(
         END IF;
         IF to_regclass('public.market_asset') IS NOT NULL THEN
           GRANT SELECT ON market_asset, market_asset_price TO app_user, app_worker;
-          GRANT INSERT ON market_asset_price TO app_worker;
-          REVOKE INSERT, UPDATE, DELETE ON market_asset FROM app_user, app_worker;
+          GRANT INSERT ON market_asset, market_asset_price TO app_worker;
+          REVOKE INSERT, UPDATE, DELETE ON market_asset FROM app_user;
+          REVOKE UPDATE, DELETE ON market_asset FROM app_worker;
           REVOKE INSERT, UPDATE, DELETE ON market_asset_price FROM app_user;
           REVOKE UPDATE, DELETE ON market_asset_price FROM app_worker;
         END IF;

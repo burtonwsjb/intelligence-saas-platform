@@ -204,6 +204,13 @@
       "when": 28,
       "tag": "0029_market_asset",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 29,
+      "tag": "0030_sealed_products",
+      "breakpoints": true
     }
   ]
 }

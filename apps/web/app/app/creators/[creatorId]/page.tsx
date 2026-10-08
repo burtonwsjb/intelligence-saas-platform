@@ -147,6 +147,7 @@ export default async function CreatorDetailPage({
                   <strong>
                     {call.printingId ? (
                       <Link href={`/app/cards/${encodeURIComponent(call.printingId)}?from=${encodeURIComponent(selfHref)}`}>
+                        {call.grade ? `${call.grade} ` : ""}
                         {call.cardName ?? "Card"}
                       </Link>
                     ) : (

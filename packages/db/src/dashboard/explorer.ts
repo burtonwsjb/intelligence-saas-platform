@@ -1,5 +1,6 @@
 import { sql, type SQL } from "drizzle-orm";
 import type { Database } from "../client.js";
+import { callGradeFromEvidence } from "../creator/grade.js";
 
 // Card explorer read model. Every number returned here comes from persisted,
 // versioned records (score snapshots, market snapshots, resolved mentions).
@@ -982,6 +983,8 @@ export type CreatorCallHistoryItem = {
   cardName: string | null;
   /** Set instead of the card fields when the call is about an asset such as Bitcoin. */
   assetName: string | null;
+  /** "PSA 10" when the call was about a graded copy, else null. */
+  grade: string | null;
   setName: string | null;
   languageCode: string | null;
   priceAtCall: string | null;
@@ -1031,6 +1034,19 @@ export async function getCreatorTrackRecord(db: Database, creatorId: string): Pr
   };
 }
 
+function gradeLabel(raw: unknown): string | null {
+  let value = raw;
+  if (typeof raw === "string") {
+    try {
+      value = JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+  const grade = callGradeFromEvidence({ grade: value });
+  return grade ? `${grade.company.toUpperCase()} ${grade.grade}` : null;
+}
+
 /** A creator's calls, newest first, with the card or asset they named and how each call turned out. */
 export async function listCreatorCallHistory(
   db: Database,
@@ -1041,7 +1057,7 @@ export async function listCreatorCallHistory(
   const rows = asRows(
     await db.execute(sql`
       SELECT cc.id, cc.published_at, cc.direction, cc.horizon_code, cc.printing_id, cc.price_at_call, cc.price_currency,
-        c.canonical_name AS card_name, st.name AS set_name, p.language_code, ma.display_name AS asset_name,
+        c.canonical_name AS card_name, st.name AS set_name, p.language_code, ma.display_name AS asset_name, cc.evidence -> 'grade' AS grade,
         o.evaluation_status, o.directional_correct, o.return_pct, sc.canonical_url
       FROM creator_call cc
       LEFT JOIN market_asset ma ON ma.id = cc.asset_id
@@ -1066,6 +1082,7 @@ export async function listCreatorCallHistory(
       printingId: row.printing_id == null ? null : String(row.printing_id),
       cardName: row.card_name == null ? null : String(row.card_name),
       assetName: row.asset_name == null ? null : String(row.asset_name),
+      grade: gradeLabel(row.grade),
       setName: row.set_name == null ? null : String(row.set_name),
       languageCode: row.language_code == null ? null : String(row.language_code),
       priceAtCall: row.price_at_call == null ? null : String(row.price_at_call),

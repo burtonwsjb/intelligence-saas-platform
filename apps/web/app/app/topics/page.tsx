@@ -4,7 +4,13 @@ import { EmptyState, LockedFeature } from "@/components/EmptyState";
 import { ANALYTICS_LOCKED_BODY, loadAppAccess, loadHiddenCreatorIds } from "@/lib/app-access";
 import { getDb } from "@/lib/auth";
 import { formatAge } from "@/lib/display";
-import { SENTIMENT_LABEL_TEXT, getTopicSentiment, listTenantTopics, withOrganizationContext } from "@isp/db";
+import {
+  SENTIMENT_LABEL_TEXT,
+  getTopicSentiment,
+  listSealedProducts,
+  listTenantTopics,
+  withOrganizationContext,
+} from "@isp/db";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -18,10 +24,16 @@ export default async function TopicsPage({ searchParams }: { searchParams: Promi
   }
   const query = await searchParams;
   const db = getDb();
-  const [topics, hiddenCreatorIds] = await Promise.all([
+  const [topics, hiddenCreatorIds, sealed] = await Promise.all([
     withOrganizationContext(db, { organizationId, userId }, listTenantTopics),
     loadHiddenCreatorIds(organizationId, userId),
+    listSealedProducts(db),
   ]);
+  const tracked = new Set(topics.map((topic) => topic.query.toLowerCase()));
+  const sealedBySet = new Map<string, typeof sealed>();
+  for (const product of sealed) {
+    sealedBySet.set(product.setName, [...(sealedBySet.get(product.setName) ?? []), product]);
+  }
   const summaries = await Promise.all(
     topics.map((topic) => getTopicSentiment(db, topic.query, "30d", { hiddenCreatorIds }).then((result) => result.summary)),
   );
@@ -49,6 +61,40 @@ export default async function TopicsPage({ searchParams }: { searchParams: Promi
           <button type="submit">Track</button>
         </form>
         <p className="subtle">Examples: {EXAMPLES.join(", ")}. New topics are searched on the next collection run.</p>
+        {sealedBySet.size > 0 ? (
+          <details>
+            <summary>Sealed products</summary>
+            <p className="subtle">
+              Track a sealed product to see what people say about it and how their calls on its price turn out.
+            </p>
+            <ul className="item-list">
+              {[...sealedBySet].map(([setName, products]) => (
+                <li key={setName}>
+                  <span className="item-main">
+                    <strong>{setName}</strong>
+                  </span>
+                  <span className="badge-row" style={{ gap: "var(--space-4)" }}>
+                    {products.map((product) => {
+                      const label = product.displayName.slice(setName.length).trim() || product.displayName;
+                      return tracked.has(product.displayName.toLowerCase()) ? (
+                        <span key={product.id} className="subtle">
+                          {label} · tracking
+                        </span>
+                      ) : (
+                        <form key={product.id} action={addTopicAction}>
+                          <input type="hidden" name="query" value={product.displayName} />
+                          <button className="link-button text-link" type="submit" aria-label={`Track ${product.displayName}`}>
+                            {label}
+                          </button>
+                        </form>
+                      );
+                    })}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </details>
+        ) : null}
       </section>
       {topics.length === 0 ? (
         <EmptyState title="No topics yet" body="Track a topic above to see what people are saying about it." />

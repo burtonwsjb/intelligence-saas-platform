@@ -141,7 +141,7 @@ export default async function TopicPage({
           <p className="subtle">
             {calls.latestPrice
               ? `Latest price ${formatPrice(calls.latestPrice.price, calls.latestPrice.currency)}, ${formatAge(calls.latestPrice.observedAt)}. `
-              : "No prices collected yet, so calls wait until the price feed is turned on. "}
+              : "No prices collected for this yet, so its calls wait until prices arrive. "}
             Each call is judged on the price at the time of the post against the price when its deadline passes. Those
             results set how much each creator counts here.
           </p>

@@ -1,6 +1,7 @@
 import { index, numeric, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { tcgGame, tcgLanguage, tcgSet } from "./tcg.js";
 
-/** An asset outside trading cards that creators make calls about, such as Bitcoin. */
+/** Something other than a single card that creators make calls about: Bitcoin, or a sealed product such as a booster box. */
 export const marketAsset = pgTable(
   "market_asset",
   {
@@ -12,6 +13,11 @@ export const marketAsset = pgTable(
     quoteCurrency: text("quote_currency").notNull().default("USD"),
     priceSourceKey: text("price_source_key"),
     priceSourceRef: text("price_source_ref"),
+    /** Sealed products only: the game, set, product type and language they belong to. */
+    gameKey: text("game_key").references(() => tcgGame.gameKey),
+    setId: text("set_id").references(() => tcgSet.id),
+    productType: text("product_type"),
+    languageCode: text("language_code").references(() => tcgLanguage.languageCode),
     status: text("status").notNull().default("active"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },

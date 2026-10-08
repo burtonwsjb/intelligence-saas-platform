@@ -11,7 +11,8 @@ import {
   stableCreatorId,
   type ExtractedCallCandidate,
 } from "./identity.js";
-import { priceAtCall } from "./price-at-call.js";
+import { gradedPriceAtCall, priceAtCall } from "./price-at-call.js";
+import { callGradeFromEvidence, detectCallGrade, type CallGrade } from "./grade.js";
 
 export async function ensureCreatorForSourceAccount(db: Database, sourceAccountId: string) {
   const existing = await db
@@ -96,8 +97,10 @@ async function persistCall(
     candidate: ExtractedCallCandidate;
     evidence: Record<string, unknown>;
     revisesCallId?: string | null;
+    grade?: CallGrade | null;
   },
 ) {
+  const grade = input.grade ?? callGradeFromEvidence(input.evidence);
   const fingerprint = fingerprintCreatorCall([
     input.creatorId,
     input.contentId,
@@ -106,15 +109,19 @@ async function persistCall(
     input.printingId ?? "",
     input.candidate.horizon_code,
     CREATOR_EXTRACTOR_VERSION,
+    // Raw calls keep their original fingerprint; graded calls add the grade.
+    ...(grade ? [`${grade.company}:${grade.grade}`] : []),
   ]);
   const existing = await db.select().from(creatorCall).where(eq(creatorCall.fingerprint, fingerprint)).limit(1);
   if (existing[0] && !input.revisesCallId) {
     return { status: "duplicate" as const, call: existing[0] };
   }
   const boundPrinting = mayBindCallPrinting(input.resolutionStatus) ? input.printingId : null;
-  const price = boundPrinting
-    ? await priceAtCall(db, { printingId: boundPrinting, publishedAt: input.publishedAt })
-    : null;
+  const price = !boundPrinting
+    ? null
+    : grade
+      ? await gradedPriceAtCall(db, { printingId: boundPrinting, publishedAt: input.publishedAt, grade })
+      : await priceAtCall(db, { printingId: boundPrinting, publishedAt: input.publishedAt });
   const id = crypto.randomUUID();
   await db.insert(creatorCall).values({
     id,
@@ -147,7 +154,7 @@ async function persistCall(
     fingerprint: input.revisesCallId ? `${fingerprint}:${id}` : fingerprint,
     status: "finalized",
     revisesCallId: input.revisesCallId ?? null,
-    evidence: input.evidence,
+    evidence: grade ? { ...input.evidence, grade } : input.evidence,
   });
   await db.insert(creatorCallOutcome).values({
     id: crypto.randomUUID(),
@@ -202,6 +209,7 @@ export async function extractCreatorCallsFromContent(
       resolutionStatus: resolution.attempt.status,
       resolutionConfidence: resolution.attempt.confidence,
       candidate,
+      grade: detectCallGrade(text),
       evidence: {
         extractor_evidence: candidate.evidence,
         segment_id: mention.segmentId,

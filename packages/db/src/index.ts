@@ -367,9 +367,20 @@ export {
   type MarketAssetRow,
 } from "./creator/assets.js";
 export { ASSET_SLICE_GAME_KEY } from "./creator/authority.js";
+export { callGradeFromEvidence, detectCallGrade, type CallGrade } from "./creator/grade.js";
+export {
+  SEALED_PRODUCT_NAMES,
+  SEALED_PRODUCT_TYPES,
+  listSealedProducts,
+  sealedAssetKey,
+  syncSealedProducts,
+  type SealedProductType,
+} from "./tcg/sealed.js";
 export {
   ASSET_PRICE_MAX_REQUESTS,
   ASSET_PRICE_SOURCE,
+  AssetPriceInputError,
+  ingestAssetPrice,
   resolveAssetPriceMode,
   syncAssetPrices,
   type AssetPriceSyncReport,

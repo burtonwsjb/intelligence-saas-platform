@@ -22,6 +22,7 @@ import {
 } from "./stats.js";
 import { earlyCallScore, printingContext } from "./outcomes.js";
 import { ASSET_CALL_RESOLUTION } from "./assets.js";
+import { callGradeFromEvidence } from "./grade.js";
 import { marketAsset } from "../schema/asset.js";
 import { ALPHA_METHOD_VERSION } from "../analytics/catalog.js";
 
@@ -174,6 +175,7 @@ export async function recomputeCreatorAuthority(db: Database, creatorId: string,
           publishedAt: row.call.publishedAt,
           startPrice: Number(row.call.priceAtCall),
           horizonReturn: Number(row.outcome.returnPct),
+          grade: callGradeFromEvidence(row.call.evidence),
         });
         if (result.score != null) {
           earlyScores.push(result.score);

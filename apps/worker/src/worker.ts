@@ -11,6 +11,7 @@ import {
   requireWorkerDatabaseUrl,
   scoreDueCreatorCalls,
   syncAssetPrices,
+  syncSealedProducts,
   upsertWorkerHeartbeat,
   withPlatformContext,
   type Database,
@@ -98,6 +99,18 @@ export async function runProviderSchedule(
     await withPlatformContext(db, (scoped) => enqueueDueProviderSyncs(scoped, env));
   } catch (error) {
     logLoopFailure("worker.scheduler_failed", "provider_scheduler", error);
+  }
+}
+
+/** Adds the standard sealed products for any new set. Database only. */
+export async function runSealedCatalogSync(db: Database) {
+  try {
+    const report = await withPlatformContext(db, (scoped) => syncSealedProducts(scoped));
+    if (report.added > 0) logQueueEvent("info", "worker.sealed_catalog", { status: "ok", added: report.added });
+    return report;
+  } catch (error) {
+    logLoopFailure("worker.sealed_catalog_failed", "sealed_catalog", error);
+    return null;
   }
 }
 
@@ -375,12 +388,18 @@ export function startWorker(options?: {
     },
   });
 
-  const callScoring = setInterval(() => {
+  // Hourly, and once a minute after startup: sealed catalog, asset prices
+  // (only when enabled), then scoring of calls that have come due.
+  const runMarketWork = () => {
     if (status === "shutting_down" || status === "stopped") {
       return;
     }
-    void runAssetPriceSync(db, env).then(() => runCallScoring(db));
-  }, CALL_SCORING_INTERVAL_MS);
+    void runSealedCatalogSync(db)
+      .then(() => runAssetPriceSync(db, env))
+      .then(() => runCallScoring(db));
+  };
+  const firstMarketWork = setTimeout(runMarketWork, 60_000);
+  const callScoring = setInterval(runMarketWork, CALL_SCORING_INTERVAL_MS);
 
   void runRedisTransportProbe({ env, queue })
     .then(logRedisTransportProbe)
@@ -432,6 +451,7 @@ export function startWorker(options?: {
               clearInterval(heartbeat);
               clearInterval(failureInspection);
               clearInterval(callScoring);
+              clearTimeout(firstMarketWork);
               if (providerSchedule) {
                 clearInterval(providerSchedule);
               }

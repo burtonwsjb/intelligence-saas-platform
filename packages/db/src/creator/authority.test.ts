@@ -193,4 +193,51 @@ describe("creator outcomes and authority", () => {
     const locked = await db.transaction((tx) => scoreDueCreatorCalls(tx as unknown as Database, { asOf, exclusive: true }));
     expect(locked).toMatchObject({ considered: 0 });
   });
+
+  it("judges a graded call only on sales of that grade", async () => {
+    const { db } = await setup();
+    const graded = async (id: string, price: number, at: string) =>
+      ingestTcgMarketRecord(db, {
+        provider: "tcg_card_central",
+        provider_record_id: id,
+        event_type: "tcg.market.sold",
+        market_type: "marketplace_sold",
+        price_type: "sold",
+        observed_at: at,
+        currency: "USD",
+        condition: "nm",
+        price,
+        quantity: 1,
+        aggregation_kind: "event",
+        grading_company: "psa",
+        grade_label: "10",
+        grade_numeric: 10,
+        printing: { game: "pokemon", set: "twm", collector_number: "214/167", language: "en", variant: "normal" },
+      });
+    await graded("psa10_before", 200, "2026-01-01T00:00:00.000Z");
+    await graded("psa10_after", 260, "2026-01-25T00:00:00.000Z");
+    const base = creatorCallSourceFixtures()[0]!;
+    const text = "I would buy a PSA 10 English Twilight Masquerade Greninja 214 normal. This will go up in 30 days.";
+    const record = {
+      ...base,
+      provider_record_id: "yt_vid_psa10",
+      content: { ...base.content, external_content_id: "yt_vid_psa10", title: text, summary: "", excerpt: text },
+      segments: [{ ...base.segments![0]!, excerpt: text }],
+      mentions: [{ ...base.mentions![0]!, candidate_price: null }],
+    };
+    const ingested = await ingestSourceContentRecord(db, record);
+    const [call] = await extractCreatorCallsFromContent(db, ingested.contentId!);
+    expect(call?.call?.evidence).toMatchObject({ grade: { company: "psa", grade: 10 } });
+    expect(Number(call?.call?.priceAtCall)).toBe(200);
+    const outcome = await evaluateCreatorCallOutcome(db, call!.call!.id, new Date("2026-03-01T00:00:00.000Z"));
+    expect(Number(outcome?.endingPrice)).toBe(260);
+    expect(outcome?.directionalCorrect).toBe("correct");
+
+    // The raw call on the same card never reads the graded sales.
+    const raw = await ingestSourceContentRecord(db, base);
+    const [rawCall] = await extractCreatorCallsFromContent(db, raw.contentId!);
+    expect(Number(rawCall?.call?.priceAtCall)).toBe(42);
+    const rawOutcome = await evaluateCreatorCallOutcome(db, rawCall!.call!.id, new Date("2026-03-01T00:00:00.000Z"));
+    expect(Number(rawOutcome?.endingPrice)).not.toBe(260);
+  });
 });

@@ -1,9 +1,10 @@
-import { and, asc, eq, gt, lte } from "drizzle-orm";
+import { and, asc, eq, gt, isNull, lte } from "drizzle-orm";
 import type { Database } from "../client.js";
 import { creatorCall, creatorCallOutcome } from "../schema/creator.js";
 import { tcgMarketSnapshot } from "../schema/tcg-market.js";
 import { tcgPrinting, tcgSet } from "../schema/tcg.js";
 import { assetPriceAt, assetPricesBetween } from "./assets.js";
+import { callGradeFromEvidence, type CallGrade } from "./grade.js";
 
 export const OUTCOME_VERSION = "outcome.v1";
 export const EARLY_CALL_VERSION = "early_call.v1";
@@ -19,7 +20,7 @@ const HORIZON_DAYS: Record<string, number> = {
 /** An asset call waits this long past its horizon for a closing price before it is marked insufficient. */
 export const ASSET_CLOSE_GRACE_DAYS = 7;
 /** The closing price must be observed within this many days before the horizon end. */
-export const ASSET_CLOSE_MAX_AGE_DAYS = 3;
+export const ASSET_CLOSE_MAX_AGE_DAYS = 7;
 
 /**
  * Calls that name no horizon ("this set will go up") are judged over this many
@@ -38,7 +39,7 @@ export function horizonDays(code: string, customDays: string | null): number | n
 
 async function soldInWindow(
   db: Database,
-  input: { printingId: string; from: Date; to: Date; nmOnly?: boolean },
+  input: { printingId: string; from: Date; to: Date; nmOnly?: boolean; grade?: CallGrade | null },
 ) {
   const clauses = [
     eq(tcgMarketSnapshot.printingId, input.printingId),
@@ -46,8 +47,15 @@ async function soldInWindow(
     gt(tcgMarketSnapshot.observedAt, input.from),
     lte(tcgMarketSnapshot.observedAt, input.to),
   ];
-  if (input.nmOnly) {
-    clauses.push(eq(tcgMarketSnapshot.condition, "nm"));
+  if (input.grade) {
+    // A graded call is judged only on sales of that exact grade.
+    clauses.push(eq(tcgMarketSnapshot.gradingCompany, input.grade.company));
+    clauses.push(eq(tcgMarketSnapshot.gradeNumeric, input.grade.grade.toFixed(2)));
+    clauses.push(eq(tcgMarketSnapshot.outlierFlag, false));
+  } else {
+    // Raw calls never read graded sales, which are a different market.
+    clauses.push(isNull(tcgMarketSnapshot.gradingCompany));
+    if (input.nmOnly) clauses.push(eq(tcgMarketSnapshot.condition, "nm"));
   }
   return db
     .select()
@@ -109,6 +117,7 @@ export async function evaluateCreatorCallOutcome(
     from: call.publishedAt,
     to: endAt,
     nmOnly: true,
+    grade: callGradeFromEvidence(call.evidence),
   });
   const usable = windowSold.filter((row) => row.observedAt.getTime() <= endAt.getTime());
   const endRow = usable.at(-1);
@@ -261,7 +270,7 @@ export async function getOutcome(db: Database, callId: string) {
 
 export async function earlyCallScore(
   db: Database,
-  input: { printingId: string; publishedAt: Date; startPrice: number; horizonReturn: number },
+  input: { printingId: string; publishedAt: Date; startPrice: number; horizonReturn: number; grade?: CallGrade | null },
 ) {
   const preFrom = new Date(input.publishedAt.getTime() - 7 * 86400000);
   const pre = await soldInWindow(db, {
@@ -269,6 +278,7 @@ export async function earlyCallScore(
     from: preFrom,
     to: input.publishedAt,
     nmOnly: true,
+    grade: input.grade,
   });
   const first = pre[0];
   if (!first?.price) {
