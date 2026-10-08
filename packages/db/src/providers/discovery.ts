@@ -18,6 +18,7 @@ import { stableSourceId, type SourceContentRecordInput } from "../source/identit
 import { sourceIntelligenceFixtures } from "../source/fixtures.js";
 import { FixtureRedditSourceProvider, FixtureYoutubeSourceProvider } from "../source/provider.js";
 import { createLiveRedditProvider, createLiveYoutubeProvider } from "./live-social.js";
+import { createLiveGoogleProvider } from "./live-google.js";
 import { ProviderHttpError, type HttpTransport } from "./transport.js";
 import { withPlatformContext } from "../rls.js";
 import { providerCredentialStatus, resolveProviderMode } from "./catalog.js";
@@ -63,7 +64,7 @@ export function stableDiscoveryId(prefix: string, parts: string[]): string {
 }
 
 export function isDiscoveryProviderKey(value: string): value is DiscoveryProviderKey {
-  return value === "youtube" || value === "reddit";
+  return value === "youtube" || value === "reddit" || value === "google";
 }
 
 export function isDiscoveryRelevanceState(value: string): value is DiscoveryRelevanceState {
@@ -227,6 +228,11 @@ async function collectDiscoveryRecords(input: {
 }): Promise<SourceContentRecordInput[]> {
   if (input.records) {
     return input.records.slice(0, input.limit);
+  }
+  if (input.providerKey === "google") {
+    // No fixture corpus for web search: fixture mode finds nothing.
+    const live = createLiveGoogleProvider(input.env, input.transport);
+    return live ? live.searchWeb({ q: input.query, limit: input.limit }) : [];
   }
   if (input.providerKey === "youtube") {
     const live = createLiveYoutubeProvider(input.env, input.transport);
@@ -553,7 +559,7 @@ export async function runSocialDiscovery(
   const budgeted = budgetedDiscoveryTransport(db, input.providerKey, env, input.transport);
   try {
     const records = await collectDiscoveryRecords({ providerKey: input.providerKey, query: topic.query,
-      limit, env: mode === "fixture" ? { ...env, YOUTUBE_API_KEY: undefined, REDDIT_CLIENT_ID: undefined } : env,
+      limit, env: mode === "fixture" ? { ...env, YOUTUBE_API_KEY: undefined, REDDIT_CLIENT_ID: undefined, GOOGLE_SEARCH_API_KEY: undefined } : env,
       transport: mode === "live" ? budgeted.transport : input.transport, records: input.records });
     let communities: string[] = [];
     if (input.providerKey === "reddit" && mode === "live" && !input.records) {

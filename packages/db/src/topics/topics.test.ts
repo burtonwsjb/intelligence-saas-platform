@@ -68,19 +68,19 @@ describe("workspace topics", () => {
     `);
     await addTenantTopic(db, { organizationId: org, userId: user, query: "Ethereum" });
     const first = await syncWorkspaceTopics(db);
-    expect(first.added).toBe(3); // Bitcoin on both providers, Ethereum on Reddit only.
+    expect(first.added).toBe(5); // Bitcoin on all three providers; Ethereum on Reddit and Google only.
     const operator = await client.query<{ enabled: boolean }>(`SELECT enabled FROM discovery_topic WHERE id = 'operator_topic'`);
     expect(operator.rows[0]?.enabled).toBe(false);
 
     const [bitcoin] = (await listTenantTopics(db)).filter((row) => row.query === "Bitcoin");
     await setTenantTopicStatus(db, { id: bitcoin!.id, status: "paused" });
-    expect((await syncWorkspaceTopics(db)).paused).toBe(2);
+    expect((await syncWorkspaceTopics(db)).paused).toBe(3);
     const paused = await client.query<{ enabled: boolean }>(
       `SELECT enabled FROM discovery_topic WHERE query = 'Bitcoin' ORDER BY provider_key`,
     );
-    expect(paused.rows.map((row) => row.enabled)).toEqual([false, false]);
+    expect(paused.rows.map((row) => row.enabled)).toEqual([false, false, false]);
     await setTenantTopicStatus(db, { id: bitcoin!.id, status: "active" });
-    expect((await syncWorkspaceTopics(db)).resumed).toBe(2);
+    expect((await syncWorkspaceTopics(db)).resumed).toBe(3);
   });
 
   it("weights topic posts by creator track record and leaves out hidden and excluded creators", async () => {

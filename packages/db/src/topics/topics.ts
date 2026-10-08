@@ -141,7 +141,7 @@ export async function syncWorkspaceTopics(db: Database): Promise<{ added: number
     let added = 0;
     let resumed = 0;
     let paused = 0;
-    for (const providerKey of ["youtube", "reddit"] as const) {
+    for (const providerKey of ["youtube", "reddit", "google"] as const) {
       for (const raw of queries) {
         let query: string;
         try {

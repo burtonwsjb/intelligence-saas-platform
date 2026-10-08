@@ -114,7 +114,7 @@ describe("workspace influencer list on PostgreSQL", () => {
       ),
     ).rejects.toThrow();
     const report = await syncWorkspaceTopics(workerConn!.db);
-    expect(report.added).toBe(2);
+    expect(report.added).toBe(3);
     await expect(
       withPlatformContext(workerConn!.db, (db) => db.execute(sql`SELECT count(*) FROM tenant_topic`)),
     ).rejects.toThrow();

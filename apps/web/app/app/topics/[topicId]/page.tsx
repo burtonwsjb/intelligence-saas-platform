@@ -43,7 +43,7 @@ function formatPrice(value: string, currency: string): string {
   }
 }
 
-const PLATFORM_TEXT: Record<string, string> = { youtube: "YouTube", reddit: "Reddit" };
+const PLATFORM_TEXT: Record<string, string> = { youtube: "YouTube", reddit: "Reddit", web: "Web" };
 
 export default async function TopicPage({
   params,
@@ -244,7 +244,7 @@ export default async function TopicPage({
       </section>
       <p className="notice info">
         Sentiment here is read from post titles and descriptions with rule-based buy, sell, up and down language. It does
-        not understand sarcasm and works best in English. Coverage is limited to YouTube and Reddit for now.
+        not understand sarcasm and works best in English. Coverage is YouTube, Reddit and, when the operator turns it on, Google web search.
         {result.asset ? "" : " Calls are scored for cards and for tracked assets such as Bitcoin, Ethereum and Solana."}
       </p>
     </>
