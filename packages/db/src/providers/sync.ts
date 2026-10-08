@@ -1,5 +1,6 @@
 import { runCreatorMonitoring } from "./monitoring.js";
 import { promoteFollowedCreators, resolvePendingCreatorFollows } from "../creator/list.js";
+import { syncWorkspaceTopics } from "../topics/topics.js";
 import { isHostedRuntime } from "@isp/shared";
 import { withPlatformContext } from "../rls.js";
 import { createHash } from "node:crypto";
@@ -135,6 +136,8 @@ export async function syncProvider(db: Database, input: ProviderSyncInput) {
       // then keep followed creators monitored. Failures here never block monitoring.
       await resolvePendingCreatorFollows(db, { providerKey, env, transport: input.transport }).catch(() => null);
       await promoteFollowedCreators(db, providerKey).catch(() => 0);
+      // Workspace topics join the discovery rotation before this tick picks a topic.
+      await syncWorkspaceTopics(db).catch(() => null);
     }
     const monitoring = input.trigger === "schedule" ? await runCreatorMonitoring(db, { providerKey, env, transport: input.transport }) : null;
     const report = await runSocialDiscovery(db, { providerKey, query: input.query,

@@ -334,6 +334,25 @@ export {
   type CreatorPreference,
   type TenantCreatorListRow,
 } from "./creator/list.js";
+export {
+  TENANT_TOPIC_MAX,
+  TOPIC_WINDOWS,
+  TopicInputError,
+  addTenantTopic,
+  getTenantTopic,
+  getTopicSentiment,
+  listTenantTopics,
+  removeTenantTopic,
+  setTenantTopicStatus,
+  syncWorkspaceTopics,
+  topicTokens,
+  type TenantTopicRow,
+  type TopicBucket,
+  type TopicPost,
+  type TopicSentiment,
+  type TopicVoice,
+  type TopicWindow,
+} from "./topics/topics.js";
 export { evaluateCreatorCallOutcome, earlyCallScore } from "./creator/outcomes.js";
 export {
   getCreatorAuthorityProfile,

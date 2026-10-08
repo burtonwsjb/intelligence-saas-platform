@@ -15,6 +15,7 @@ import {
   withPlatformContext,
 } from "../index.js";
 import { listTenantCreatorList, requestCreatorFollow } from "./list.js";
+import { addTenantTopic, listTenantTopics, syncWorkspaceTopics } from "../topics/topics.js";
 
 // The influencer list is workspace-private: RLS separates workspaces, the web
 // role cannot call the worker's bridge functions, and the worker cannot read
@@ -97,5 +98,24 @@ describe("workspace influencer list on PostgreSQL", () => {
     const direct = await withPlatformContext(worker, (db) => db.execute(sql`SELECT count(*)::int AS n FROM tenant_creator_list`));
     const directRows = (Array.isArray(direct) ? direct : (direct as unknown as { rows: unknown[] }).rows) as { n: number }[];
     expect(directRows[0]!.n).toBe(0);
+  });
+
+  it("keeps topics private and lets the worker read only the query text", async () => {
+    const app = appConn!.db;
+    await withOrganizationContext(app, { organizationId: "o_a", userId: "u_a" }, (db) =>
+      addTenantTopic(db, { organizationId: "o_a", userId: "u_a", query: "Bitcoin" }),
+    );
+    const seenByB = await withOrganizationContext(app, { organizationId: "o_b", userId: "u_b" }, listTenantTopics);
+    expect(seenByB).toEqual([]);
+    await expect(
+      withOrganizationContext(app, { organizationId: "o_a", userId: "u_a" }, (db) =>
+        db.execute(sql`SELECT * FROM app.list_tracked_topic_queries(10)`),
+      ),
+    ).rejects.toThrow();
+    const report = await syncWorkspaceTopics(workerConn!.db);
+    expect(report.added).toBe(2);
+    await expect(
+      withPlatformContext(workerConn!.db, (db) => db.execute(sql`SELECT count(*) FROM tenant_topic`)),
+    ).rejects.toThrow();
   });
 });

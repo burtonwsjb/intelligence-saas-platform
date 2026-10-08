@@ -21,14 +21,15 @@ export type AppNavAccess = {
   predictionsCustomerVisible: boolean;
 };
 
-// Five primary destinations: Overview, Cards, Markets, Creators, Watchlist.
-// Everything else is a secondary Developer or Account item, so the primary
-// navigation stays the same size however many account features exist.
+// Six primary destinations: Overview, Topics, Cards, Markets, Creators,
+// Watchlist. Everything else is a secondary Developer or Account item, so the
+// primary navigation stays the same size however many account features exist.
 export function visibleAppNav(access: AppNavAccess): AppNavItem[] {
   const items: AppNavItem[] = [];
   if (access.canViewAnalytics) {
     items.push(
       { href: "/app", label: "Overview", key: "overview", group: "primary" },
+      { href: "/app/topics", label: "Topics", key: "topics", group: "primary" },
       { href: "/app/cards", label: "Cards", key: "cards", group: "primary" },
       { href: "/app/markets", label: "Markets", key: "markets", group: "primary" },
     );

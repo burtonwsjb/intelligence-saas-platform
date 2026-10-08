@@ -25,7 +25,14 @@ export function SentimentLabel({ summary }: { summary: Summary }) {
  * more. Post counts, distinct accounts, window and basis are always printed next
  * to the chart. No evidence is an empty ring, never a neutral or 0% bullish reading.
  */
-export function SentimentDonut({ summary }: { summary: Summary }) {
+export function SentimentDonut({
+  summary,
+  scope = "content resolved to this exact printing",
+}: {
+  summary: Summary;
+  /** What the posts were selected by, completing "Only ... is used". */
+  scope?: string;
+}) {
   const size = 148;
   const segments = donutSegments(
     SENTIMENT_KEYS.map((key) => ({ key, value: summary.weighted[key] })),
@@ -87,8 +94,8 @@ export function SentimentDonut({ summary }: { summary: Summary }) {
           {summary.unknown > 0 ? ` ${summary.unknown} could not be classified and are not counted in the shares.` : ""}{" "}
           Shares are weighted by track record: a post from a creator whose past calls came true counts for more, one from
           a creator with a poor record counts for less, and accounts with no record count at a small baseline.{" "}
-          {summary.ratedPosts} of {summary.classified} classified posts came from creators with a track record. Only content
-          resolved to this exact printing is used, and excluded creators are left out.
+          {summary.ratedPosts} of {summary.classified} classified posts came from creators with a track record. Only {scope} is
+          used, and excluded creators are left out.
           {summary.classified > 0 && summary.classified < SENTIMENT_MIN_SAMPLE
             ? ` Fewer than ${SENTIMENT_MIN_SAMPLE} posts is too few to call a direction.`
             : ""}

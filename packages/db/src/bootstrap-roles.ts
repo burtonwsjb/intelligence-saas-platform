@@ -563,6 +563,12 @@ export async function bootstrapRoles(
           GRANT EXECUTE ON FUNCTION app.complete_creator_follow(text, text, text, text, text) TO app_worker;
           GRANT EXECUTE ON FUNCTION app.list_followed_creator_ids(integer) TO app_worker;
         END IF;
+        IF to_regclass('public.tenant_topic') IS NOT NULL THEN
+          GRANT SELECT, INSERT, UPDATE, DELETE ON tenant_topic TO app_user;
+          REVOKE ALL ON tenant_topic FROM app_worker;
+          REVOKE EXECUTE ON FUNCTION app.list_tracked_topic_queries(integer) FROM app_user;
+          GRANT EXECUTE ON FUNCTION app.list_tracked_topic_queries(integer) TO app_worker;
+        END IF;
         IF to_regclass('public._isp_migration_history') IS NOT NULL THEN
           REVOKE ALL ON TABLE public._isp_migration_history FROM app_user, app_worker, app_admin;
         END IF;

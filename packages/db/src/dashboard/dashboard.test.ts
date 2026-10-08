@@ -108,10 +108,10 @@ describe("five-destination navigation", () => {
     predictionsCustomerVisible: false,
   };
 
-  it("keeps exactly five primary destinations and groups everything else", () => {
+  it("keeps exactly six primary destinations and groups everything else", () => {
     const items = visibleAppNav(full);
     const primary = items.filter((item) => item.group === "primary" && !item.parent);
-    expect(primary.map((item) => item.label)).toEqual(["Overview", "Cards", "Markets", "Creators", "Watchlist"]);
+    expect(primary.map((item) => item.label)).toEqual(["Overview", "Topics", "Cards", "Markets", "Creators", "Watchlist"]);
     expect(items.filter((item) => item.group === "developer").map((item) => item.key)).toEqual([
       "keys",
       "webhooks",
