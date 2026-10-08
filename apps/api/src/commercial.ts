@@ -1,4 +1,4 @@
-import { and, asc, eq, gt } from "drizzle-orm";
+import { and, asc, eq, gt, inArray } from "drizzle-orm";
 import type { Hono } from "hono";
 import {
   disableWebhookEndpoint,
@@ -25,14 +25,20 @@ import {
   listTcgLanguages,
   listTcgListingHistory,
   listTcgSoldHistory,
+  listSentimentEvidence,
   listWebhookEndpoints,
   processDueWebhookDeliveries,
   recordUsage,
   recordCustomerEvent,
   evaluateUsageWarnings,
   safeWebhookFetch,
+  summarizeSentiment,
+  EXPLORER_WINDOW_DAYS,
+  TCC_ID_TYPE,
+  TCC_NAMESPACE,
   tcgCardConcept,
   tcgPrinting,
+  tcgPrintingIdentifier,
   tcgSet,
   withMachineContext,
   WebhookUrlRejectedError,
@@ -57,6 +63,7 @@ import { CommercialFilterError, decodeCursor, encodeCursor, pageEnvelope, parseC
 import { resolveRequestId } from "./request-id.js";
 import { requireApiKeyPepper } from "@isp/auth";
 import { majorMoneyFields, moneyToFiniteNumber } from "@isp/shared";
+import { TCG_LANGUAGE_CODES } from "@isp/contracts";
 
 type App = Hono<{ Variables: { db: Database; machine: MachinePrincipal } }>;
 
@@ -179,6 +186,56 @@ async function hiddenCreatorIds(db: Database, machine: MachinePrincipal) {
   return list.filter((row) => row.preference === "hide" && row.creatorId).map((row) => row.creatorId!);
 }
 
+const TCC_CARD_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** Most TCG Card Central card ids one batch sentiment request may ask for. */
+export const TCC_SENTIMENT_BATCH_MAX = 100;
+
+function tccCardIds(raw: string | undefined): string[] {
+  const ids = [...new Set((raw ?? "").split(",").map((id) => id.trim().toLowerCase()).filter(Boolean))];
+  if (ids.length === 0) throw new CommercialFilterError("ids must list at least one TCG Card Central card id.");
+  if (ids.length > TCC_SENTIMENT_BATCH_MAX) {
+    throw new CommercialFilterError(`ids may list at most ${TCC_SENTIMENT_BATCH_MAX} card ids.`);
+  }
+  if (!ids.every((id) => TCC_CARD_ID.test(id))) throw new CommercialFilterError("ids must be TCG Card Central card ids (uuid).");
+  return ids;
+}
+
+function tccLanguage(raw: string | undefined): string {
+  if (raw == null || raw === "") return "en";
+  if ((TCG_LANGUAGE_CODES as readonly string[]).includes(raw)) return raw;
+  throw new CommercialFilterError("language is not recognized.");
+}
+
+/**
+ * Our printing for each imported TCG Card Central card in one language. The
+ * catalog import records "<TCC card id>:<language>" on every printing it creates.
+ */
+async function printingIdsForTccCards(db: Database, ids: string[], language: string) {
+  const wanted = new Map(ids.map((id) => [`${id}:${language}`.normalize("NFKC").toLowerCase(), id]));
+  const rows = await db
+    .select({ printingId: tcgPrintingIdentifier.printingId, value: tcgPrintingIdentifier.normalizedValue })
+    .from(tcgPrintingIdentifier)
+    .where(
+      and(
+        eq(tcgPrintingIdentifier.sourceNamespace, TCC_NAMESPACE),
+        eq(tcgPrintingIdentifier.identifierType, TCC_ID_TYPE),
+        inArray(tcgPrintingIdentifier.normalizedValue, [...wanted.keys()]),
+      ),
+    );
+  const found = new Map<string, string>();
+  for (const row of rows) {
+    const id = wanted.get(row.value);
+    if (id) found.set(id, row.printingId);
+  }
+  return found;
+}
+
+function sentimentShares(summary: SentimentSummary) {
+  const share = (key: "positive" | "neutral" | "negative" | "mixed") =>
+    summary.weightTotal > 0 ? round4(summary.weighted[key] / summary.weightTotal) : 0;
+  return { positive: share("positive"), neutral: share("neutral"), negative: share("negative"), mixed: share("mixed") };
+}
+
 function sentimentBody(input: {
   window: SentimentWindow;
   summary: SentimentSummary;
@@ -187,15 +244,13 @@ function sentimentBody(input: {
   calls: TopicCalls;
 }) {
   const { summary, calls } = input;
-  const share = (key: "positive" | "neutral" | "negative" | "mixed") =>
-    summary.weightTotal > 0 ? round4(summary.weighted[key] / summary.weightTotal) : 0;
   return {
     window: input.window,
     as_of: summary.to.toISOString(),
     sentiment: {
       label: summary.label,
       basis: summary.basis,
-      shares: { positive: share("positive"), neutral: share("neutral"), negative: share("negative"), mixed: share("mixed") },
+      shares: sentimentShares(summary),
       counts: summary.counts,
       posts: summary.contentItems,
       classified_posts: summary.classified,
@@ -527,6 +582,77 @@ export function registerCommercialRoutes(
         getPrintingCalls(c.get("db"), row.printing.id, { hiddenCreatorIds: hidden }),
       ]);
       return c.json({ printing: exactPrinting(row), ...sentimentBody({ window, ...sentiment, calls }) });
+    } catch (error) {
+      return commercialError(error, requestId);
+    }
+  });
+
+  app.get("/v1/tcc/cards/:tccCardId/sentiment", requireScope("signals:read"), async (c) => {
+    const requestId = resolveRequestId(c.req.header("x-request-id"));
+    try {
+      const window = sentimentWindow(c.req.query("window"));
+      const language = tccLanguage(c.req.query("language"));
+      const [tccCardId] = tccCardIds(c.req.param("tccCardId"));
+      await meter(c.get("db"), c.get("machine"), requestId);
+      const printingId = (await printingIdsForTccCards(c.get("db"), [tccCardId!], language)).get(tccCardId!);
+      const row = printingId ? await loadPrinting(c.get("db"), printingId) : null;
+      if (!row) {
+        return jsonError("not_found", "No printing for this TCG Card Central card in this language.", 404, requestId);
+      }
+      const hidden = await hiddenCreatorIds(c.get("db"), c.get("machine"));
+      const [sentiment, calls] = await Promise.all([
+        getCardSentimentWithHistory(c.get("db"), row.printing.id, window, { hiddenCreatorIds: hidden }),
+        getPrintingCalls(c.get("db"), row.printing.id, { hiddenCreatorIds: hidden }),
+      ]);
+      return c.json({
+        tcc_card_id: tccCardId,
+        printing: exactPrinting(row),
+        ...sentimentBody({ window, ...sentiment, calls }),
+      });
+    } catch (error) {
+      return commercialError(error, requestId);
+    }
+  });
+
+  // Current sentiment for a page of TCG Card Central cards in one request, without history or calls.
+  app.get("/v1/tcc/sentiment", requireScope("signals:read"), async (c) => {
+    const requestId = resolveRequestId(c.req.header("x-request-id"));
+    try {
+      const window = sentimentWindow(c.req.query("window"));
+      const language = tccLanguage(c.req.query("language"));
+      const ids = tccCardIds(c.req.query("ids"));
+      await meter(c.get("db"), c.get("machine"), requestId);
+      const printings = await printingIdsForTccCards(c.get("db"), ids, language);
+      const hidden = await hiddenCreatorIds(c.get("db"), c.get("machine"));
+      const to = new Date();
+      const range = { from: new Date(to.getTime() - EXPLORER_WINDOW_DAYS[window] * 86_400_000), to };
+      const evidence = await listSentimentEvidence(c.get("db"), [...new Set(printings.values())], range, {
+        hiddenCreatorIds: hidden,
+      });
+      const byPrinting = new Map<string, typeof evidence>();
+      for (const row of evidence) byPrinting.set(row.printingId, [...(byPrinting.get(row.printingId) ?? []), row]);
+      return c.json({
+        window,
+        language,
+        as_of: to.toISOString(),
+        data: ids
+          .filter((id) => printings.has(id))
+          .map((id) => {
+            const printingId = printings.get(id)!;
+            const summary = summarizeSentiment(byPrinting.get(printingId) ?? [], range);
+            return {
+              tcc_card_id: id,
+              printing_id: printingId,
+              label: summary.label,
+              basis: summary.basis,
+              shares: sentimentShares(summary),
+              posts: summary.contentItems,
+              classified_posts: summary.classified,
+              accounts: summary.uniqueAccounts,
+            };
+          }),
+        not_found: ids.filter((id) => !printings.has(id)),
+      });
     } catch (error) {
       return commercialError(error, requestId);
     }

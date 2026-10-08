@@ -114,6 +114,35 @@ describe("sentiment API for cards and products", () => {
     expect(boxBody.latest_price).toBeNull();
     expect((await app.request("/v1/products/nope/sentiment", { headers: auth })).status).toBe(404);
 
+    // TCG Card Central card ids resolve through the identifier the catalog import records.
+    const tccId = "0b6f1d5e-4c1a-4f7e-9a2b-3c4d5e6f7a8b";
+    const otherTccId = "1c7f2e6f-5d2b-4a8f-8b3c-4d5e6f7a8b9c";
+    await client.query(
+      `INSERT INTO tcg_printing_identifier (id, printing_id, source_namespace, identifier_type, identifier_value, normalized_value)
+       VALUES ('tid_api', $1, 'tcg_card_central', 'tcg_card_central_catalog_id', $2, $2)`,
+      [seeded.printings.greninjaEnNormal.id, `${tccId}:en`],
+    );
+    const tccCard = await app.request(`/v1/tcc/cards/${tccId.toUpperCase()}/sentiment?window=7d`, { headers: auth });
+    expect(tccCard.status).toBe(200);
+    const tccCardBody = (await tccCard.json()) as { tcc_card_id: string; printing: { id: string }; sentiment: { counts: { positive: number } } };
+    expect(tccCardBody.tcc_card_id).toBe(tccId);
+    expect(tccCardBody.printing.id).toBe(seeded.printings.greninjaEnNormal.id);
+    expect(tccCardBody.sentiment.counts.positive).toBe(1);
+    expect((await app.request(`/v1/tcc/cards/${tccId}/sentiment?language=ja`, { headers: auth })).status).toBe(404);
+    expect((await app.request("/v1/tcc/cards/not-a-uuid/sentiment", { headers: auth })).status).toBe(400);
+
+    const batch = await app.request(`/v1/tcc/sentiment?ids=${tccId},${otherTccId}&window=7d`, { headers: auth });
+    expect(batch.status).toBe(200);
+    const batchBody = (await batch.json()) as {
+      data: { tcc_card_id: string; label: string; shares: { positive: number }; posts: number }[];
+      not_found: string[];
+    };
+    expect(batchBody.data).toEqual([
+      expect.objectContaining({ tcc_card_id: tccId, label: "too_few", posts: 1, shares: expect.objectContaining({ positive: 1 }) }),
+    ]);
+    expect(batchBody.not_found).toEqual([otherTccId]);
+    expect((await app.request("/v1/tcc/sentiment", { headers: auth })).status).toBe(400);
+
     // Hiding the creator removes their posts from this workspace's sentiment.
     await client.exec(`
       INSERT INTO creator (id, display_name) VALUES ('cr_api', 'Api Channel');
