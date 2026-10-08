@@ -590,6 +590,7 @@ export {
   SENTIMENT_KEYS,
   SENTIMENT_LABEL_TEXT,
   SENTIMENT_MIN_SAMPLE,
+  SENTIMENT_BASELINE_WEIGHT,
   comparableSoldSeries,
   countAdvancedFilters,
   explorerQueryToSearch,

@@ -598,17 +598,35 @@ export type SentimentEvidenceRow = {
   contentId: string;
   accountId: string;
   sentiment: string;
+  /** Authority weight of the creator behind the account; SENTIMENT_BASELINE_WEIGHT when unrated. */
+  weight: number;
+  /** True when the account belongs to a creator with a persisted authority slice. */
+  rated: boolean;
 };
 
+/**
+ * Weight of a post from an account with no creator track record. Matches the
+ * default used for unrated creator calls in scoring/gather.ts, so a creator
+ * whose calls have proven accurate outweighs anonymous chatter, and one whose
+ * calls have proven wrong counts for less than it.
+ */
+export const SENTIMENT_BASELINE_WEIGHT = 0.05;
+
 export type SentimentSummary = {
+  /** Posts per sentiment, one vote per post. */
   counts: Record<SentimentKey, number>;
+  /** Sum of post weights per sentiment; shares and the label come from these. */
+  weighted: Record<SentimentKey, number>;
+  weightTotal: number;
   unknown: number;
   classified: number;
+  /** Classified posts from creators with an accuracy record. */
+  ratedPosts: number;
   contentItems: number;
   uniqueAccounts: number;
   from: Date;
   to: Date;
-  basis: "unweighted_content";
+  basis: "accuracy_weighted";
   label: SentimentLabel;
 };
 
@@ -630,44 +648,64 @@ export const SENTIMENT_MIN_SAMPLE = 3;
  * one item collapse to "mixed". Unknown is reported, never folded into neutral.
  */
 export function summarizeSentiment(rows: SentimentEvidenceRow[], range: { from: Date; to: Date }): SentimentSummary {
-  const byContent = new Map<string, { accountId: string; values: Set<string> }>();
+  const byContent = new Map<string, { accountId: string; weight: number; rated: boolean; values: Set<string> }>();
   for (const row of rows) {
-    const entry = byContent.get(row.contentId) ?? { accountId: row.accountId, values: new Set<string>() };
+    const entry =
+      byContent.get(row.contentId) ??
+      { accountId: row.accountId, weight: row.weight, rated: row.rated, values: new Set<string>() };
     entry.values.add(row.sentiment);
     byContent.set(row.contentId, entry);
   }
   const counts: Record<SentimentKey, number> = { positive: 0, neutral: 0, negative: 0, mixed: 0 };
+  const weighted: Record<SentimentKey, number> = { positive: 0, neutral: 0, negative: 0, mixed: 0 };
   let unknown = 0;
+  let ratedPosts = 0;
   const accounts = new Set<string>();
   for (const entry of byContent.values()) {
     accounts.add(entry.accountId);
     const known = [...entry.values].filter((value) => value !== "unknown");
     if (known.length === 0) {
       unknown += 1;
-    } else if (known.length === 1 && (SENTIMENT_KEYS as readonly string[]).includes(known[0]!)) {
-      counts[known[0] as SentimentKey] += 1;
-    } else {
-      counts.mixed += 1;
+      continue;
     }
+    const key: SentimentKey =
+      known.length === 1 && (SENTIMENT_KEYS as readonly string[]).includes(known[0]!) ? (known[0] as SentimentKey) : "mixed";
+    const weight = Number.isFinite(entry.weight) ? Math.max(0, entry.weight) : SENTIMENT_BASELINE_WEIGHT;
+    counts[key] += 1;
+    weighted[key] += weight;
+    if (entry.rated) ratedPosts += 1;
   }
   const classified = counts.positive + counts.neutral + counts.negative + counts.mixed;
+  const weightTotal = weighted.positive + weighted.neutral + weighted.negative + weighted.mixed;
   return {
     counts,
+    weighted,
+    weightTotal,
     unknown,
     classified,
+    ratedPosts,
     contentItems: byContent.size,
     uniqueAccounts: accounts.size,
     from: range.from,
     to: range.to,
-    basis: "unweighted_content",
-    label: sentimentLabel(counts, classified),
+    basis: "accuracy_weighted",
+    label: sentimentLabel(weighted, weightTotal, classified),
   };
 }
 
-export function sentimentLabel(counts: Record<SentimentKey, number>, classified: number): SentimentLabel {
+/**
+ * Direction label from weighted shares. The minimum sample is counted in posts,
+ * not weight, so one highly rated creator alone is still "too few to say".
+ */
+export function sentimentLabel(
+  weighted: Record<SentimentKey, number>,
+  weightTotal: number,
+  classified: number = weightTotal,
+): SentimentLabel {
   if (classified === 0) return "no_evidence";
   if (classified < SENTIMENT_MIN_SAMPLE) return "too_few";
-  const share = (key: SentimentKey) => counts[key] / classified;
+  if (!(weightTotal > 0)) return "divided";
+  const share = (key: SentimentKey) => weighted[key] / weightTotal;
   if (share("positive") >= 0.6) return "mostly_positive";
   if (share("negative") >= 0.6) return "mostly_negative";
   if (share("neutral") >= 0.6) return "mostly_neutral";
@@ -720,10 +758,24 @@ export async function listSentimentEvidence(
       ) trust ON TRUE
       WHERE trust.trust_state = 'excluded'
     )
-    SELECT l.chosen_printing_id AS printing_id, sm.content_id, sc.account_id, sm.sentiment
+    SELECT l.chosen_printing_id AS printing_id, sm.content_id, sc.account_id, sm.sentiment,
+      authority.authority_weight, authority.creator_id IS NOT NULL AS rated
     FROM latest l
     JOIN source_mention sm ON sm.id = l.mention_id
     JOIN source_content sc ON sc.id = sm.content_id
+    JOIN tcg_printing p ON p.id = l.chosen_printing_id
+    -- Same slice choice as scoring/gather.ts: newest slice in the printing's
+    -- language, else the newest all-language slice, else the newest slice.
+    LEFT JOIN LATERAL (
+      SELECT s.creator_id, s.authority_weight
+      FROM creator_source_account csa
+      JOIN creator_authority_slice s ON s.creator_id = csa.creator_id
+      WHERE csa.source_account_id = sc.account_id
+      ORDER BY (s.language_code = p.language_code) DESC NULLS LAST,
+        (s.language_code IS NULL AND s.price_tier = 'all') DESC,
+        s.created_at DESC, s.id DESC
+      LIMIT 1
+    ) authority ON TRUE
     WHERE l.status IN ('exact', 'high_confidence')
       AND l.chosen_printing_id IN (${inList(printingIds)})
       AND sc.published_at > ${ts(range.from)}
@@ -736,6 +788,8 @@ export async function listSentimentEvidence(
     contentId: String(row.content_id),
     accountId: String(row.account_id),
     sentiment: String(row.sentiment),
+    weight: row.authority_weight == null ? SENTIMENT_BASELINE_WEIGHT : Number(row.authority_weight),
+    rated: row.rated === true || row.rated === "t",
   }));
 }
 

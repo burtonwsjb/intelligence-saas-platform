@@ -9,6 +9,8 @@ import {
   comparableSoldSeries,
   explorerQueryToSearch,
   getCardSentiment,
+  listSentimentEvidence,
+  SENTIMENT_BASELINE_WEIGHT,
   listCardCreatorCalls,
   listCardEvidence,
   listCardExplorerPage,
@@ -63,12 +65,12 @@ describe("sentiment summary", () => {
   it("counts one vote per content item and keeps unknown separate", () => {
     const summary = summarizeSentiment(
       [
-        { printingId: "p", contentId: "c1", accountId: "a1", sentiment: "positive" },
-        { printingId: "p", contentId: "c1", accountId: "a1", sentiment: "positive" },
-        { printingId: "p", contentId: "c2", accountId: "a1", sentiment: "positive" },
-        { printingId: "p", contentId: "c3", accountId: "a2", sentiment: "negative" },
-        { printingId: "p", contentId: "c3", accountId: "a2", sentiment: "positive" },
-        { printingId: "p", contentId: "c4", accountId: "a3", sentiment: "unknown" },
+        { printingId: "p", contentId: "c1", accountId: "a1", sentiment: "positive", weight: 0.05, rated: false },
+        { printingId: "p", contentId: "c1", accountId: "a1", sentiment: "positive", weight: 0.05, rated: false },
+        { printingId: "p", contentId: "c2", accountId: "a1", sentiment: "positive", weight: 0.05, rated: false },
+        { printingId: "p", contentId: "c3", accountId: "a2", sentiment: "negative", weight: 0.05, rated: false },
+        { printingId: "p", contentId: "c3", accountId: "a2", sentiment: "positive", weight: 0.05, rated: false },
+        { printingId: "p", contentId: "c4", accountId: "a3", sentiment: "unknown", weight: 0.05, rated: false },
       ],
       range,
     );
@@ -77,15 +79,50 @@ describe("sentiment summary", () => {
     expect(summary.classified).toBe(3);
     expect(summary.contentItems).toBe(4);
     expect(summary.uniqueAccounts).toBe(3);
-    expect(summary.basis).toBe("unweighted_content");
+    expect(summary.basis).toBe("accuracy_weighted");
+    expect(summary.ratedPosts).toBe(0);
+  });
+
+  it("lets accurate creators outweigh unrated accounts and inaccurate ones count less", () => {
+    const row = (contentId: string, sentiment: string, weight: number, rated: boolean) => ({
+      printingId: "p",
+      contentId,
+      accountId: `a-${contentId}`,
+      sentiment,
+      weight,
+      rated,
+    });
+    const summary = summarizeSentiment(
+      [
+        row("c1", "positive", 0.6, true),
+        row("c2", "negative", 0.05, false),
+        row("c3", "negative", 0.05, false),
+        row("c4", "negative", 0.05, false),
+        row("c5", "negative", 0.01, true),
+      ],
+      range,
+    );
+    expect(summary.counts).toEqual({ positive: 1, neutral: 0, negative: 4, mixed: 0 });
+    expect(summary.weighted.positive).toBeCloseTo(0.6);
+    expect(summary.weighted.negative).toBeCloseTo(0.16);
+    expect(summary.ratedPosts).toBe(2);
+    expect(summary.label).toBe("mostly_positive");
+  });
+
+  it("needs enough posts even when one creator carries a lot of weight", () => {
+    const summary = summarizeSentiment(
+      [{ printingId: "p", contentId: "c1", accountId: "a1", sentiment: "positive", weight: 0.9, rated: true }],
+      range,
+    );
+    expect(summary.label).toBe("too_few");
   });
 
   it("never turns missing evidence into neutral", () => {
     const empty = summarizeSentiment([], range);
     expect(empty.label).toBe("no_evidence");
-    expect(sentimentLabel({ positive: 2, neutral: 0, negative: 0, mixed: 0 }, 2)).toBe("too_few");
-    expect(sentimentLabel({ positive: 4, neutral: 1, negative: 0, mixed: 0 }, 5)).toBe("mostly_positive");
-    expect(sentimentLabel({ positive: 2, neutral: 0, negative: 2, mixed: 0 }, 4)).toBe("divided");
+    expect(sentimentLabel({ positive: 2, neutral: 0, negative: 0, mixed: 0 }, 2, 2)).toBe("too_few");
+    expect(sentimentLabel({ positive: 4, neutral: 1, negative: 0, mixed: 0 }, 5, 5)).toBe("mostly_positive");
+    expect(sentimentLabel({ positive: 2, neutral: 0, negative: 2, mixed: 0 }, 4, 4)).toBe("divided");
   });
 });
 
@@ -216,5 +253,41 @@ describe("card explorer against the canonical pipeline", () => {
     expect(evidence.items.length).toBeLessThanOrEqual(10);
     const calls = await listCardCreatorCalls(db, printingId!);
     expect(calls.items.length).toBeLessThanOrEqual(10);
+  });
+
+  it("weights a post by its creator's latest authority slice and leaves unrated accounts at the baseline", async () => {
+    const db = await setup();
+    const wide = { from: new Date("2000-01-01T00:00:00Z"), to: new Date("2100-01-01T00:00:00Z") };
+    const printings = (await db.execute(sql`
+      SELECT DISTINCT chosen_printing_id AS id FROM entity_resolution_attempt WHERE chosen_printing_id IS NOT NULL
+    `)) as unknown as { rows: { id: string }[] };
+    const ids = printings.rows.map((row) => row.id);
+    const before = await listSentimentEvidence(db, ids, wide);
+    expect(before.length).toBeGreaterThan(0);
+    const linked = (await db.execute(sql`
+      SELECT csa.creator_id, csa.source_account_id FROM creator_source_account csa
+      WHERE csa.source_account_id IN (${sql.join(
+        [...new Set(before.map((row) => row.accountId))].map((id) => sql`${id}`),
+        sql`, `,
+      )})
+      LIMIT 1
+    `)) as unknown as { rows: { creator_id: string; source_account_id: string }[] };
+    const target = linked.rows[0];
+    expect(target).toBeTruthy();
+    await db.execute(sql`
+      INSERT INTO creator_authority_slice (id, creator_id, language_code, price_tier, sample_size, successes,
+        authority_weight, trust_state, formula_version, benchmark_requirement, created_at)
+      VALUES ('slice-weight-test', ${target!.creator_id}, NULL, 'all', 40, 32, 0.612345, 'trusted', 'authority.v1',
+        'test', '2099-01-01T00:00:00Z')
+    `);
+    const after = await listSentimentEvidence(db, ids, wide);
+    for (const row of after) {
+      if (row.accountId === target!.source_account_id) {
+        expect(row.rated).toBe(true);
+        expect(row.weight).toBeCloseTo(0.612345);
+      }
+    }
+    const unrated = after.filter((row) => !row.rated);
+    for (const row of unrated) expect(row.weight).toBe(SENTIMENT_BASELINE_WEIGHT);
   });
 });

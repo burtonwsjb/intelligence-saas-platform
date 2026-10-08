@@ -73,7 +73,7 @@ describe("card explorer on PostgreSQL as app_user", () => {
 
     const printingId = scoredFirst.rows[0]!.printingId;
     const sentiment = await getCardSentiment(db, printingId, "90d");
-    expect(sentiment.basis).toBe("unweighted_content");
+    expect(sentiment.basis).toBe("accuracy_weighted");
     const evidence = await listCardEvidence(db, printingId);
     expect(evidence.items.length).toBeLessThanOrEqual(10);
   });
