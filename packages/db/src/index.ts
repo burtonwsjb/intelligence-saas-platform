@@ -353,7 +353,8 @@ export {
   type TopicVoice,
   type TopicWindow,
 } from "./topics/topics.js";
-export { evaluateCreatorCallOutcome, earlyCallScore } from "./creator/outcomes.js";
+export { DEFAULT_EVALUATION_DAYS, evaluateCreatorCallOutcome, earlyCallScore } from "./creator/outcomes.js";
+export { scoreDueCreatorCalls, type DueCallScoringReport } from "./creator/due.js";
 export {
   getCreatorAuthorityProfile,
   latestTrustState,

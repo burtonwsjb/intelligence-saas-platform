@@ -7,6 +7,7 @@ import { ANALYTICS_LOCKED_BODY, loadAppAccess } from "@/lib/app-access";
 import { getDb } from "@/lib/auth";
 import { formatAge, formatDate, languageText, monogram } from "@/lib/display";
 import {
+  DEFAULT_EVALUATION_DAYS,
   SENTIMENT_BASELINE_WEIGHT,
   getCreatorAuthorityProfile,
   getCreatorTrackRecord,
@@ -175,7 +176,9 @@ export default async function CreatorDetailPage({
                     {DIRECTION_TEXT[call.direction] ?? call.direction.replaceAll("_", " ")} · {formatDate(call.publishedAt)}
                     {call.setName ? ` · ${call.setName}` : ""}
                     {call.languageCode ? ` · ${languageText(call.languageCode)}` : ""}
-                    {call.horizonCode !== "unspecified" ? ` · within ${call.horizonCode.replaceAll("_", " ")}` : ""}
+                    {call.horizonCode !== "unspecified"
+                      ? ` · within ${call.horizonCode.replaceAll("_", " ")}`
+                      : ` · no deadline given, judged after ${DEFAULT_EVALUATION_DAYS} days`}
                     {call.returnPct != null ? ` · price moved ${(call.returnPct * 100).toFixed(1)}%` : ""}
                     {call.contentUrl ? (
                       <>

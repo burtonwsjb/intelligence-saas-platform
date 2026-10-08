@@ -15,6 +15,13 @@ const HORIZON_DAYS: Record<string, number> = {
   "365d": 365,
 };
 
+/**
+ * Calls that name no horizon ("this set will go up") are judged over this many
+ * days, roughly the "next few months" most such calls mean. The outcome's
+ * data_quality records that the default was used.
+ */
+export const DEFAULT_EVALUATION_DAYS = 90;
+
 export function horizonDays(code: string, customDays: string | null): number | null {
   if (code === "custom") {
     const n = customDays == null ? null : Number(customDays);
@@ -53,7 +60,8 @@ export async function evaluateCreatorCallOutcome(
   if (!call || !outcome) {
     throw new Error("creator call or outcome not found.");
   }
-  const days = horizonDays(call.horizonCode, call.horizonCustomDays);
+  const defaultHorizon = call.horizonCode === "unspecified";
+  const days = defaultHorizon ? DEFAULT_EVALUATION_DAYS : horizonDays(call.horizonCode, call.horizonCustomDays);
   if (!call.printingId || call.priceAtCall == null || days == null) {
     await db
       .update(creatorCallOutcome)
@@ -142,7 +150,7 @@ export async function evaluateCreatorCallOutcome(
       targetHit,
       maxFavorableExcursion: mfe.toFixed(6),
       maxAdverseExcursion: mae.toFixed(6),
-      dataQuality: "complete",
+      dataQuality: defaultHorizon ? "complete_default_horizon" : "complete",
       evaluatedAt: asOf,
       methodVersion: OUTCOME_VERSION,
     })

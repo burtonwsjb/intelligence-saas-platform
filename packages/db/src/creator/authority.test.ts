@@ -10,6 +10,7 @@ import {
   recordCreatorTrust,
   recomputeCreatorAuthority,
   evaluateCreatorCallOutcome,
+  scoreDueCreatorCalls,
   seedTcgIdentityFixtures,
   tcgMarketFixtureRecords,
   type Database,
@@ -166,5 +167,30 @@ describe("creator outcomes and authority", () => {
     const slices = await recomputeCreatorAuthority(db, call!.call!.creatorId);
     const all = slices.find((row) => row.priceTier === "all");
     expect(Number(all?.sampleSize ?? 0)).toBe(0);
+  });
+
+  it("scores due calls on a schedule and refreshes the creators they belong to", async () => {
+    const { db, seeded } = await setup();
+    await extraSold(db, seeded, { id: "sold_en_due", language: "en", price: 55, at: "2026-01-20T00:00:00.000Z" });
+    const buy = await ingestSourceContentRecord(db, creatorCallSourceFixtures()[0]!);
+    const [buyCall] = await extractCreatorCallsFromContent(db, buy.contentId!);
+    const creatorId = buyCall!.call!.creatorId;
+
+    // Before the 30 day horizon nothing is due.
+    const early = await scoreDueCreatorCalls(db, { asOf: new Date("2026-01-10T00:00:00.000Z") });
+    expect(early).toMatchObject({ considered: 0, evaluated: 0, creatorsRecomputed: 0 });
+
+    const asOf = new Date("2026-02-15T00:00:00.000Z");
+    const due = await scoreDueCreatorCalls(db, { asOf });
+    expect(due).toMatchObject({ considered: 1, evaluated: 1, failed: 0, creatorsRecomputed: 1, moreCreatorsWaiting: false });
+    const profile = await getCreatorAuthorityProfile(db, creatorId);
+    expect(profile.slices.length).toBeGreaterThan(0);
+    expect(Number(profile.headline?.sampleSize)).toBe(1);
+
+    // Scored calls are not picked up again, and an up to date creator is not recomputed.
+    const again = await scoreDueCreatorCalls(db, { asOf });
+    expect(again).toMatchObject({ considered: 0, creatorsRecomputed: 0 });
+    const locked = await db.transaction((tx) => scoreDueCreatorCalls(tx as unknown as Database, { asOf, exclusive: true }));
+    expect(locked).toMatchObject({ considered: 0 });
   });
 });

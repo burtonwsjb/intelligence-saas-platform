@@ -16,6 +16,7 @@ import {
 } from "../index.js";
 import { listTenantCreatorList, requestCreatorFollow } from "./list.js";
 import { addTenantTopic, listTenantTopics, syncWorkspaceTopics } from "../topics/topics.js";
+import { scoreDueCreatorCalls } from "./due.js";
 
 // The influencer list is workspace-private: RLS separates workspaces, the web
 // role cannot call the worker's bridge functions, and the worker cannot read
@@ -117,5 +118,10 @@ describe("workspace influencer list on PostgreSQL", () => {
     await expect(
       withPlatformContext(workerConn!.db, (db) => db.execute(sql`SELECT count(*) FROM tenant_topic`)),
     ).rejects.toThrow();
+  });
+
+  it("lets the worker role run scheduled call scoring under its own grants", async () => {
+    const report = await withPlatformContext(workerConn!.db, (db) => scoreDueCreatorCalls(db, { exclusive: true }));
+    expect(report).toMatchObject({ considered: 0, failed: 0, creatorsRecomputed: 0 });
   });
 });

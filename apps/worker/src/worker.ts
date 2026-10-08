@@ -9,6 +9,7 @@ import {
   enqueueDueProviderSyncs,
   processQueuedEmailDeliveries,
   requireWorkerDatabaseUrl,
+  scoreDueCreatorCalls,
   upsertWorkerHeartbeat,
   withPlatformContext,
   type Database,
@@ -42,6 +43,7 @@ export const WORKER_HEARTBEAT_INTERVAL_MS = 15_000;
 export const WORKER_SWEEP_INTERVAL_MS = 5_000;
 export const QUEUE_METRICS_TIMEOUT_MS = 8_000;
 export const WORKER_SHUTDOWN_DRAIN_MS = 20_000;
+export const CALL_SCORING_INTERVAL_MS = 60 * 60 * 1000;
 
 type QueueCounts = Pick<IngestQueue, "getJobCounts">;
 
@@ -95,6 +97,32 @@ export async function runProviderSchedule(
     await withPlatformContext(db, (scoped) => enqueueDueProviderSyncs(scoped, env));
   } catch (error) {
     logLoopFailure("worker.scheduler_failed", "provider_scheduler", error);
+  }
+}
+
+/**
+ * Scores creator calls whose horizon has passed and refreshes the affected
+ * creators' authority. Database-only: it makes no provider requests. An
+ * advisory lock keeps two worker replicas from scoring the same batch.
+ */
+export async function runCallScoring(db: Database, asOf = new Date()) {
+  try {
+    const report = await withPlatformContext(db, (scoped) => scoreDueCreatorCalls(scoped, { asOf, exclusive: true }));
+    logQueueEvent("info", "worker.call_scoring", report
+      ? {
+          status: "ok",
+          considered: report.considered,
+          evaluated: report.evaluated,
+          insufficient: report.insufficient,
+          failed: report.failed,
+          creators_recomputed: report.creatorsRecomputed,
+          more_creators_waiting: report.moreCreatorsWaiting,
+        }
+      : { status: "skipped", reason: "overlap" });
+    return report;
+  } catch (error) {
+    logLoopFailure("worker.call_scoring_failed", "call_scoring", error);
+    return null;
   }
 }
 
@@ -322,6 +350,13 @@ export function startWorker(options?: {
     },
   });
 
+  const callScoring = setInterval(() => {
+    if (status === "shutting_down" || status === "stopped") {
+      return;
+    }
+    void runCallScoring(db);
+  }, CALL_SCORING_INTERVAL_MS);
+
   void runRedisTransportProbe({ env, queue })
     .then(logRedisTransportProbe)
     .catch((error) => {
@@ -371,6 +406,7 @@ export function startWorker(options?: {
               clearInterval(sweep);
               clearInterval(heartbeat);
               clearInterval(failureInspection);
+              clearInterval(callScoring);
               if (providerSchedule) {
                 clearInterval(providerSchedule);
               }

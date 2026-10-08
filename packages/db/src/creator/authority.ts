@@ -73,7 +73,9 @@ export async function recomputeCreatorAuthority(db: Database, creatorId: string,
       row.call.printingId &&
       (row.call.resolutionStatus === "exact" || row.call.resolutionStatus === "high_confidence"),
   );
-  const alphaRows = await db.select().from(creatorCallAlpha);
+  const alphaRows = usable.length
+    ? await db.select().from(creatorCallAlpha).where(inArray(creatorCallAlpha.callId, usable.map((row) => row.call.id)))
+    : [];
   const alphaByCall = new Map(
     alphaRows
       .filter((row) => row.methodVersion === ALPHA_METHOD_VERSION)
