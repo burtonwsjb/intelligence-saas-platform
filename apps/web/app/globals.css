@@ -1306,6 +1306,12 @@ textarea {
   position: relative;
 }
 
+.creator-tile form {
+  /* Sit above the tile's stretched link so follow / hide stay clickable. */
+  position: relative;
+  z-index: 1;
+}
+
 .creator-head {
   display: flex;
   gap: var(--space-3);

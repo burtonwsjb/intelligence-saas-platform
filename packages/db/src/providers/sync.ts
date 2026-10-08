@@ -1,4 +1,5 @@
 import { runCreatorMonitoring } from "./monitoring.js";
+import { promoteFollowedCreators, resolvePendingCreatorFollows } from "../creator/list.js";
 import { isHostedRuntime } from "@isp/shared";
 import { withPlatformContext } from "../rls.js";
 import { createHash } from "node:crypto";
@@ -129,6 +130,12 @@ export async function syncProvider(db: Database, input: ProviderSyncInput) {
   const leased = await withPlatformContext(db, (tx) => tryAcquireProviderLease(tx, providerKey));
   if (!leased) return { status: "skipped" as const, reason: "overlap", received: 0, quarantined: 0 };
   try {
+    if (input.trigger === "schedule") {
+      // Workspace follows: resolve a few pending handles under the same budget,
+      // then keep followed creators monitored. Failures here never block monitoring.
+      await resolvePendingCreatorFollows(db, { providerKey, env, transport: input.transport }).catch(() => null);
+      await promoteFollowedCreators(db, providerKey).catch(() => 0);
+    }
     const monitoring = input.trigger === "schedule" ? await runCreatorMonitoring(db, { providerKey, env, transport: input.transport }) : null;
     const report = await runSocialDiscovery(db, { providerKey, query: input.query,
       trigger: input.trigger === "admin" ? "admin" : input.trigger === "schedule" ? "schedule" : "staging",

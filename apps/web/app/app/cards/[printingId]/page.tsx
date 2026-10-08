@@ -7,7 +7,7 @@ import { ScoreRing } from "@/components/ScoreRing";
 import { SentimentDonut } from "@/components/SentimentSummary";
 import { Tabs } from "@/components/Tabs";
 import { TechnicalDetails, explanationText } from "@/components/TechnicalDetails";
-import { ANALYTICS_LOCKED_BODY, loadAppAccess } from "@/lib/app-access";
+import { ANALYTICS_LOCKED_BODY, loadAppAccess, loadHiddenCreatorIds } from "@/lib/app-access";
 import { getDb } from "@/lib/auth";
 import {
   CONFIRMATION_TEXT,
@@ -65,7 +65,7 @@ export default async function CardDetailPage({
   params: Promise<{ printingId: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { access } = await loadAppAccess();
+  const { access, organizationId, userId } = await loadAppAccess();
   if (!access.canViewAnalytics) {
     return <LockedFeature title="Card" body={ANALYTICS_LOCKED_BODY} />;
   }
@@ -317,10 +317,22 @@ export default async function CardDetailPage({
       ) : null}
 
       {tab === "sentiment" ? (
-        <SentimentPanel printingId={printingId} window={window} windowHref={(w) => href({ window: w })} />
+        <SentimentPanel
+          printingId={printingId}
+          window={window}
+          windowHref={(w) => href({ window: w })}
+          hiddenCreatorIds={await loadHiddenCreatorIds(organizationId, userId)}
+        />
       ) : null}
 
-      {tab === "creators" ? <CreatorsPanel printingId={printingId} page={page} pageHref={(p) => href({ page: p })} /> : null}
+      {tab === "creators" ? (
+        <CreatorsPanel
+          printingId={printingId}
+          page={page}
+          pageHref={(p) => href({ page: p })}
+          hiddenCreatorIds={await loadHiddenCreatorIds(organizationId, userId)}
+        />
+      ) : null}
 
       {tab === "evidence" ? <EvidencePanel printingId={printingId} page={page} pageHref={(p) => href({ page: p })} /> : null}
     </>
@@ -331,12 +343,14 @@ async function SentimentPanel({
   printingId,
   window,
   windowHref,
+  hiddenCreatorIds,
 }: {
   printingId: string;
   window: ExplorerWindow;
   windowHref: (window: ExplorerWindow) => string;
+  hiddenCreatorIds: string[];
 }) {
-  const summary = await getCardSentiment(getDb(), printingId, window);
+  const summary = await getCardSentiment(getDb(), printingId, window, { hiddenCreatorIds });
   return (
     <section className="panel">
       <div className="section-head" style={{ marginTop: 0 }}>
@@ -358,8 +372,18 @@ async function SentimentPanel({
   );
 }
 
-async function CreatorsPanel({ printingId, page, pageHref }: { printingId: string; page: number; pageHref: (page: number) => string }) {
-  const calls = await listCardCreatorCalls(getDb(), printingId, { page });
+async function CreatorsPanel({
+  printingId,
+  page,
+  pageHref,
+  hiddenCreatorIds,
+}: {
+  printingId: string;
+  page: number;
+  pageHref: (page: number) => string;
+  hiddenCreatorIds: string[];
+}) {
+  const calls = await listCardCreatorCalls(getDb(), printingId, { page, hiddenCreatorIds });
   return (
     <section className="panel">
       <h2>Creator calls on this printing</h2>

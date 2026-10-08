@@ -2,7 +2,7 @@ import { CardTile } from "@/components/CardTile";
 import { EmptyState, LockedFeature } from "@/components/EmptyState";
 import { FilterBar } from "@/components/FilterBar";
 import { ResultPager } from "@/components/ResultPager";
-import { ANALYTICS_LOCKED_BODY, loadAppAccess } from "@/lib/app-access";
+import { ANALYTICS_LOCKED_BODY, loadAppAccess, loadHiddenCreatorIds } from "@/lib/app-access";
 import { getDb } from "@/lib/auth";
 import { formatChange, formatScore, languageText, recommendationText, variantText } from "@/lib/display";
 import {
@@ -26,13 +26,15 @@ export default async function CardsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { access } = await loadAppAccess();
+  const { access, organizationId, userId } = await loadAppAccess();
   if (!access.canViewAnalytics) {
     return <LockedFeature title="Cards" body={ANALYTICS_LOCKED_BODY} />;
   }
   const query = parseExplorerQuery(await searchParams);
   const [result, facets] = await Promise.all([
-    listCardExplorerPage(getDb(), query),
+    loadHiddenCreatorIds(organizationId, userId).then((hiddenCreatorIds) =>
+      listCardExplorerPage(getDb(), query, { hiddenCreatorIds }),
+    ),
     listExplorerFacets(getDb(), { game: query.game }),
   ]);
   const search = explorerQueryToSearch(query);

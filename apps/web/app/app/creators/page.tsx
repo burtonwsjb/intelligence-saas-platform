@@ -1,10 +1,23 @@
+import {
+  addCreatorByLinkAction,
+  removeCreatorListEntryAction,
+  setCreatorPreferenceAction,
+} from "@/app/creator-list-actions";
+import { PreferenceButtons } from "@/components/CreatorPreferenceButtons";
 import { Badge, StatusBadge } from "@/components/Badge";
 import { EmptyState, LockedFeature } from "@/components/EmptyState";
 import { ResultPager } from "@/components/ResultPager";
+import { Tabs } from "@/components/Tabs";
 import { loadAppAccess } from "@/lib/app-access";
 import { getDb } from "@/lib/auth";
 import { formatAge, monogram } from "@/lib/display";
-import { getCreatorAuthorityProfile, listCreators } from "@isp/db";
+import {
+  getCreatorAuthorityProfile,
+  listCreators,
+  listTenantCreatorList,
+  withOrganizationContext,
+  type TenantCreatorListRow,
+} from "@isp/db";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -27,8 +40,22 @@ function compact(value: number | string | null | undefined): string {
   return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(n);
 }
 
-export default async function CreatorsPage({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
-  const { access } = await loadAppAccess();
+const STATUS_TEXT: Record<string, { label: string; tone: "good" | "warn" | "info" }> = {
+  pending: { label: "Looking up", tone: "info" },
+  resolved: { label: "Found", tone: "good" },
+  not_found: { label: "Not found", tone: "warn" },
+  blocked: { label: "Not available", tone: "warn" },
+  failed: { label: "Lookup failed, will retry if you add it again", tone: "warn" },
+};
+
+const PLATFORM_TEXT: Record<string, string> = { youtube: "YouTube", reddit: "Reddit" };
+
+export default async function CreatorsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string; list?: string; error?: string; notice?: string }>;
+}) {
+  const { access, organizationId, userId } = await loadAppAccess();
   if (!access.hasCreatorAnalytics || !access.canViewAnalytics) {
     return (
       <LockedFeature
@@ -38,9 +65,23 @@ export default async function CreatorsPage({ searchParams }: { searchParams: Pro
     );
   }
   const query = await searchParams;
-  const all = (await listCreators(getDb())).sort(
-    (a, b) => b.lastSeenAt.getTime() - a.lastSeenAt.getTime() || a.id.localeCompare(b.id),
+  const listEntries = await withOrganizationContext(getDb(), { organizationId, userId }, listTenantCreatorList);
+  const preferenceByCreator = new Map(
+    listEntries.filter((row) => row.creatorId).map((row) => [row.creatorId!, row.preference]),
   );
+  if (query.list === "mine") {
+    return (
+      <>
+        <CreatorsHeader active="mine" />
+        <MyList entries={listEntries} error={query.error} notice={query.notice} />
+      </>
+    );
+  }
+  // Hidden creators are left out of this workspace's directory.
+  const all = (await listCreators(getDb()))
+    .filter((row) => preferenceByCreator.get(row.id) !== "hide")
+    .sort((a, b) => b.lastSeenAt.getTime() - a.lastSeenAt.getTime() || a.id.localeCompare(b.id));
+  const hiddenCount = [...preferenceByCreator.values()].filter((value) => value === "hide").length;
   const pageCount = Math.max(1, Math.ceil(all.length / PAGE_SIZE));
   const page = Math.max(1, Math.min(pageCount, Math.trunc(Number(query.page ?? 1)) || 1));
   // Only the visible page loads full authority profiles.
@@ -48,18 +89,17 @@ export default async function CreatorsPage({ searchParams }: { searchParams: Pro
     all.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map((row) => getCreatorAuthorityProfile(getDb(), row.id)),
   );
 
+  const returnTo = page > 1 ? `/app/creators?page=${page}` : "/app/creators";
   return (
     <>
-      <header className="page-header">
-        <div>
-          <p className="eyebrow">Creators</p>
-          <h1>Who is talking</h1>
-          <p className="muted">
-            Reach shows how many people a creator reaches. Track record shows how their evaluated calls turned out. A large
-            following is never counted as authority.
-          </p>
-        </div>
-      </header>
+      <CreatorsHeader active="all" />
+      {query.error ? <p className="notice">{query.error}</p> : null}
+      {hiddenCount > 0 ? (
+        <p className="subtle">
+          {hiddenCount} hidden {hiddenCount === 1 ? "creator is" : "creators are"} left out.{" "}
+          <Link href="/app/creators?list=mine">Manage your list</Link>
+        </p>
+      ) : null}
       {profiles.length === 0 ? (
         <EmptyState title="No creators discovered yet" body="Creators appear here as topic discovery finds people talking about the market." />
       ) : (
@@ -107,7 +147,9 @@ export default async function CreatorsPage({ searchParams }: { searchParams: Pro
                     <Badge>checked {formatAge(discovery.lastMonitorSuccessAt)}</Badge>
                   ) : null}
                   {profile.awaitingOutcome > 0 ? <Badge>{profile.awaitingOutcome} awaiting outcome</Badge> : null}
+                  {preferenceByCreator.get(id) === "follow" ? <Badge tone="good">Following</Badge> : null}
                 </div>
+                <PreferenceButtons creatorId={id} current={preferenceByCreator.get(id)} returnTo={returnTo} />
               </li>
             );
           })}
@@ -122,5 +164,132 @@ export default async function CreatorsPage({ searchParams }: { searchParams: Pro
         hrefFor={(p) => (p > 1 ? `/app/creators?page=${p}` : "/app/creators")}
       />
     </>
+  );
+}
+
+function CreatorsHeader({ active }: { active: "all" | "mine" }) {
+  return (
+    <>
+      <header className="page-header">
+        <div>
+          <p className="eyebrow">Creators</p>
+          <h1>Who is talking</h1>
+          <p className="muted">
+            Reach shows how many people a creator reaches. Track record shows how their evaluated calls turned out. A large
+            following is never counted as authority.
+          </p>
+        </div>
+      </header>
+      <Tabs
+        label="Creator lists"
+        active={active}
+        tabs={[
+          { key: "all", label: "All creators", href: "/app/creators" },
+          { key: "mine", label: "Your list", href: "/app/creators?list=mine" },
+        ]}
+      />
+    </>
+  );
+}
+
+function MyList({ entries, error, notice }: { entries: TenantCreatorListRow[]; error?: string; notice?: string }) {
+  const following = entries.filter((row) => row.preference === "follow");
+  const hidden = entries.filter((row) => row.preference === "hide");
+  return (
+    <>
+      {error ? <p className="notice">{error}</p> : null}
+      {notice === "queued" ? (
+        <p className="notice info">
+          Added. The next collection run looks the account up and starts following its new posts.
+        </p>
+      ) : notice === "added" ? (
+        <p className="notice info">Added. This creator is already tracked, so their posts are followed from now on.</p>
+      ) : null}
+      <section className="panel" aria-labelledby="add-creator-heading">
+        <h2 id="add-creator-heading">Add an influencer</h2>
+        <form className="filter-form" action={addCreatorByLinkAction} style={{ margin: 0 }}>
+          <label className="field" style={{ flex: "3 1 18rem" }}>
+            YouTube channel or Reddit profile link
+            <input name="link" type="text" required maxLength={300} placeholder="youtube.com/@channel or reddit.com/user/name" />
+          </label>
+          <label className="field">
+            Platform
+            <select name="platform" defaultValue="">
+              <option value="">Detect from link</option>
+              <option value="youtube">YouTube</option>
+              <option value="reddit">Reddit</option>
+            </select>
+          </label>
+          <button type="submit">Add</button>
+        </form>
+        <p className="subtle">
+          Following a creator keeps their new posts collected. Their calls are still scored on accuracy like everyone
+          else&apos;s; following never raises their weight.
+        </p>
+      </section>
+      <section className="panel" aria-labelledby="following-heading">
+        <h2 id="following-heading">Following</h2>
+        {following.length === 0 ? (
+          <EmptyState title="You are not following anyone yet" body="Add a link above, or press Follow on any creator." />
+        ) : (
+          <EntryList entries={following} />
+        )}
+      </section>
+      <section className="panel" aria-labelledby="hidden-heading">
+        <h2 id="hidden-heading">Hidden</h2>
+        <p className="subtle">
+          Hidden creators are left out of your creator list, card sentiment and card creator calls. Card scores are shared
+          across workspaces and still include them.
+        </p>
+        {hidden.length === 0 ? (
+          <EmptyState title="Nobody hidden" body="Use Hide from my views on a creator whose calls you do not want to see." />
+        ) : (
+          <EntryList entries={hidden} />
+        )}
+      </section>
+    </>
+  );
+}
+
+function EntryList({ entries }: { entries: TenantCreatorListRow[] }) {
+  return (
+    <ul className="item-list">
+      {entries.map((entry) => {
+        const status = STATUS_TEXT[entry.status] ?? { label: entry.status, tone: "info" as const };
+        const name = entry.creatorName ?? entry.inputHandle ?? "Unnamed creator";
+        return (
+          <li key={entry.id}>
+            <span className="item-main">
+              <strong>
+                {entry.creatorId ? <Link href={`/app/creators/${encodeURIComponent(entry.creatorId)}`}>{name}</Link> : name}
+              </strong>
+              <span className="subtle">
+                {PLATFORM_TEXT[entry.platform] ?? entry.platform} · added {formatAge(entry.createdAt)}
+              </span>
+            </span>
+            <span className="badge-row" style={{ alignItems: "center" }}>
+              {entry.status !== "resolved" ? <StatusBadge tone={status.tone} label={status.label} /> : null}
+              {entry.creatorId && entry.preference === "hide" ? (
+                <form action={setCreatorPreferenceAction}>
+                  <input type="hidden" name="creatorId" value={entry.creatorId} />
+                  <input type="hidden" name="preference" value="follow" />
+                  <input type="hidden" name="returnTo" value="/app/creators?list=mine" />
+                  <button className="link-button text-link" type="submit">
+                    Follow instead
+                  </button>
+                </form>
+              ) : null}
+              <form action={removeCreatorListEntryAction}>
+                <input type="hidden" name="entryId" value={entry.id} />
+                <input type="hidden" name="returnTo" value="/app/creators?list=mine" />
+                <button className="link-button text-link" type="submit">
+                  Remove
+                </button>
+              </form>
+            </span>
+          </li>
+        );
+      })}
+    </ul>
   );
 }

@@ -11,6 +11,7 @@ import {
   insertWebhookEndpoint,
   listCallsByCreator,
   listCreators,
+  listTenantCreatorList,
   listIndexDefinitions,
   listIndexLevels,
   listMembershipAsOf,
@@ -571,9 +572,24 @@ export function registerCommercialRoutes(
         (scoped) => assertTenantFeature(scoped, machine.organizationId, "creator_analytics"),
       );
       await meter(c.get("db"), machine, requestId, "creator.read");
-      const rows = await listCreators(c.get("db"));
+      // The workspace's private list: hidden creators are left out, follows are flagged.
+      const list = await withMachineContext(
+        c.get("db"),
+        { organizationId: machine.organizationId, apiKeyId: machine.apiKeyId },
+        listTenantCreatorList,
+      );
+      const preference = new Map(list.filter((row) => row.creatorId).map((row) => [row.creatorId!, row.preference]));
+      const followingOnly = c.req.query("list") === "following";
+      const rows = (await listCreators(c.get("db"))).filter((row) =>
+        followingOnly ? preference.get(row.id) === "follow" : preference.get(row.id) !== "hide",
+      );
       return c.json({
-        data: rows.map((row) => ({ id: row.id, display_name: row.displayName, status: row.status })),
+        data: rows.map((row) => ({
+          id: row.id,
+          display_name: row.displayName,
+          status: row.status,
+          following: preference.get(row.id) === "follow",
+        })),
       });
     } catch (error) {
       return commercialError(error, requestId);

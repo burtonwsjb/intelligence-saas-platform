@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import type { Database } from "../client.js";
 import {
   creator,
@@ -205,7 +205,9 @@ export async function recomputeCreatorAuthority(db: Database, creatorId: string,
 export async function getCreatorAuthorityProfile(db: Database, creatorId: string) {
   const [creatorRow] = await db.select().from(creator).where(eq(creator.id, creatorId)).limit(1);
   const calls = await db.select().from(creatorCall).where(eq(creatorCall.creatorId, creatorId));
-  const outcomes = await db.select().from(creatorCallOutcome);
+  const outcomes = calls.length
+    ? await db.select().from(creatorCallOutcome).where(inArray(creatorCallOutcome.callId, calls.map((call) => call.id)))
+    : [];
   const joined = calls.map((call) => ({
     call,
     outcome: outcomes.find((row) => row.callId === call.id) ?? null,

@@ -58,7 +58,7 @@ export const DEFAULT_DISCOVERY_STRATEGIES = [
 const INVESTING_LANGUAGE = /invest|price|grade|psa|cgc|restock|market|sold|buy|hold|sell|undervalue|overpay/i;
 const TCG_LANGUAGE = /pokemon|pokémon|tcg|trading card|booster| illustrator|alt art/i;
 
-function stableDiscoveryId(prefix: string, parts: string[]): string {
+export function stableDiscoveryId(prefix: string, parts: string[]): string {
   return `${prefix}_${createHash("sha256").update(parts.join("|")).digest("hex").slice(0, 24)}`;
 }
 

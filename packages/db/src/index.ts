@@ -311,11 +311,29 @@ export {
   listCallsByDate,
   listCallsByDirection,
   listCallsByPrinting,
+  listCreatorAccountLinks,
   listCreatorAccounts,
   listCreators,
   listUnresolvedCalls,
 } from "./creator/query.js";
 export { creatorCallSourceFixtures } from "./creator/fixtures.js";
+export {
+  CreatorHandleError,
+  CreatorListLimitError,
+  TENANT_CREATOR_LIST_MAX,
+  listHiddenCreatorIds,
+  listTenantCreatorList,
+  parseCreatorHandle,
+  promoteFollowedCreators,
+  removeFromCreatorList,
+  requestCreatorFollow,
+  resolvePendingCreatorFollows,
+  setCreatorPreference,
+  type CreatorFollowResolutionReport,
+  type CreatorPlatform,
+  type CreatorPreference,
+  type TenantCreatorListRow,
+} from "./creator/list.js";
 export { evaluateCreatorCallOutcome, earlyCallScore } from "./creator/outcomes.js";
 export {
   getCreatorAuthorityProfile,
@@ -627,6 +645,10 @@ export {
   type SentimentKey,
   type SentimentLabel,
   type SentimentSummary,
+  getCreatorTrackRecord,
+  listCreatorCallHistory,
+  type CreatorCallHistoryItem,
+  type CreatorTrackRecord,
 } from "./dashboard/explorer.js";
 export { sparklinePath } from "./dashboard/sparkline.js";
 export {
