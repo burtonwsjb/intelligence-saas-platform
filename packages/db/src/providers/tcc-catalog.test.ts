@@ -435,4 +435,42 @@ describe("TCG Card Central catalog import", () => {
     expect(call).toMatchObject({ status: "processed" });
     expect((call as { call?: { printingId: string | null } }).call?.printingId).toBe(rows[0]!.id);
   });
+
+  it("imports a full page in a few statements rather than several per card", async () => {
+    const { client } = await setup();
+    const cards = Array.from({ length: 1000 }, (_, i) =>
+      card(i + 1, { languages: i % 2 ? ["en", "ja"] : ["en"], set: i < 500 ? TWM : { ...TWM, id: uuid(9002), set_code: "sfa", name: "Shrouded Fable" } }),
+    );
+    const feed = fakeFeed({ pokemon: cards });
+    // Count every statement, including those run inside transactions and savepoints.
+    let statements = 0;
+    const counted = <T extends { query: (...args: never[]) => unknown }>(target: T) =>
+      new Proxy(target, {
+        get(object, property, receiver) {
+          const value = Reflect.get(object, property, receiver);
+          if (property === "query") {
+            return (...args: never[]) => {
+              statements += 1;
+              return (value as (...a: never[]) => unknown).apply(object, args);
+            };
+          }
+          if (property === "transaction") {
+            return (callback: (tx: T) => unknown) =>
+              (value as (cb: (tx: T) => unknown) => unknown).call(object, (tx: T) => callback(counted(tx)));
+          }
+          return typeof value === "function" ? value.bind(object) : value;
+        },
+      });
+    const countedDb = drizzle(counted(client)) as unknown as Database;
+    const report = await importTccCatalog(countedDb, {
+      baseUrl: BASE_URL,
+      token: "t",
+      transport: feed.transport,
+      now: T0,
+      maxRequests: 1,
+    });
+    expect(report).toMatchObject({ status: "completed", cards: 1000, printings: 1500, sets: 2, collisions: 0, rejected: 0 });
+    expect(await count(client, "tcg_printing")).toBe(1500);
+    expect(statements).toBeLessThan(40);
+  });
 });
