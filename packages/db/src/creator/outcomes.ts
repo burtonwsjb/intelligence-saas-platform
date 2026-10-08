@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, isNull, lte } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, lte } from "drizzle-orm";
 import type { Database } from "../client.js";
 import { creatorCall, creatorCallOutcome } from "../schema/creator.js";
 import { tcgMarketSnapshot } from "../schema/tcg-market.js";
@@ -64,6 +64,34 @@ async function soldInWindow(
     .orderBy(asc(tcgMarketSnapshot.observedAt));
 }
 
+/** A post without an earlier price may start from one seen at most this long after it. */
+export const START_PRICE_GRACE_MS = 2 * 86_400_000;
+/** A market-price close must be observed within this long before the deadline. */
+const CLOSE_MAX_AGE_MS = 7 * 86_400_000;
+
+/** Raw (ungraded) prices of one printing in a window, oldest first. */
+async function rawPricesInWindow(
+  db: Database,
+  input: { printingId: string; from: Date; to: Date; priceType?: "sold" | "reference" },
+) {
+  return db
+    .select()
+    .from(tcgMarketSnapshot)
+    .where(
+      and(
+        eq(tcgMarketSnapshot.printingId, input.printingId),
+        input.priceType
+          ? eq(tcgMarketSnapshot.priceType, input.priceType)
+          : inArray(tcgMarketSnapshot.priceType, ["sold", "reference"]),
+        isNull(tcgMarketSnapshot.gradingCompany),
+        eq(tcgMarketSnapshot.outlierFlag, false),
+        gt(tcgMarketSnapshot.observedAt, input.from),
+        lte(tcgMarketSnapshot.observedAt, input.to),
+      ),
+    )
+    .orderBy(asc(tcgMarketSnapshot.observedAt));
+}
+
 export async function evaluateCreatorCallOutcome(
   db: Database,
   callId: string,
@@ -79,7 +107,7 @@ export async function evaluateCreatorCallOutcome(
   if (call.assetId) {
     return evaluateAssetCall(db, { call, outcomeId: outcome.id, days, defaultHorizon, asOf });
   }
-  if (!call.printingId || call.priceAtCall == null || days == null) {
+  if (!call.printingId || days == null) {
     await db
       .update(creatorCallOutcome)
       .set({
@@ -103,7 +131,6 @@ export async function evaluateCreatorCallOutcome(
       .where(eq(creatorCallOutcome.id, outcome.id));
     return getOutcome(db, callId);
   }
-  const start = Number(call.priceAtCall);
   const endAt = new Date(call.publishedAt.getTime() + days * 86400000);
   if (asOf.getTime() < endAt.getTime()) {
     await db
@@ -112,21 +139,60 @@ export async function evaluateCreatorCallOutcome(
       .where(eq(creatorCallOutcome.id, outcome.id));
     return getOutcome(db, callId);
   }
+  const callGrade = callGradeFromEvidence(call.evidence);
+  // Without a price from before the post, a raw card call may start from the
+  // first price seen shortly after it; the data quality records that it did.
+  let startingPrice = call.priceAtCall;
+  let startAfterCall = false;
+  if (startingPrice == null && !callGrade) {
+    const [first] = await rawPricesInWindow(db, {
+      printingId: call.printingId,
+      from: call.publishedAt,
+      to: new Date(Math.min(call.publishedAt.getTime() + START_PRICE_GRACE_MS, endAt.getTime())),
+    });
+    if (first?.price) {
+      startingPrice = first.price;
+      startAfterCall = true;
+    }
+  }
+  if (startingPrice == null) {
+    await db
+      .update(creatorCallOutcome)
+      .set({
+        evaluationStatus: "insufficient_data",
+        dataQuality: "missing_identity_price_or_horizon",
+        methodVersion: OUTCOME_VERSION,
+        evaluatedAt: asOf,
+      })
+      .where(eq(creatorCallOutcome.id, outcome.id));
+    return getOutcome(db, callId);
+  }
+  const start = Number(startingPrice);
   const windowSold = await soldInWindow(db, {
     printingId: call.printingId,
     from: call.publishedAt,
     to: endAt,
     nmOnly: true,
-    grade: callGradeFromEvidence(call.evidence),
+    grade: callGrade,
   });
-  const usable = windowSold.filter((row) => row.observedAt.getTime() <= endAt.getTime());
+  let usable = windowSold.filter((row) => row.observedAt.getTime() <= endAt.getTime());
+  // Raw cards without sales in the window are judged on the daily market price
+  // (TCGplayer's market price is itself built from recent sales). Graded calls
+  // need sales of their grade.
+  let referencePrice = false;
+  if (usable.length === 0 && !callGrade) {
+    usable = await rawPricesInWindow(db, { printingId: call.printingId, from: call.publishedAt, to: endAt, priceType: "reference" });
+    referencePrice = usable.length > 0;
+  }
   const endRow = usable.at(-1);
-  if (!endRow?.price) {
+  // The closing price must be near the deadline, not left over from the start of the window.
+  const closeTooEarly = endRow ? endAt.getTime() - endRow.observedAt.getTime() > CLOSE_MAX_AGE_MS : true;
+  if (!endRow?.price || (referencePrice && closeTooEarly)) {
     await db
       .update(creatorCallOutcome)
       .set({
         evaluationStatus: "insufficient_data",
-        startingPrice: call.priceAtCall,
+        startingPrice,
         dataQuality: "missing_market_data",
         methodVersion: OUTCOME_VERSION,
         evaluatedAt: asOf,
@@ -146,14 +212,20 @@ export async function evaluateCreatorCallOutcome(
     .update(creatorCallOutcome)
     .set({
       evaluationStatus: "evaluated",
-      startingPrice: call.priceAtCall,
+      startingPrice,
       endingPrice: endRow.price,
       returnPct: ret.toFixed(6),
       directionalCorrect: directional,
       targetHit,
       maxFavorableExcursion: mfe.toFixed(6),
       maxAdverseExcursion: mae.toFixed(6),
-      dataQuality: defaultHorizon ? "complete_default_horizon" : "complete",
+      dataQuality: [
+        defaultHorizon ? "complete_default_horizon" : "complete",
+        referencePrice ? "market_price" : null,
+        startAfterCall ? "start_after_call" : null,
+      ]
+        .filter(Boolean)
+        .join("+"),
       evaluatedAt: asOf,
       methodVersion: OUTCOME_VERSION,
     })
