@@ -120,7 +120,7 @@ export function htmlToText(html: string, maxChars = WEB_FEED_MAX_POST_TEXT_CHARS
     .replace(/<[^>]*>/g, " ");
   return decodeEntities(text)
     .replace(/\r\n?/g, "\n")
-    .replace(/[ \t\f\v ]+/g, " ")
+    .replace(/[ \t\f\v\u00a0]+/g, " ")
     .split("\n")
     .map((line) => line.trim())
     .join("\n")
