@@ -43,6 +43,7 @@ import {
 import { ProviderHttpError, type HttpTransport } from "./transport.js";
 import { intelligenceQuarantine } from "../schema/provider.js";
 import { safePayloadSummary } from "./safe.js";
+import { syncWebFeeds } from "../source/web-feed-ingest.js";
 
 export class ProviderSyncError extends Error {
   readonly errorClass: string;
@@ -111,6 +112,15 @@ type ProviderSyncInput = {
   limit?: number; env?: NodeJS.ProcessEnv; transport?: HttpTransport; query?: string;
 };
 export async function syncProvider(db: Database, input: ProviderSyncInput) {
+  // Website feeds run their own bounded batch (also the worker's hourly step).
+  if (input.providerKey === "web_feed") {
+    const report = await syncWebFeeds(db, {
+      env: input.env,
+      maxSites: Math.min(input.limit ?? 3, 3),
+    });
+    const status = report.status === "skipped" ? ("skipped" as const) : ("completed" as const);
+    return { status, reason: report.reason, received: report.newPosts, quarantined: 0 };
+  }
   // Social discovery manages short independent transactions so HTTP failures do
   // not roll back request reservations. Market normalization keeps its existing scope.
   if (!isDiscoveryProviderKey(input.providerKey)) return withPlatformContext(db, (tx) => syncProviderInTransaction(tx, input));
@@ -168,7 +178,11 @@ async function syncProviderInTransaction(
   },
 ) {
   const env = input.env ?? process.env;
-  if (!isProviderKey(input.providerKey) || isDiscoveryProviderKey(input.providerKey)) {
+  if (
+    !isProviderKey(input.providerKey) ||
+    isDiscoveryProviderKey(input.providerKey) ||
+    input.providerKey === "web_feed"
+  ) {
     throw new ProviderSyncError("Unknown provider.", "invalid_provider");
   }
   await ensureProviderRuntimeRows(db, env);
@@ -302,6 +316,10 @@ export async function enqueueDueProviderSyncs(db: Database, env: NodeJS.ProcessE
   const due: string[] = [];
   const now = new Date();
   for (const row of rows) {
+    // Website feeds are read by the worker's hourly step, not the sync queue.
+    if (row.providerKey === "web_feed") {
+      continue;
+    }
     const decision = decideProviderSyncDue(row, now);
     if (!decision.due) {
       continue;

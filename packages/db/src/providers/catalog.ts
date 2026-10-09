@@ -21,6 +21,7 @@ export const PROVIDER_ENV_MODE: Record<ProviderKey, string> = {
   reddit: "PROVIDER_REDDIT_MODE",
   youtube: "PROVIDER_YOUTUBE_MODE",
   google: "PROVIDER_GOOGLE_MODE",
+  web_feed: "PROVIDER_WEB_FEED_MODE",
 };
 
 export const PROVIDER_TYPE_BY_KEY: Record<ProviderKey, ProviderType> = {
@@ -30,6 +31,7 @@ export const PROVIDER_TYPE_BY_KEY: Record<ProviderKey, ProviderType> = {
   reddit: "social",
   youtube: "social",
   google: "social",
+  web_feed: "social",
 };
 
 export const PROVIDER_ADAPTER_NOTES: Record<ProviderKey, string> = {
@@ -42,6 +44,8 @@ export const PROVIDER_ADAPTER_NOTES: Record<ProviderKey, string> = {
   youtube: "Topic search discovers videos and channel IDs. Channel ID lists are optional seeds, not required.",
   google:
     "Programmable Search finds web articles for a topic; each website becomes a creator. Marketplaces and social sites covered elsewhere are skipped.",
+  web_feed:
+    "Influencer websites an operator registers: reads each site's RSS/Atom feed (robots.txt honored, bounded requests) and turns card names in posts into creator calls. Runs in the worker's hourly step, live mode only; no credentials.",
 };
 
 export const DEFAULT_SCHEDULE_SECONDS: Record<ProviderKey, number> = {
@@ -51,6 +55,7 @@ export const DEFAULT_SCHEDULE_SECONDS: Record<ProviderKey, number> = {
   reddit: 900,
   youtube: 1800,
   google: 3600,
+  web_feed: 3600,
 };
 
 export function isProviderKey(value: string): value is ProviderKey {
@@ -107,6 +112,7 @@ export const PROVIDER_CREDENTIAL_VARS: Record<ProviderKey, string[]> = {
   reddit: ["REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET", "REDDIT_USER_AGENT"],
   youtube: ["YOUTUBE_API_KEY"],
   google: ["GOOGLE_SEARCH_API_KEY", "GOOGLE_SEARCH_ENGINE_ID"],
+  web_feed: [],
 };
 
 export function providerCredentialStatus(

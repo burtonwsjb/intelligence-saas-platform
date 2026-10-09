@@ -19,6 +19,7 @@ export const PROVIDER_KEYS = [
   "reddit",
   "youtube",
   "google",
+  "web_feed",
 ] as const;
 export type ProviderKey = (typeof PROVIDER_KEYS)[number];
 

@@ -10,6 +10,7 @@ import {
   runCallScoring,
   runTccCatalogImport,
   runTranscriptBackfill,
+  runWebFeedSync,
   runWorkerHeartbeat,
   startProviderScheduleLoop,
   startWorker,
@@ -491,6 +492,37 @@ describe("transcript backfill", () => {
     expect(report).toBeNull();
     expect(fetches).toBe(0);
     expect(lines.join("\n")).toContain("worker.transcript_backfill_failed");
+    error.mockRestore();
+  });
+});
+
+describe("website feed sync", () => {
+  it("does nothing unless PROVIDER_WEB_FEED_MODE is live", async () => {
+    let transactions = 0;
+    const untouched = {
+      transaction: async () => {
+        transactions += 1;
+        throw new Error("unexpected");
+      },
+    };
+    expect(await runWebFeedSync(untouched as never, {})).toBeNull();
+    expect(await runWebFeedSync(untouched as never, { PROVIDER_WEB_FEED_MODE: "fixture" })).toBeNull();
+    expect(await runWebFeedSync(untouched as never, { PROVIDER_WEB_FEED_MODE: "disabled" })).toBeNull();
+    expect(transactions).toBe(0);
+  });
+
+  it("logs a sanitized failure and keeps going", async () => {
+    const lines: string[] = [];
+    const error = vi.spyOn(console, "error").mockImplementation((line) => lines.push(String(line)));
+    const failing = {
+      transaction: async () => {
+        throw new Error("Failed query postgresql://app_worker:hunter2@db.example/isp");
+      },
+    };
+    expect(await runWebFeedSync(failing as never, { PROVIDER_WEB_FEED_MODE: "live" })).toBeNull();
+    const blob = lines.join("\n");
+    expect(blob).toContain("worker.web_feed_sync_failed");
+    expect(blob).not.toContain("hunter2");
     error.mockRestore();
   });
 });

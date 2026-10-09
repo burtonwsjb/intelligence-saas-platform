@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE rss [ <!ENTITY boom "should never expand"> ]>
+<rss version="2.0"
+  xmlns:content="http://purl.org/rss/1.0/modules/content/"
+  xmlns:dc="http://purl.org/dc/elements/1.1/"
+  xmlns:atom="http://www.w3.org/2005/Atom">
+<channel>
+  <title>Card Insider &amp; Friends</title>
+  <atom:link href="https://cards.example.com/feed/" rel="self" type="application/rss+xml" />
+  <link>https://cards.example.com</link>
+  <description>Pokemon card market notes</description>
+  <!-- a comment with <item> inside should be ignored -->
+  <item>
+    <title>Three cards I&#8217;m buying this month</title>
+    <link>https://cards.example.com/2026/09/three-cards/?utm_source=rss&amp;utm_medium=rss</link>
+    <dc:creator><![CDATA[Sam Collector]]></dc:creator>
+    <pubDate>Tue, 01 Sep 2026 14:00:00 +0000</pubDate>
+    <guid isPermaLink="false">https://cards.example.com/?p=101</guid>
+    <description><![CDATA[<p>Short teaser that is not the full post&#8230;</p>]]></description>
+    <content:encoded><![CDATA[
+      <p>The market has been quiet this week and sealed product keeps sliding.</p>
+      <script>alert("never run")</script>
+      <p>That said, I would buy <strong>Charizard ex 006</strong> from Scarlet &amp; Violet right now. It will go up in a month.</p>
+      <p>Thanks for reading, see you next week.</p>
+    ]]></content:encoded>
+  </item>
+  <item>
+    <title>Collection update</title>
+    <link>https://cards.example.com/2026/08/collection-update/</link>
+    <pubDate>Sat, 01 Aug 2026 10:00:00 GMT</pubDate>
+    <guid>https://cards.example.com/2026/08/collection-update/</guid>
+    <description>Nothing about specific cards here, just binder pages &lt;b&gt;and&lt;/b&gt; storage tips.</description>
+  </item>
+</channel>
+</rss>

@@ -426,6 +426,48 @@ export {
   type TranscriptIngestReport,
 } from "./source/transcript-ingest.js";
 export {
+  CARD_MENTION_EXCERPT_MAX_CHARS,
+  boundedWindowExcerpt,
+  storeCardMentionSegments,
+  type CardMentionSegment,
+} from "./source/card-mentions.js";
+export {
+  WEB_FEED_BOT_TOKEN,
+  WEB_FEED_FALLBACK_PATHS,
+  WEB_FEED_MAX_REQUESTS_PER_SITE,
+  WebFeedClient,
+  createWebFeedTransport,
+  discoverFeedLinks,
+  htmlToText,
+  parseFeed,
+  parseRobotsTxt,
+  readWebFeed,
+  robotsAllows,
+  webFeedUserAgent,
+  type FeedItem,
+  type ParsedFeed,
+  type WebFeedPost,
+  type WebFeedReadResult,
+} from "./providers/web-feed.js";
+export {
+  DEFAULT_WEB_FEED_REQUESTS_PER_DAY,
+  WEB_FEED_EXTRACTOR_VERSION,
+  WEB_FEED_MAX_SITES_PER_RUN,
+  WEB_FEED_SITE_INTERVAL_HOURS,
+  WebFeedSiteError,
+  ingestWebFeedPost,
+  listWebFeedSites,
+  normalizeWebFeedSiteUrl,
+  planWebPostSegments,
+  registerWebFeedSite,
+  runWebFeedSyncBatch,
+  setWebFeedSiteState,
+  syncWebFeeds,
+  webFeedRequestBudget,
+  type WebFeedSiteRow,
+  type WebFeedSyncReport,
+} from "./source/web-feed-ingest.js";
+export {
   getCreatorAuthorityProfile,
   latestTrustState,
   recomputeCreatorAuthority,

@@ -15,6 +15,7 @@ import {
   runTranscriptBackfillBatch,
   scoreDueCreatorCalls,
   syncSealedProducts,
+  syncWebFeeds,
   transcriptProviderConfig,
   transcriptRequestBudget,
   upsertWorkerHeartbeat,
@@ -23,6 +24,7 @@ import {
   type TccCatalogReport,
   type TranscriptBackfillReport,
   type TranscriptFetcher,
+  type WebFeedSyncReport,
 } from "@isp/db";
 import {
   JOB_TIMEOUT_MS,
@@ -217,6 +219,48 @@ export async function runTranscriptBackfill(
     return report;
   } catch (error) {
     logLoopFailure("worker.transcript_backfill_failed", "transcript_backfill", error);
+    return null;
+  }
+}
+
+type WebFeedTransport = NonNullable<Parameters<typeof syncWebFeeds>[1]>["transport"];
+type WebFeedLookup = NonNullable<Parameters<typeof syncWebFeeds>[1]>["lookup"];
+
+/**
+ * Reads the RSS/Atom feeds of the influencer websites an operator registered
+ * and turns card names in new posts into mentions and creator calls. Runs
+ * only with PROVIDER_WEB_FEED_MODE=live; honors robots.txt, at most
+ * WEB_FEED_MAX_SITES_PER_RUN sites per run, WEB_FEED_MAX_REQUESTS_PER_SITE
+ * requests per site and WEB_FEED_REQUESTS_PER_DAY requests per Pacific day.
+ * Logs counts only, never a URL or post text.
+ */
+export async function runWebFeedSync(
+  db: Database,
+  env: NodeJS.ProcessEnv = process.env,
+  options: { transport?: WebFeedTransport; lookup?: WebFeedLookup } = {},
+): Promise<WebFeedSyncReport | null> {
+  if (resolveProviderMode("web_feed", env) !== "live") {
+    return null;
+  }
+  try {
+    const report = await syncWebFeeds(db, { env, transport: options.transport, lookup: options.lookup });
+    logQueueEvent(report.status === "stopped" || report.failed > 0 ? "warn" : "info", "worker.web_feed_sync", {
+      status: report.status,
+      reason: report.reason,
+      sites: report.sites,
+      checked: report.checked,
+      not_modified: report.notModified,
+      skipped: report.skipped,
+      failed: report.failed,
+      requests: report.requests,
+      posts: report.posts,
+      new_posts: report.newPosts,
+      mentions: report.mentions,
+      calls_created: report.callsCreated,
+    });
+    return report;
+  } catch (error) {
+    logLoopFailure("worker.web_feed_sync_failed", "web_feed_sync", error);
     return null;
   }
 }
@@ -473,7 +517,8 @@ export function startWorker(options?: {
 
   // Hourly, and once a minute after startup: the TCG Card Central card
   // catalog, sealed products for any new set, transcript card mentions for
-  // new YouTube videos (when a transcript provider is configured), then
+  // new YouTube videos (when a transcript provider is configured), posts from
+  // registered influencer websites (when PROVIDER_WEB_FEED_MODE=live), then
   // scoring of calls that have come due.
   const runMarketWork = () => {
     if (status === "shutting_down" || status === "stopped") {
@@ -482,6 +527,7 @@ export function startWorker(options?: {
     void runTccCatalogImport(db, env)
       .then(() => runSealedCatalogSync(db))
       .then(() => runTranscriptBackfill(db, env))
+      .then(() => runWebFeedSync(db, env))
       .then(() => runCallScoring(db));
   };
   const firstMarketWork = setTimeout(runMarketWork, 60_000);

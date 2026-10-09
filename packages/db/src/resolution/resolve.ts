@@ -771,8 +771,8 @@ export async function resolveSourceMention(db: Database, mentionId: string): Pro
   ]
     .filter(Boolean)
     .join(" ");
-  // Transcript mentions carry the catalog name they matched plus the
-  // collector number and set found next to it; the mention text itself may
+  // Transcript and website feed mentions carry the catalog name they matched
+  // plus the collector number and set found next to it; the mention text itself may
   // include the number, which would lower name similarity.
   const transcript = transcriptMentionHints(record.mention.metadata);
   return resolveEntity(db, {
@@ -805,7 +805,10 @@ function transcriptMentionHints(metadata: unknown): {
   setKey: string | null;
 } {
   const root = metadata && typeof metadata === "object" ? (metadata as Record<string, unknown>) : {};
-  const hints = root.transcript && typeof root.transcript === "object" ? (root.transcript as Record<string, unknown>) : {};
+  // Transcript mentions keep their hints under `transcript`; website feed
+  // mentions (and other detected-card text) under `card_detect`.
+  const source = root.card_detect ?? root.transcript;
+  const hints = source && typeof source === "object" ? (source as Record<string, unknown>) : {};
   const text = (value: unknown) => (typeof value === "string" && value.trim() ? value.trim() : null);
   return {
     cardName: text(hints.card_name),

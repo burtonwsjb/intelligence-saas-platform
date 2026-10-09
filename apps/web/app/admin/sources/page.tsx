@@ -1,10 +1,12 @@
-import { PROVIDER_ADAPTER_NOTES, collectSystemHealth, listAdminProviders } from "@isp/db";
+import { PROVIDER_ADAPTER_NOTES, collectSystemHealth, listAdminProviders, listWebFeedSites } from "@isp/db";
 import { requireGrantedOperator } from "@/lib/platform-admin";
 import { getDb } from "@/lib/auth";
 import {
+  registerWebFeedSiteAction,
   retryProviderJobAction,
   setProviderEnabledAction,
   setProviderPausedAction,
+  setWebFeedSiteStateAction,
   triggerProviderSyncAction,
 } from "@/app/admin-actions";
 import Link from "next/link";
@@ -14,12 +16,16 @@ export const dynamic = "force-dynamic";
 export default async function AdminSourcesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; website?: string }>;
 }) {
   const operator = await requireGrantedOperator();
   const query = await searchParams;
   const db = operator.adminDb ?? getDb();
-  const [health, providers] = await Promise.all([collectSystemHealth(db), listAdminProviders(db)]);
+  const [health, providers, websites] = await Promise.all([
+    collectSystemHealth(db),
+    listAdminProviders(db),
+    listWebFeedSites(db),
+  ]);
 
   return (
     <>
@@ -28,7 +34,16 @@ export default async function AdminSourcesPage({
         Provider runtime, credentials status (never secret values), health, and staging sync.{" "}
         <Link href="/admin/quarantine">Quarantine</Link>
       </p>
-      {query.error ? <p className="form-error">Source control was rejected.</p> : null}
+      {query.error === "website_invalid" ? (
+        <p className="form-error">Website rejected: use a public http(s) address of the creator&apos;s own site.</p>
+      ) : query.error === "website_platform" ? (
+        <p className="form-error">
+          Website rejected: platforms and stores (YouTube, Reddit, marketplaces) are covered by their own providers.
+        </p>
+      ) : query.error ? (
+        <p className="form-error">Source control was rejected.</p>
+      ) : null}
+      {query.website === "added" ? <p role="status">Website registered. The next hourly feed run reads it.</p> : null}
       {providers.map((row) => (
         <section key={row.providerKey}>
           <h2>{row.providerKey}</h2>
@@ -70,6 +85,44 @@ export default async function AdminSourcesPage({
               <input type="checkbox" name="confirm" value="yes" required />
             </label>
             <button type="submit">Trigger staging sync</button>
+          </form>
+        </section>
+      ))}
+      <h2 id="websites">Influencer websites</h2>
+      <p className="muted">
+        Registered sites are read through their RSS or Atom feed by the web_feed provider (live mode only), honoring
+        robots.txt. Card names in posts become mentions and creator calls for the site. Only short excerpts around card
+        names are kept.
+      </p>
+      <form className="inline-form" action={registerWebFeedSiteAction}>
+        <label>
+          Website URL
+          <input name="siteUrl" placeholder="https://pokeinsider.com/" required />
+        </label>
+        <label>
+          Feed URL (optional)
+          <input name="feedUrl" placeholder="https://example.com/feed" />
+        </label>
+        <label>
+          Display name (optional)
+          <input name="displayName" />
+        </label>
+        <button type="submit">Add website</button>
+      </form>
+      {websites.length === 0 ? <p className="muted">No websites registered yet.</p> : null}
+      {websites.map((site) => (
+        <section key={site.sourceAccountId}>
+          <p>
+            {site.displayName ?? site.domain} · {site.domain} · {site.state ?? "unknown"} · feed {site.feedUrl ?? "not found yet"}
+          </p>
+          <p className="muted">
+            last check {site.lastCheckAt?.toISOString() ?? "not yet"} · {site.lastStatus ?? "—"} · outcome{" "}
+            {site.lastOutcome ?? "—"} · new posts {site.lastNewPosts ?? "—"} · error {site.lastErrorClass ?? "—"}
+          </p>
+          <form className="inline-form" action={setWebFeedSiteStateAction}>
+            <input type="hidden" name="sourceAccountId" value={site.sourceAccountId} />
+            <input type="hidden" name="state" value={site.state === "paused" ? "active" : "paused"} />
+            <button type="submit">{site.state === "paused" ? "Resume" : "Pause"}</button>
           </form>
         </section>
       ))}

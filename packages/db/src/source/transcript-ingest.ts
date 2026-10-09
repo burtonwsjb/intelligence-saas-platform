@@ -22,7 +22,6 @@
 import { eq, sql } from "drizzle-orm";
 import type { Database } from "../client.js";
 import { extractCreatorCallsFromContent } from "../creator/ingest.js";
-import { analyzeSourceSentiment } from "../providers/sentiment.js";
 import { getProviderRuntime } from "../providers/runtime.js";
 import {
   chunkTranscriptCues,
@@ -30,21 +29,27 @@ import {
   type TranscriptResult,
   type TranscriptWindow,
 } from "../providers/transcripts.js";
-import { resolveSourceMention } from "../resolution/resolve.js";
 import { withPlatformContext } from "../rls.js";
-import { providerSyncRun, sourceSentiment } from "../schema/provider.js";
-import { sourceContent, sourceContentSegment, sourceMention } from "../schema/source.js";
+import { providerSyncRun } from "../schema/provider.js";
+import { sourceContent } from "../schema/source.js";
 import { detectCardMentions, loadCardNameIndex, type CardNameIndex, type DetectedCardMention } from "./card-detect.js";
-import { boundSourceExcerpt, excerptHash, normalizeMentionText, stableSourceId } from "./identity.js";
+import {
+  CARD_MENTION_EXCERPT_MAX_CHARS,
+  boundedWindowExcerpt,
+  cardMentionId,
+  storeCardMentionSegments,
+} from "./card-mentions.js";
+import { normalizeMentionText, stableSourceId } from "./identity.js";
+
+export { boundedWindowExcerpt } from "./card-mentions.js";
 
 export const TRANSCRIPT_EXTRACTOR_VERSION = "source.transcript.v1";
 export const TRANSCRIPT_WINDOW_MS = 60_000;
-export const TRANSCRIPT_EXCERPT_MAX_CHARS = 480;
+export const TRANSCRIPT_EXCERPT_MAX_CHARS = CARD_MENTION_EXCERPT_MAX_CHARS;
 export const TRANSCRIPT_CHECK_ID_PREFIX = "ptx_";
 export const TRANSCRIPT_SYNC_TRIGGER = "transcript";
 export const TRANSCRIPT_MAX_ATTEMPTS = 3;
 export const TRANSCRIPT_BACKFILL_MAX_VIDEOS_PER_RUN = 10;
-const SNIPPET_CONTEXT_CHARS = 100;
 const MAX_MENTIONS_PER_VIDEO = 60;
 
 export type TranscriptIngestOutcome =
@@ -77,39 +82,6 @@ export function transcriptCheckId(contentId: string) {
 
 function seconds(ms: number, round: (n: number) => number) {
   return `t=${Math.max(0, round(ms / 1000))}`;
-}
-
-/**
- * A bounded excerpt of a window: the text around each mention (merged when
- * they overlap, joined with " … "), stopping before TRANSCRIPT_EXCERPT_MAX_CHARS.
- */
-export function boundedWindowExcerpt(text: string, mentions: Array<{ start: number; end: number }>): string {
-  const ranges = mentions
-    .map((mention) => {
-      let from = Math.max(0, mention.start - SNIPPET_CONTEXT_CHARS);
-      let to = Math.min(text.length, mention.end + SNIPPET_CONTEXT_CHARS);
-      while (from > 0 && from < mention.start && !/\s/.test(text[from - 1]!)) from += 1;
-      while (to < text.length && to > mention.end && !/\s/.test(text[to]!)) to -= 1;
-      return { from, to };
-    })
-    .sort((a, b) => a.from - b.from);
-  const merged: Array<{ from: number; to: number }> = [];
-  for (const range of ranges) {
-    const last = merged[merged.length - 1];
-    if (last && range.from <= last.to) last.to = Math.max(last.to, range.to);
-    else merged.push({ ...range });
-  }
-  let excerpt = "";
-  for (const range of merged) {
-    const piece = text.slice(range.from, range.to).trim();
-    const next = excerpt ? `${excerpt} … ${piece}` : piece;
-    if (next.length > TRANSCRIPT_EXCERPT_MAX_CHARS) {
-      if (!excerpt) excerpt = piece.slice(0, TRANSCRIPT_EXCERPT_MAX_CHARS).trim();
-      break;
-    }
-    excerpt = next;
-  }
-  return excerpt;
 }
 
 function cueOffsetAt(window: TranscriptWindow, charIndex: number): number {
@@ -152,7 +124,7 @@ export function planTranscriptSegments(
       const normalized = normalizeMentionText(rawEntityText);
       return {
         ...mention,
-        id: stableSourceId("smn", [contentId, normalized, "other", TRANSCRIPT_EXTRACTOR_VERSION, startRef]),
+        id: cardMentionId(contentId, normalized, TRANSCRIPT_EXTRACTOR_VERSION, startRef),
         rawEntityText,
         normalized,
         offsetMs: cueOffsetAt(window, mention.start),
@@ -314,92 +286,42 @@ export async function ingestTranscriptForContent(
       const index = options.index ?? (await loadCardNameIndex(tx));
       const windows = chunkTranscriptCues(transcript.cues, TRANSCRIPT_WINDOW_MS);
       const planned = planTranscriptSegments(contentId, windows, index);
-      let mentionCount = 0;
-      for (const segment of planned) {
-        const excerpt = boundSourceExcerpt(segment.excerpt);
-        await tx
-          .insert(sourceContentSegment)
-          .values({
-            id: segment.id,
-            contentId,
-            kind: "timestamp_range",
-            startRef: segment.startRef,
-            endRef: segment.endRef,
-            excerpt,
-            excerptHash: excerptHash(excerpt),
-            metadata: {
-              source: "transcript",
-              transcript_provider: fetcher.provider,
-              transcript_lang: transcript.lang,
-              track_kind: transcript.trackKind,
-              window_start_ms: segment.startMs,
-              window_end_ms: segment.endMs,
-              extractor_version: TRANSCRIPT_EXTRACTOR_VERSION,
+      const { mentions: mentionCount } = await storeCardMentionSegments(tx, {
+        contentId,
+        contentTitle: content!.title,
+        extractionVersion: TRANSCRIPT_EXTRACTOR_VERSION,
+        hintsKey: "transcript",
+        segments: planned.map((segment) => ({
+          id: segment.id,
+          kind: "timestamp_range" as const,
+          startRef: segment.startRef,
+          endRef: segment.endRef,
+          excerpt: segment.excerpt,
+          metadata: {
+            source: "transcript",
+            transcript_provider: fetcher.provider,
+            transcript_lang: transcript.lang,
+            track_kind: transcript.trackKind,
+            window_start_ms: segment.startMs,
+            window_end_ms: segment.endMs,
+            extractor_version: TRANSCRIPT_EXTRACTOR_VERSION,
+          },
+          mentions: segment.mentions.map((mention) => ({
+            id: mention.id,
+            rawEntityText: mention.rawEntityText,
+            normalized: mention.normalized,
+            hints: {
+              card_name: mention.name,
+              matched_text: mention.matchedText,
+              collector_number: mention.collectorNumber,
+              set_key: mention.set?.key ?? null,
+              set_name: mention.set?.name ?? null,
+              game_key: mention.gameKey,
+              offset_ms: mention.offsetMs,
             },
-          })
-          .onConflictDoNothing();
-        for (const mention of segment.mentions) {
-          const inserted = await tx
-            .insert(sourceMention)
-            .values({
-              id: mention.id,
-              contentId,
-              segmentId: segment.id,
-              rawEntityText: mention.rawEntityText,
-              normalizedEntityText: mention.normalized,
-              mentionContext: "other",
-              sentiment: "unknown",
-              extractionVersion: TRANSCRIPT_EXTRACTOR_VERSION,
-              metadata: {
-                printing_id: null,
-                resolution_status: "unresolved",
-                transcript: {
-                  card_name: mention.name,
-                  matched_text: mention.matchedText,
-                  collector_number: mention.collectorNumber,
-                  set_key: mention.set?.key ?? null,
-                  set_name: mention.set?.name ?? null,
-                  game_key: mention.gameKey,
-                  offset_ms: mention.offsetMs,
-                },
-              },
-            })
-            .onConflictDoNothing()
-            .returning({ id: sourceMention.id });
-          if (inserted.length === 0) continue;
-          mentionCount += 1;
-          const analysis = analyzeSourceSentiment({
-            text: `${content!.title ?? ""} ${segment.excerpt} ${mention.rawEntityText}`,
-            mention_context: "other",
-          });
-          await tx
-            .insert(sourceSentiment)
-            .values({
-              id: stableSourceId("sst", [mention.id, analysis.analyzer_version]),
-              mentionId: mention.id,
-              analyzerVersion: analysis.analyzer_version,
-              direction: analysis.direction,
-              strength: analysis.strength,
-              confidence: analysis.confidence == null ? null : String(analysis.confidence),
-              subject: analysis.subject,
-              entityKind: analysis.entity_kind,
-              timeHorizon: analysis.time_horizon,
-              marketRelevance: analysis.market_relevance,
-              excitement: analysis.excitement,
-              purchaseIntent: analysis.purchase_intent,
-              priceExpectation: analysis.price_expectation,
-              creatorRecommendation: analysis.creator_recommendation,
-              marketConcern: analysis.market_concern,
-              evidence: analysis.evidence,
-            })
-            .onConflictDoNothing();
-          try {
-            await resolveSourceMention(tx, mention.id);
-          } catch {
-            // Resolution failures stay in entity_resolution_attempt; the mention is kept.
-          }
-        }
-      }
+          })),
+        })),
+      });
       let callsCreated = 0;
       if (mentionCount > 0) {
         const calls = await extractCreatorCallsFromContent(tx, contentId);

@@ -57,6 +57,28 @@ Retention: full transcripts are **not** stored. Only ~60 s windows that contain 
 
 Validation state: implemented and **fixture-tested only** (recorded watch-page HTML and a `json3` track under `packages/db/src/providers/fixtures/transcripts/`, fake Supadata responses, PGlite ingest tests). Neither adapter has been hosted-validated, and no provider is enabled anywhere by this change.
 
+## Website feeds (influencer sites)
+
+Influencer websites are a creator source without downloading any video. An operator registers a site on **/admin/sources → Influencer websites** (website URL, optional feed URL and display name; platform operators only, audited as `discovery.monitor` with `change: web_feed.register`). The site becomes a `web` `source_account` keyed by domain (the same account and creator a Google web search finds for that domain, so calls from both count toward one creator) and its registration lives in that account's `metadata.web_feed` (`site_url`, `feed_url`, `state` active/paused, `registered_at`, `registered_by`). URLs must be public http(s) addresses (the webhook SSRF guard plus a DNS check); YouTube, Reddit, social sites and stores are refused. Sites can be paused and resumed from the same page.
+
+The worker step `runWebFeedSync` (hourly, after the transcript backfill) reads due sites (not checked in the last 6 h, oldest first, at most 10 per run; paused sites and sites of creators an operator excluded are skipped):
+
+1. robots.txt of every origin it touches is read once per run and honored for every path (group `SentimentBot`, else `*`; longest match wins, Allow wins ties). A 4xx robots.txt means no rules; a 5xx or network failure means the site is skipped for that run. A disallowed feed is never requested.
+2. The feed is the stored feed URL, else `<link rel="alternate" type="application/rss+xml|application/atom+xml">` on the homepage, else `/feed`, `/rss.xml`, `/feed.xml`, `/atom.xml`, `/index.xml`. `If-None-Match` / `If-Modified-Since` are sent when the last read stored validators.
+3. RSS 2.0, RSS 1.0 and Atom are parsed by a small dependency-free reader (`providers/web-feed.ts`; DOCTYPE entities are skipped, never expanded). Post text is `content:encoded` / Atom `content`, else `description` / `summary`, as plain text (scripts and styles dropped). Only when an item has a title and no text is its article page read (at most 3 per site per run), and only where robots.txt allows.
+4. Each post (newest 20) is stored once as `web` `article` content (id = hash of the post URL without fragment and `utm_*`; posts already ingested from the feed are skipped). Card names are found with the same detector as transcripts over ~700-character paragraph windows (body first, then the title); each card (name + collector number) is kept once per post. Only windows naming a card are stored, as `paragraph` segments (`p=<n>` refs) with an excerpt of at most 480 characters; the post text itself is never stored (content `summary` and `excerpt` stay empty). Mentions carry the detector's hints under `metadata.card_detect` (card name, collector number, set key), which the resolver reads like transcript hints. Calls are then extracted for the content, so they count toward the site's accuracy.
+
+Bounds: every request (robots.txt, homepage, feed candidates, redirects, article pages) counts against 10 per site per run; 10 s timeout and 2 MB body cap per response (512 KB for robots.txt); redirects are followed by hand, at most 3, each re-checked for SSRF and robots. User-Agent: `SentimentBot/1.0 (+<APP_URL origin>) …`. Each site check is one `provider_sync_run` row (provider `web_feed`, trigger `web_feed`, id `pwf_…`) that reserves 10 requests in `limit_count` before any request and is corrected to the requests used; the checkpoint carries the account id, feed URL, validators and counts. Logs carry counts only.
+
+| Env | Default | Meaning |
+| --- | --- | --- |
+| `PROVIDER_WEB_FEED_MODE` | `disabled` (staging/production) | Must be `live` for anything to run. `fixture` does nothing. No credentials. The admin Enable/Disable/Pause controls on the `web_feed` provider apply. |
+| `WEB_FEED_REQUESTS_PER_DAY` | 200 | HTTP requests per America/Los_Angeles day across all sites (0–10000). |
+
+The provider key `web_feed` is new in `PROVIDER_KEYS`; its `provider_runtime` row is created by the worker at startup like the others (`applyProviderModeFromEnv`). The provider sync queue never schedules it; an admin "Trigger staging sync" for `web_feed` runs at most 3 due sites. No migration was needed: the registry uses `source_account.metadata`, checks use `provider_sync_run`, and the audit uses an existing action.
+
+Validation state: implemented and **fixture-tested only** (RSS, Atom, homepage and robots.txt fixtures under `packages/db/src/providers/fixtures/web-feed/`, fake HTTP transports, PGlite ingest tests). No real site (for example pokeinsider.com) was reachable from the build sandbox; nothing is hosted-validated and `PROVIDER_WEB_FEED_MODE` is not set anywhere by this change. Workspace users cannot add sites yet: the workspace creator list (`tenant_creator_list`) only accepts `youtube` / `reddit` by check constraint, so a user-facing path needs a migration.
+
 ## Segments
 
 `source_content_segment`: `timestamp_range`, `paragraph`, or `comment`, with start/end refs and optional bounded excerpt. Future creator-call evidence can point here.
