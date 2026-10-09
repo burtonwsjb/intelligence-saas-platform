@@ -395,6 +395,37 @@ export {
   type TccCatalogReport,
 } from "./providers/tcc-catalog.js";
 export {
+  DEFAULT_TRANSCRIPT_REQUESTS_PER_DAY,
+  SUPADATA_DEFAULT_BASE_URL,
+  SupadataTranscriptFetcher,
+  TRANSCRIPT_PROVIDERS,
+  YoutubeCaptionFetcher,
+  chunkTranscriptCues,
+  createTranscriptFetcherFromEnv,
+  transcriptProviderConfig,
+  transcriptRequestBudget,
+  type TranscriptCue,
+  type TranscriptFetcher,
+  type TranscriptProviderKey,
+  type TranscriptResult,
+} from "./providers/transcripts.js";
+export {
+  buildCardNameIndex,
+  detectCardMentions,
+  loadCardNameIndex,
+  type CardNameIndex,
+  type DetectedCardMention,
+} from "./source/card-detect.js";
+export {
+  TRANSCRIPT_BACKFILL_MAX_VIDEOS_PER_RUN,
+  TRANSCRIPT_EXTRACTOR_VERSION,
+  ingestTranscriptForContent,
+  runTranscriptBackfillBatch,
+  transcriptCheckId,
+  type TranscriptBackfillReport,
+  type TranscriptIngestReport,
+} from "./source/transcript-ingest.js";
+export {
   getCreatorAuthorityProfile,
   latestTrustState,
   recomputeCreatorAuthority,

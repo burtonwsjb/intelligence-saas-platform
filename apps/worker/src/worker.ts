@@ -6,17 +6,23 @@ import {
   applyProviderModeFromEnv,
   createDbConnection,
   createDbFromWorkerEnv,
+  createTranscriptFetcherFromEnv,
   enqueueDueProviderSyncs,
   importTccCatalog,
   processQueuedEmailDeliveries,
   requireWorkerDatabaseUrl,
   resolveProviderMode,
+  runTranscriptBackfillBatch,
   scoreDueCreatorCalls,
   syncSealedProducts,
+  transcriptProviderConfig,
+  transcriptRequestBudget,
   upsertWorkerHeartbeat,
   withPlatformContext,
   type Database,
   type TccCatalogReport,
+  type TranscriptBackfillReport,
+  type TranscriptFetcher,
 } from "@isp/db";
 import {
   JOB_TIMEOUT_MS,
@@ -163,6 +169,54 @@ export async function runSealedCatalogSync(db: Database) {
     return report;
   } catch (error) {
     logLoopFailure("worker.sealed_catalog_failed", "sealed_catalog", error);
+    return null;
+  }
+}
+
+/**
+ * Fetches transcripts for the newest unchecked YouTube videos and stores the
+ * card mentions in them, so creator calls can bind to the printing a creator
+ * names. Runs only when TRANSCRIPT_PROVIDER selects a provider
+ * (`youtube_captions`, or `supadata` with SUPADATA_API_KEY); nothing is enabled
+ * by default. Bounded by YOUTUBE_TRANSCRIPT_REQUESTS_PER_DAY (Pacific day) and
+ * at most TRANSCRIPT_BACKFILL_MAX_VIDEOS_PER_RUN videos per run; an advisory
+ * lock serializes claims across worker replicas. Logs counts only, never a
+ * URL or key.
+ */
+export async function runTranscriptBackfill(
+  db: Database,
+  env: NodeJS.ProcessEnv = process.env,
+  fetcher?: TranscriptFetcher,
+): Promise<TranscriptBackfillReport | null> {
+  const config = transcriptProviderConfig(env);
+  if (!config.enabled) {
+    if (config.reason !== "disabled") {
+      logQueueEvent("warn", "worker.transcript_backfill", { status: "skipped", reason: config.reason });
+    }
+    return null;
+  }
+  try {
+    const budget = transcriptRequestBudget(env);
+    const active = fetcher ?? createTranscriptFetcherFromEnv(env);
+    if (!active) return null;
+    const report = await runTranscriptBackfillBatch(db, active, { budget });
+    logQueueEvent(report.status === "stopped" ? "warn" : "info", "worker.transcript_backfill", {
+      status: report.status,
+      reason: report.reason,
+      provider: active.provider,
+      considered: report.considered,
+      checked: report.checked,
+      ingested: report.ingested,
+      no_mentions: report.noMentions,
+      unavailable: report.unavailable,
+      failed: report.failed,
+      segments: report.segments,
+      mentions: report.mentions,
+      calls_created: report.callsCreated,
+    });
+    return report;
+  } catch (error) {
+    logLoopFailure("worker.transcript_backfill_failed", "transcript_backfill", error);
     return null;
   }
 }
@@ -418,14 +472,16 @@ export function startWorker(options?: {
   });
 
   // Hourly, and once a minute after startup: the TCG Card Central card
-  // catalog, sealed products for any new set, then scoring of calls that have
-  // come due.
+  // catalog, sealed products for any new set, transcript card mentions for
+  // new YouTube videos (when a transcript provider is configured), then
+  // scoring of calls that have come due.
   const runMarketWork = () => {
     if (status === "shutting_down" || status === "stopped") {
       return;
     }
     void runTccCatalogImport(db, env)
       .then(() => runSealedCatalogSync(db))
+      .then(() => runTranscriptBackfill(db, env))
       .then(() => runCallScoring(db));
   };
   const firstMarketWork = setTimeout(runMarketWork, 60_000);

@@ -758,21 +758,58 @@ export async function resolveSourceMention(db: Database, mentionId: string): Pro
   if (!record) {
     throw new Error("source mention not found.");
   }
+  // The segment a mention was found in (e.g. a transcript window) often names
+  // the set or says the collector number next to the card, so its excerpt
+  // feeds signal inference. It comes right after the mention text, so a
+  // number in the mention wins over any in the excerpt; prices and years in
+  // the excerpt are blanked so they are never read as collector numbers.
   const context = [
     record.mention.rawEntityText,
+    record.segment?.excerpt ? withoutNonCollectorNumbers(record.segment.excerpt) : null,
     record.content?.title,
     record.content?.summary,
   ]
     .filter(Boolean)
     .join(" ");
+  // Transcript mentions carry the catalog name they matched plus the
+  // collector number and set found next to it; the mention text itself may
+  // include the number, which would lower name similarity.
+  const transcript = transcriptMentionHints(record.mention.metadata);
   return resolveEntity(db, {
     subjectType: "mention",
     subjectId: mentionId,
     mentionId,
     signals: {
-      card_name: record.mention.normalizedEntityText,
+      card_name: transcript.cardName ?? record.mention.normalizedEntityText,
+      collector_number: transcript.collectorNumber,
+      set: transcript.setKey,
       context_text: context,
       content_language: record.content?.language ?? null,
     },
   });
+}
+
+/** Removes prices, percentages and years, which COLLECTOR_PATTERN would otherwise read as collector numbers. */
+export function withoutNonCollectorNumbers(text: string): string {
+  return text
+    .replace(/[$€£¥]\s*\d[\d,.]*\s*[km]?\b/gi, " ")
+    .replace(/\b\d[\d,.]*\s*(?:k\b|%|percent\b|dollars?\b|bucks\b|usd\b|cents?\b)/gi, " ")
+    .replace(/\b(?:19|20)\d{2}\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function transcriptMentionHints(metadata: unknown): {
+  cardName: string | null;
+  collectorNumber: string | null;
+  setKey: string | null;
+} {
+  const root = metadata && typeof metadata === "object" ? (metadata as Record<string, unknown>) : {};
+  const hints = root.transcript && typeof root.transcript === "object" ? (root.transcript as Record<string, unknown>) : {};
+  const text = (value: unknown) => (typeof value === "string" && value.trim() ? value.trim() : null);
+  return {
+    cardName: text(hints.card_name),
+    collectorNumber: text(hints.collector_number),
+    setKey: text(hints.set_key),
+  };
 }

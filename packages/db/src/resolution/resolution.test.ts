@@ -16,7 +16,7 @@ import {
   type Database,
 } from "../index.js";
 import { FUZZY_PROBABLE_THRESHOLD, nameSimilarity, normalizeMatchText, primaryScript } from "./identity.js";
-import { findNameConcepts } from "./resolve.js";
+import { findNameConcepts, withoutNonCollectorNumbers } from "./resolve.js";
 import { inferSetFromText } from "./signals.js";
 import { insertTcgCardConcept, insertTcgCardNameAlias } from "../tcg/catalog.js";
 
@@ -360,5 +360,37 @@ describe("entity resolution", () => {
       }
       expect(new Set(await findNameConcepts(db, query, "pokemon")), query).toEqual(expected);
     }
+  });
+
+  it("reads the set from the segment a mention was found in, ignoring prices and years there", async () => {
+    const { db, seeded } = await setup();
+    const ingested = await ingestSourceContentRecord(db, {
+      provider: "youtube",
+      provider_record_id: "seg_ctx_video",
+      event_type: "source.content.ingested",
+      account: { external_account_id: "seg_ctx_channel" },
+      content: {
+        external_content_id: "seg_ctx_video",
+        content_type: "video",
+        published_at: "2026-09-01T00:00:00Z",
+        title: "Pikachu pickup",
+        canonical_url: "https://www.youtube.com/watch?v=seg_ctx_video",
+        license_status: "bounded_excerpt",
+        retention_policy: "bounded_excerpt",
+      },
+      segments: [
+        { kind: "timestamp_range", start_ref: "t=60", end_ref: "t=120", excerpt: "it was $40 in 2024, Pikachu 025 from Paldea Evolved" },
+      ],
+      mentions: [{ raw_entity_text: "Pikachu 025", segment_index: 0 }],
+    });
+    const [mention] = await listSourceMentions(db, ingested.contentId!);
+    const resolved = await resolveSourceMention(db, mention!.id);
+    expect(resolved.attempt.inputSignals).toMatchObject({ set: "sv2", collector_number: "025", card_name: "Pikachu 025" });
+    expect(resolved.attempt.status).toBe("exact");
+    expect(resolved.attempt.chosenPrintingId).toBe(seeded.printings.pikachuSv2.id);
+  });
+
+  it("blanks prices, percentages and years in segment context", () => {
+    expect(withoutNonCollectorNumbers("worth $1,200 or 20% more in 2024, 15 dollars, #199")).toBe("worth or more in , , #199");
   });
 });

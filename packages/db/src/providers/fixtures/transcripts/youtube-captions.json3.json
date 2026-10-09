@@ -1,0 +1,15 @@
+{
+  "wireMagic": "pb3",
+  "pens": [{}],
+  "wsWinStyles": [{}],
+  "wpWinPositions": [{}],
+  "events": [
+    { "tStartMs": 0, "dDurationMs": 4000, "id": 1, "wpWinPosId": 1, "wsWinStyleId": 1 },
+    { "tStartMs": 1200, "dDurationMs": 4100, "wWinId": 1, "segs": [{ "utf8": "what" }, { "utf8": " is", "tOffsetMs": 240 }, { "utf8": " going", "tOffsetMs": 480 }, { "utf8": " on", "tOffsetMs": 720 }, { "utf8": " everybody", "tOffsetMs": 960 }] },
+    { "tStartMs": 5300, "dDurationMs": 20, "wWinId": 1, "aAppend": 1, "segs": [{ "utf8": "\n" }] },
+    { "tStartMs": 5320, "dDurationMs": 4600, "wWinId": 1, "segs": [{ "utf8": "the" }, { "utf8": " pokemon", "tOffsetMs": 160 }, { "utf8": " market", "tOffsetMs": 400 }, { "utf8": " is", "tOffsetMs": 640 }, { "utf8": " crashing", "tOffsetMs": 880 }, { "utf8": " today", "tOffsetMs": 1200 }] },
+    { "tStartMs": 72000, "dDurationMs": 5000, "wWinId": 1, "segs": [{ "utf8": "i" }, { "utf8": " would", "tOffsetMs": 200 }, { "utf8": " buy", "tOffsetMs": 400 }, { "utf8": " charizard", "tOffsetMs": 600 }, { "utf8": " ex", "tOffsetMs": 900 }, { "utf8": " 006", "tOffsetMs": 1100 }] },
+    { "tStartMs": 77000, "dDurationMs": 5000, "wWinId": 1, "segs": [{ "utf8": "from" }, { "utf8": " scarlet", "tOffsetMs": 200 }, { "utf8": " &amp;", "tOffsetMs": 500 }, { "utf8": " violet", "tOffsetMs": 600 }, { "utf8": " it", "tOffsetMs": 900 }, { "utf8": " will", "tOffsetMs": 1000 }, { "utf8": " go", "tOffsetMs": 1100 }, { "utf8": " up", "tOffsetMs": 1200 }] },
+    { "tStartMs": 140000, "dDurationMs": 3000, "wWinId": 1, "segs": [{ "utf8": "thanks" }, { "utf8": " for", "tOffsetMs": 200 }, { "utf8": " watching", "tOffsetMs": 400 }] }
+  ]
+}

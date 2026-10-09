@@ -9,6 +9,7 @@ import {
   runProviderSchedule,
   runCallScoring,
   runTccCatalogImport,
+  runTranscriptBackfill,
   runWorkerHeartbeat,
   startProviderScheduleLoop,
   startWorker,
@@ -425,6 +426,71 @@ describe("TCG Card Central catalog import", () => {
     const blob = lines.join("\n");
     expect(blob).toContain("worker.tcc_catalog_failed");
     expect(blob).not.toContain("hunter2");
+    error.mockRestore();
+  });
+});
+
+describe("transcript backfill", () => {
+  const db = {
+    transaction: async () => {
+      throw new Error("Failed query postgresql://app_worker:hunter2@db.example/isp");
+    },
+  };
+
+  it("does nothing unless a transcript provider is configured", async () => {
+    let transactions = 0;
+    const untouched = {
+      transaction: async () => {
+        transactions += 1;
+        throw new Error("unexpected");
+      },
+    };
+    const lines: string[] = [];
+    const warn = vi.spyOn(console, "warn").mockImplementation((line) => lines.push(String(line)));
+    const info = vi.spyOn(console, "log").mockImplementation((line) => lines.push(String(line)));
+    expect(await runTranscriptBackfill(untouched as never, {})).toBeNull();
+    expect(await runTranscriptBackfill(untouched as never, { TRANSCRIPT_PROVIDER: "none" })).toBeNull();
+    expect(await runTranscriptBackfill(untouched as never, { TRANSCRIPT_PROVIDER: "supadata" })).toBeNull();
+    expect(transactions).toBe(0);
+    expect(lines.join("\n")).toContain("missing_key");
+    warn.mockRestore();
+    info.mockRestore();
+  });
+
+  it("logs a sanitized failure without the provider key and keeps going", async () => {
+    const lines: string[] = [];
+    const error = vi.spyOn(console, "error").mockImplementation((line) => lines.push(String(line)));
+    const report = await runTranscriptBackfill(db as never, {
+      TRANSCRIPT_PROVIDER: "supadata",
+      SUPADATA_API_KEY: "supadata-secret-do-not-log",
+    });
+    expect(report).toBeNull();
+    const blob = lines.join("\n");
+    expect(blob).toContain("worker.transcript_backfill_failed");
+    expect(blob).not.toContain("supadata-secret-do-not-log");
+    expect(blob).not.toContain("hunter2");
+    error.mockRestore();
+  });
+
+  it("rejects an invalid daily budget without fetching", async () => {
+    const lines: string[] = [];
+    const error = vi.spyOn(console, "error").mockImplementation((line) => lines.push(String(line)));
+    let fetches = 0;
+    const report = await runTranscriptBackfill(
+      db as never,
+      { TRANSCRIPT_PROVIDER: "youtube_captions", YOUTUBE_TRANSCRIPT_REQUESTS_PER_DAY: "-5" },
+      {
+        provider: "youtube_captions",
+        maxRequestsPerVideo: 2,
+        fetch: async () => {
+          fetches += 1;
+          return { status: "unavailable" };
+        },
+      },
+    );
+    expect(report).toBeNull();
+    expect(fetches).toBe(0);
+    expect(lines.join("\n")).toContain("worker.transcript_backfill_failed");
     error.mockRestore();
   });
 });
