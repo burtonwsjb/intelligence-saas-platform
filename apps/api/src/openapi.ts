@@ -37,6 +37,8 @@ export function commercialOpenApi() {
       },
       "/v1/printings/{id}/signals": { get: { summary: "Market signal flags", security: [{ bearerAuth: [] }] } },
       "/v1/printings/{id}/sentiment": { get: { summary: "Accuracy-weighted sentiment for a printing with history and call accuracy; ?window=7d|30d|90d. Raw and graded copies share the card's sentiment; graded calls are judged on sales of their grade", security: [{ bearerAuth: [] }] } },
+      "/v1/tcc/cards/{tccCardId}/sentiment": { get: { summary: "Sentiment for a TCG Card Central card id, same body as /v1/printings/{id}/sentiment plus tcc_card_id; ?language=en (default)|ja|ko|es|zh-Hant, ?window=7d|30d|90d", security: [{ bearerAuth: [] }] } },
+      "/v1/tcc/sentiment": { get: { summary: "Current sentiment for up to 100 TCG Card Central card ids in one request (?ids=uuid,uuid), no history; ids not imported are listed in not_found; ?language=, ?window=", security: [{ bearerAuth: [] }] } },
       "/v1/products": { get: { summary: "Sealed products (booster packs, boxes, bundles, elite trainer boxes); ?kind=, ?game=, ?set=", security: [{ bearerAuth: [] }] } },
       "/v1/products/{key}/sentiment": { get: { summary: "Accuracy-weighted sentiment for a product with history, call accuracy and latest price; ?window=7d|30d|90d", security: [{ bearerAuth: [] }] } },
       "/v1/printings/{id}/opportunity": { get: { summary: "Opportunity scores", security: [{ bearerAuth: [] }] } },
