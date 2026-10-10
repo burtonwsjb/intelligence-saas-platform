@@ -30,10 +30,41 @@ export const LANGUAGE_TEXT: Record<string, string> = {
   "zh-Hans": "Simplified Chinese",
   zh_hans: "Simplified Chinese",
   "zh-CN": "Simplified Chinese",
+  multi: "Multiple languages",
 };
 
 export function languageText(code: string): string {
   return LANGUAGE_TEXT[code] ?? code.toUpperCase();
+}
+
+export const GAME_TEXT: Record<string, string> = {
+  pokemon: "Pokémon",
+  one_piece: "One Piece",
+  dragon_ball: "Dragon Ball",
+  dragon_ball_super: "Dragon Ball Super",
+  dragon_ball_z: "Dragon Ball Z",
+  yugioh: "Yu-Gi-Oh!",
+  yu_gi_oh: "Yu-Gi-Oh!",
+};
+
+export function gameText(key: string): string {
+  return GAME_TEXT[key] ?? key.replaceAll("_", " ").replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+export const PROVIDER_TEXT: Record<string, string> = {
+  tcg_card_central: "TCG Card Central",
+  tcgplayer: "TCGplayer",
+  ebay: "eBay",
+  tickermint: "TickerMint",
+};
+
+export function providerText(key: string): string {
+  return PROVIDER_TEXT[key] ?? key.replaceAll("_", " ");
+}
+
+/** "1 printing", "3 printings": counts read as words, not templates. */
+export function plural(count: number, singular: string, pluralForm = `${singular}s`): string {
+  return `${count.toLocaleString("en-US")} ${count === 1 ? singular : pluralForm}`;
 }
 
 export function variantText(variant: string): string {

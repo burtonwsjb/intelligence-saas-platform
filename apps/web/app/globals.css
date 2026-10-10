@@ -1528,3 +1528,284 @@ textarea {
     margin-bottom: var(--space-2);
   }
 }
+
+/* ---------- Public landing ---------- */
+
+.shell-main:has(.landing) {
+  max-width: 72rem;
+  padding-top: var(--space-7);
+}
+
+.landing {
+  display: grid;
+  gap: var(--space-7);
+}
+
+.landing-hero {
+  display: grid;
+  gap: var(--space-4);
+  justify-items: start;
+  max-width: 46rem;
+}
+
+.shell-main .landing-hero h1 {
+  font-size: clamp(2rem, 5vw, 3.25rem);
+  line-height: 1.08;
+  letter-spacing: -0.035em;
+  margin: 0;
+}
+
+.landing-lede {
+  font-size: var(--text-l);
+  color: var(--ink-2);
+  margin: 0;
+  max-width: 40rem;
+}
+
+.landing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.landing-games {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  list-style: none;
+  padding: 0;
+  margin: var(--space-2) 0 0;
+}
+
+.landing-games li {
+  font-size: var(--text-s);
+  color: var(--ink-2);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: var(--space-1) var(--space-3);
+}
+
+.landing-section h2,
+.landing-cta h2 {
+  font-size: var(--text-xl);
+  letter-spacing: -0.02em;
+  margin: 0 0 var(--space-4);
+}
+
+.landing-steps,
+.landing-principles {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.landing-card {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-l);
+  padding: var(--space-5);
+  box-shadow: var(--shadow-1);
+}
+
+.landing-card h3,
+.landing-principles h3 {
+  font-size: var(--text-m);
+  font-weight: 640;
+  margin: var(--space-3) 0 var(--space-2);
+}
+
+.landing-card p,
+.landing-principles p {
+  margin: 0;
+  color: var(--ink-2);
+}
+
+.landing-principles li {
+  border-top: 2px solid var(--ink-1);
+  padding-top: var(--space-2);
+}
+
+.landing-step-number {
+  display: inline-grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.landing-cta {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: center;
+  text-align: center;
+  padding: var(--space-7) var(--space-5);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-l);
+}
+
+.landing-cta h2 {
+  margin: 0;
+}
+
+.button.small {
+  min-height: 2.25rem;
+  padding: 0 var(--space-3);
+  font-size: var(--text-s);
+}
+
+.shell-nav a.button {
+  color: var(--ink-inverse);
+}
+
+/* ---------- Plans and usage ---------- */
+
+.panel-grid > .panel {
+  margin: 0;
+}
+
+.plan-grid {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.panel.plan-card {
+  margin: 0;
+  display: grid;
+  gap: var(--space-3);
+  align-content: start;
+}
+
+.plan-card.current {
+  border-color: var(--ink-1);
+  box-shadow: 0 0 0 1px var(--ink-1);
+}
+
+.plan-card h3 {
+  margin: 0;
+}
+
+.plan-price {
+  font-size: var(--text-l);
+  font-weight: 640;
+  margin: 0;
+}
+
+.plan-features {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: var(--space-2);
+  font-size: var(--text-s);
+}
+
+.plan-features li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.plan-features li span:last-child {
+  font-weight: 560;
+  text-align: right;
+}
+
+.plan-features li.off {
+  color: var(--ink-3);
+}
+
+.plan-features li.off span:last-child {
+  font-weight: 400;
+}
+
+.plan-current {
+  margin: 0;
+  font-size: var(--text-s);
+  font-weight: 600;
+  color: var(--status-good);
+}
+
+.meter {
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--chart-track);
+  overflow: hidden;
+  margin: var(--space-3) 0;
+}
+
+.meter span {
+  display: block;
+  height: 100%;
+  background: var(--chart-line);
+  border-radius: inherit;
+}
+
+/* ---------- Phone layout for the card gallery ---------- */
+
+/* A one-column wall of full-height artwork is ~600px per card on a phone. Show a
+ * compact row instead: small artwork on the left, price and signal on the right. */
+@media (max-width: 480px) {
+  .card-tile {
+    display: grid;
+    grid-template-columns: 6.5rem minmax(0, 1fr);
+    grid-template-rows: none;
+    align-items: start;
+  }
+
+  .card-tile .card-art {
+    max-height: none;
+    height: auto;
+    margin: var(--space-3) 0 var(--space-3) var(--space-3);
+    border-radius: var(--radius-s);
+  }
+
+  /* Language and variant stay visible: they are part of the exact printing. */
+  .card-tile .card-badges {
+    top: auto;
+    bottom: var(--space-1);
+    left: var(--space-1);
+    right: var(--space-1);
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .card-tile .card-badges > * {
+    font-size: 0.625rem;
+  }
+
+  .card-tile .art-note,
+  .card-tile .card-why {
+    display: none;
+  }
+
+  .card-tile .art-placeholder {
+    padding: var(--space-1);
+  }
+
+  .card-tile .art-placeholder .art-monogram {
+    font-size: 1.5rem;
+  }
+
+  .card-tile .card-body {
+    padding: var(--space-3);
+  }
+}
+
+/* Sign-in, sign-up and workspace setup: one narrow, centered column. */
+.shell-main:has(.auth-form):not(:has(.app-frame)) {
+  max-width: 26rem;
+  padding-top: var(--space-7);
+}
