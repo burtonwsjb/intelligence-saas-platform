@@ -128,6 +128,54 @@ Gating: the daily quote job's (TCC `live`, `TCC_API_BASE_URL` and `TCC_API_TOKEN
 
 No migration was needed. Validation state: implemented and **fixture-tested only** (fake TCC transport and PGlite scoring test for price history; pure tests for sitemaps, article dates, description detection, the seed plan and leaderboard ranking; API route test). The YouTube and website backfills have no end-to-end DB test yet. Nothing is hosted-validated, the TCC price-history endpoint has not been called from here, and no new env var is set anywhere by this change.
 
+## Chart Sentiment
+
+Goal: a second score per card, next to market (social) sentiment, that reads the card's price, demand and population charts the way stock charts are read, separately for raw copies and for each grade. Standard chart-reading methods only; no individual trader's material.
+
+### Inputs and segments
+
+`packages/db/src/analytics/chart/series.ts` turns a printing's `tcg_market_snapshot` rows (last 410 days, `outlier_flag = false`, quality not `outlier`/`suspect`) into one daily series per segment: `raw` (no grading company) and each grade (`psa10`, `bgs9_5`, `cgc10`, ...). Segments are never mixed. Each segment uses one price type (`reference` or `sold`, whichever has more days) and one currency (the most common; other currencies are counted, never converted); the daily price is the median of that day's rows; gaps of up to 7 days are carried forward and a longer gap starts the series over; at most 400 points. Sales (`sales_count`), listings (`listing_count`) and graded population (`attributes.population`, when a source reports it) ride along per day. Today almost all rows are raw TCC reference prices, so graded segments, demand and population signals mostly report insufficient data.
+
+### Pattern database
+
+The catalog is committed code (`analytics/chart/patterns.ts`, `chart-patterns.v1`) and mirrored into the `chart_pattern` table with key, name, category, direction, horizon, rule, plain-English explanation, prior hit rate and the hit rate measured on our own card history. Every threshold is a named constant in `CHART_THRESHOLDS`.
+
+| Pattern | Direction | Rule (horizon judged over) |
+| --- | --- | --- |
+| Golden / death cross | bull / bear | 50-day MA crossed above / below the 200-day MA within 10 days (60 d; needs 201 points) |
+| Uptrend / downtrend | bull / bear | Price > 20-day MA > 50-day MA and the 50-day higher than 10 days ago, or the mirror (30 d; 60 points) |
+| RSI oversold / overbought | bull / bear | Wilder RSI(14) below 30 / above 70 (14 d; 30 points) |
+| MACD crossovers | bull / bear | MACD(12,26) crossed its 9-day signal within 5 days; stronger from below / above zero (21 d; 35 points) |
+| Resistance breakout / support breakdown | bull / bear | Close ≥ 2% beyond the extreme close of the 30 days before a 3-day window, the level tested at least twice (within 2%) and price still inside it 3 days ago; volume-confirmed (sales ≥ 1.5x the prior 30-day average) at full strength, unconfirmed 0.5x, no sales data 0.75x (30 d) |
+| Double bottom / top | bull / bear | Two pivot lows (highs) within 3%, ≥ 10 days apart in the last 60 days, a ≥ 5% move between them, neither undercut, and a close through the neckline within 5 days (30 d) |
+| Inverse / head and shoulders | bull / bear | Three pivots in 90 days, head ≥ 3% beyond shoulders that are within 5% of each other, ≥ 5 days apart, neckline broken within 5 days (30 d) |
+| Bollinger band breaks | bull (below) / bear (above) | Close outside the 20-day MA ± 2 standard deviations (14 d) |
+| Rising / falling demand | bull / bear | Average daily sales of the last 14 days ≥ 1.25x / ≤ 0.75x the 30 days before, ≥ 30% of days reporting (30 d) |
+| Shrinking / rising supply | bull / bear | Same comparison on active listings (30 d) |
+| Population growth | bear | Graded population up ≥ 10% in 90 days (60 d) |
+
+Pivots are closes that are the extreme of 3 days on each side; a pivot is only used once those 3 days have passed.
+
+### Score
+
+For the latest day of each segment, every pattern the data can evaluate is read; one that fires adds `direction x strength (0..1) x weight`, where weight = base weight x reliability and reliability = (hit rate - 0.5) / 0.5 (a coin flip or worse counts 0). The hit rate is the measured rate blended with the pattern's prior (0.52–0.55) as 30 pseudo-samples, so patterns with few samples lean on the prior. Score = 100 x net / max(gross, 0.35 x the weight of every pattern group the data could evaluate), clamped to -100..+100, so one weak signal among many silent ones stays near neutral. Bullish at ≥ +25, bearish at ≤ -25, otherwise neutral. Fewer than 30 points: `insufficient_history` with no score. Each pattern that could not be read is listed with why (`needs_points`, `needs_sales`, `needs_listings`, `needs_population`). Confidence (0..1) = sqrt(points / 200, capped at 1) x (0.5 + 0.5 x agreement among firing signals) x freshness (1 up to 3 days old, falling to 0 at 30 days).
+
+Hit rates are measured without look-ahead: indicators are causal, and `backtestChartSeries` replays every pattern over each stored series, judging a firing at day t by the close `horizon` days later (a move under 1% is flat and not a sample) and skipping ahead by the horizon so samples do not overlap. Each segment's backtest is stored with it and replaced when it is recomputed; `chart_pattern.samples / hits / measured_hit_rate` are their sums.
+
+### Storage, worker and reads
+
+Migration `0033_chart_sentiment` adds `chart_pattern` and `chart_sentiment` (primary key `printing_id, segment`; score, label, confidence, points, data range, last price, signals, insufficient, inputs, backtest, method and catalog versions, computed_at). Both are global derived data without RLS: `app_user` may only read, `app_worker` writes (and deletes segments that lost their data). Bootstrap repairs the same grants.
+
+The worker's hourly market work ends with `runChartSentiment`: in one transaction under an advisory lock it syncs the catalog, scores up to `CHART_SENTIMENT_BATCH_SIZE` printings (default 200, max 2,000, 0 = off) that have chart-usable prices and were not computed in the last 20 hours (never-computed first), upserts their segments and refreshes the measured hit rates. Database only, no provider requests, idempotent. Until 0033 is applied it logs `worker.chart_sentiment` with `reason: tables_missing` and does nothing; the API and web page then show chart sentiment as not computed instead of failing.
+
+Reads are one indexed lookup (`getChartSentiment`). `GET /v1/printings/{id}/sentiment` and `GET /v1/tcc/cards/{tccCardId}/sentiment` return `chart_sentiment: { method, status: computed|not_computed, raw, graded[] }` next to `sentiment`; each segment has score, label, confidence and `confidence_label`, points, data range, last price, price type, 30-day change, its signals (contribution, measured `hit_rate`, samples, horizon, detail, explanation) and `insufficient_history`. `GET /v1/tcc/sentiment?ids=` adds the same object per card with the top 3 signals and without `insufficient_history`. The card page's Sentiment tab shows Market sentiment and Chart sentiment side by side: a score badge per segment and its top 3 signals with explanations.
+
+| Env | Default | Meaning |
+| --- | --- | --- |
+| `CHART_SENTIMENT_BATCH_SIZE` | 200 | Printings scored per hourly run (0–2,000; 0 = off). |
+
+Validation state: implemented and **fixture-tested only**: pure tests with synthetic series that should and should not trigger each pattern, scoring and backtest tests, a PGlite storage test, worker and API route tests. **Hosted staging needs migration 0033 applied by the owner** before anything is stored; it has not been applied anywhere, and the measured hit rates start empty (priors only) until the first batches run.
+
 ## Segments
 
 `source_content_segment`: `timestamp_range`, `paragraph`, or `comment`, with start/end refs and optional bounded excerpt. Future creator-call evidence can point here.
