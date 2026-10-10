@@ -48,6 +48,7 @@ export function commercialOpenApi() {
       "/v1/indices/{index_key}": { get: { summary: "Index definition and latest point", security: [{ bearerAuth: [] }] } },
       "/v1/indices/{index_key}/history": { get: { summary: "Index history", security: [{ bearerAuth: [] }] } },
       "/v1/creators": { get: { summary: "Creator profiles, without creators this workspace hid; ?list=following returns only followed creators", security: [{ bearerAuth: [] }] } },
+      "/v1/creators/leaderboard": { get: { summary: "Creators ranked by how many of their last-12-month calls came true (?game=pokemon); creators with fewer than 5 evaluated calls are listed under not_enough_calls; creators this workspace hid are left out", security: [{ bearerAuth: [] }] } },
       "/v1/creators/{id}": { get: { summary: "Creator authority summary", security: [{ bearerAuth: [] }] } },
       "/v1/creators/{id}/calls": { get: { summary: "Creator calls", security: [{ bearerAuth: [] }] } },
       "/v1/webhooks": {

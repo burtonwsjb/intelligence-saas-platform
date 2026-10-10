@@ -491,6 +491,104 @@ export function robotsAllows(groups: RobotsGroup[], agent: string, path: string)
   return best ? best.allow : true;
 }
 
+/** `Sitemap:` URLs listed in robots.txt (they apply to every user agent), in file order. */
+export function robotsSitemaps(text: string): string[] {
+  const found: string[] = [];
+  for (const rawLine of text.slice(0, WEB_FEED_MAX_ROBOTS_BYTES).split(/\r\n|\r|\n/)) {
+    const match = rawLine.replace(/#.*$/, "").trim().match(/^sitemap\s*:\s*(\S+)$/i);
+    if (!match) continue;
+    try {
+      const url = new URL(match[1]!);
+      if ((url.protocol === "https:" || url.protocol === "http:") && !found.includes(url.toString())) found.push(url.toString());
+    } catch {
+      // ignored
+    }
+  }
+  return found;
+}
+
+// ---------------------------------------------------------------------------
+// Sitemaps and article pages (sitemap backfill)
+
+export type SitemapEntry = { loc: string; lastmod: Date | null };
+export type ParsedSitemap = { kind: "index" | "urlset"; entries: SitemapEntry[] };
+
+function localName(name: string) {
+  const colon = name.lastIndexOf(":");
+  return colon === -1 ? name : name.slice(colon + 1);
+}
+
+/** A sitemap index or URL set (sitemaps.org). Null when the document is neither. */
+export function parseSitemap(xml: string, baseUrl?: string): ParsedSitemap | null {
+  const root = parseXml(xml);
+  if (!root) return null;
+  const rootName = localName(root.name);
+  if (rootName !== "sitemapindex" && rootName !== "urlset") return null;
+  const childName = rootName === "sitemapindex" ? "sitemap" : "url";
+  const entries: SitemapEntry[] = [];
+  for (const element of elements(root)) {
+    if (localName(element.name) !== childName) continue;
+    const field = (name: string) => elements(element).find((part) => localName(part.name) === name);
+    const loc = resolveLink(xmlText(field("loc")).trim(), baseUrl);
+    if (!loc) continue;
+    entries.push({ loc, lastmod: parseDate(xmlText(field("lastmod"))) });
+  }
+  return { kind: rootName === "sitemapindex" ? "index" : "urlset", entries };
+}
+
+const PUBLISHED_META_NAMES = [
+  "article:published_time",
+  "og:article:published_time",
+  "datepublished",
+  "publishdate",
+  "pubdate",
+  "dc.date.issued",
+  "dc.date",
+  "date",
+  "parsely-pub-date",
+  "sailthru.date",
+];
+
+/**
+ * Title and publication time of an article page: the publication meta tags,
+ * then JSON-LD `datePublished`, then the first `<time datetime>` inside
+ * `<article>`. Modification dates are never used, so a post edited later is
+ * not dated later. Null when the page states no publication time.
+ */
+export function articleMetadata(html: string): { title: string | null; publishedAt: Date | null } {
+  const head = html.slice(0, 1_000_000);
+  const metas = new Map<string, string>();
+  for (const match of head.matchAll(/<meta\b[^>]*>/gi)) {
+    const attrs = parseAttributes(match[0].slice(5).replace(/\/?>$/, ""));
+    const key = (attrs.property ?? attrs.name ?? attrs.itemprop ?? "").toLowerCase();
+    if (key && attrs.content && !metas.has(key)) metas.set(key, attrs.content);
+  }
+  let publishedAt: Date | null = null;
+  for (const key of PUBLISHED_META_NAMES) {
+    publishedAt = parseDate(metas.get(key));
+    if (publishedAt) break;
+  }
+  if (!publishedAt) {
+    for (const match of head.matchAll(/<script\b[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
+      const found = match[1]!.match(/"datePublished"\s*:\s*"([^"]{8,40})"/);
+      publishedAt = parseDate(found?.[1]);
+      if (publishedAt) break;
+    }
+  }
+  if (!publishedAt) {
+    const article = head.match(/<article\b[\s\S]*?<\/article>/i)?.[0] ?? "";
+    const time = article.match(/<time\b[^>]*\bdatetime\s*=\s*["']([^"']+)["']/i);
+    publishedAt = parseDate(time?.[1]);
+  }
+  const rawTitle =
+    metas.get("og:title") ?? head.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? head.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i)?.[1];
+  const title = rawTitle ? clean(htmlToText(rawTitle, 1_000), 300) : null;
+  if (publishedAt && (publishedAt.getTime() < Date.parse("2000-01-01T00:00:00Z") || !Number.isFinite(publishedAt.getTime()))) {
+    publishedAt = null;
+  }
+  return { title, publishedAt };
+}
+
 // ---------------------------------------------------------------------------
 // HTTP
 
@@ -587,6 +685,7 @@ type FetchOutcome =
 export class WebFeedClient {
   requests = 0;
   private readonly robots = new Map<string, RobotsGroup[] | "unreachable">();
+  private readonly sitemaps = new Map<string, string[]>();
 
   constructor(
     private readonly options: {
@@ -649,11 +748,29 @@ export class WebFeedClient {
     }
     if (!response) return "request_cap";
     let rules: RobotsGroup[] | "unreachable";
-    if (response.status >= 200 && response.status < 300) rules = parseRobotsTxt(response.bodyText);
-    else if (response.status >= 300 && response.status < 500) rules = [];
+    if (response.status >= 200 && response.status < 300) {
+      rules = parseRobotsTxt(response.bodyText);
+      this.sitemaps.set(origin, robotsSitemaps(response.bodyText));
+    } else if (response.status >= 300 && response.status < 500) rules = [];
     else rules = "unreachable";
     this.robots.set(origin, rules);
     return rules;
+  }
+
+  /** `Sitemap:` URLs from the origin's robots.txt (fetched when not cached). */
+  async sitemapsFor(origin: string): Promise<string[] | "request_cap" | "unreachable"> {
+    if (!this.robots.has(origin)) {
+      // Same SSRF check as get(): robots.txt is never requested from a non-public host.
+      try {
+        await this.assertPublic(`${origin}/robots.txt`);
+      } catch (error) {
+        if (error instanceof WebhookUrlRejectedError) return "unreachable";
+        throw error;
+      }
+    }
+    const rules = await this.robotsFor(origin);
+    if (rules === "request_cap" || rules === "unreachable") return rules;
+    return this.sitemaps.get(origin) ?? [];
   }
 
   /** Whether robots.txt lets SentimentBot fetch this URL (fetches robots.txt when not cached). */

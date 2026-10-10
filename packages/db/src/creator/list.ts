@@ -250,12 +250,23 @@ function rowsOf<T>(result: unknown): T[] {
 }
 
 /**
- * Make sure the creator behind a followed account is monitored, without ever
+ * Make sure the creator behind an account a person asked to track (a
+ * workspace follow, an operator's seed list) is monitored, without ever
  * overriding the operator. Returns "blocked" when the operator excluded them.
+ * `marker` is merged into the provenance; it schedules polling and is never
+ * relevance or authority evidence.
  */
-async function ensureFollowedMonitored(
+export async function ensureRequestedCreatorMonitored(
   db: Database,
-  input: { providerKey: DiscoveryProviderKey; creatorId: string; sourceAccountId: string; externalAccountId: string; displayName: string | null },
+  input: {
+    providerKey: DiscoveryProviderKey;
+    creatorId: string;
+    sourceAccountId: string;
+    externalAccountId: string;
+    displayName: string | null;
+    marker: Record<string, unknown>;
+    provenance: Record<string, unknown>;
+  },
 ): Promise<"monitored" | "blocked"> {
   if ((await latestTrustState(db, input.creatorId)) === "excluded") return "blocked";
   const [existing] = await db
@@ -270,7 +281,7 @@ async function ensureFollowedMonitored(
         .update(discoveredCreator)
         .set({
           relevanceState: "monitored",
-          discoveryProvenance: { ...existing.discoveryProvenance, followed_by_workspace: true },
+          discoveryProvenance: { ...existing.discoveryProvenance, ...input.marker },
         })
         .where(eq(discoveredCreator.id, existing.id));
     }
@@ -286,10 +297,21 @@ async function ensureFollowedMonitored(
     topicHits: 0,
     relevanceScore: "0",
     relevanceState: "monitored",
-    // Following is not relevance or authority evidence; it only schedules polling.
-    discoveryProvenance: { followed_by_workspace: true, source: "workspace_follow" },
+    discoveryProvenance: input.provenance,
   });
   return "monitored";
+}
+
+function ensureFollowedMonitored(
+  db: Database,
+  input: { providerKey: DiscoveryProviderKey; creatorId: string; sourceAccountId: string; externalAccountId: string; displayName: string | null },
+) {
+  // Following is not relevance or authority evidence; it only schedules polling.
+  return ensureRequestedCreatorMonitored(db, {
+    ...input,
+    marker: { followed_by_workspace: true },
+    provenance: { followed_by_workspace: true, source: "workspace_follow" },
+  });
 }
 
 /** Keep creators a workspace followed monitored. No provider requests. */

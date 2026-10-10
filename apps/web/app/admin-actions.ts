@@ -27,6 +27,7 @@ import {
   reviewMarketQuarantine,
   resolveIntelligenceQuarantine,
   registerWebFeedSite,
+  requestInfluencerSeed,
   setWebFeedSiteState,
   WebFeedSiteError,
 } from "@isp/db";
@@ -287,6 +288,25 @@ export async function registerWebFeedSiteAction(formData: FormData) {
     throw error;
   }
   redirect("/admin/sources?website=added#websites");
+}
+
+/**
+ * Registers the committed Pokemon influencer seed list (platform operators
+ * only): websites are registered now, YouTube channels are queued for the
+ * worker to resolve through the Data API. Idempotent; audited.
+ */
+export async function requestInfluencerSeedAction(formData: FormData) {
+  const operator = await requireGrantedOperator();
+  if (!operator.adminDb) {
+    redirect("/admin/sources?error=config");
+  }
+  if (String(formData.get("confirm") ?? "") !== "seed") {
+    redirect("/admin/sources?error=seed_unconfirmed#influencer-seed");
+  }
+  const report = await requestInfluencerSeed(operator.adminDb, { actorUserId: operator.session.user.id });
+  redirect(
+    `/admin/sources?seed=requested&queued=${report.channelsQueued}&sites=${report.sitesRegistered}#influencer-seed`,
+  );
 }
 
 /** Pauses or resumes a registered website (platform operators only). */

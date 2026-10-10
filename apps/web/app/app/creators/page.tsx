@@ -12,10 +12,13 @@ import { loadAppAccess } from "@/lib/app-access";
 import { getDb } from "@/lib/auth";
 import { formatAge, monogram } from "@/lib/display";
 import {
+  LEADERBOARD_MIN_EVALUATED,
   getCreatorAuthorityProfile,
+  getCreatorLeaderboard,
   listCreators,
   listTenantCreatorList,
   withOrganizationContext,
+  type CreatorLeaderboardRow,
   type TenantCreatorListRow,
 } from "@isp/db";
 import Link from "next/link";
@@ -48,7 +51,7 @@ const STATUS_TEXT: Record<string, { label: string; tone: "good" | "warn" | "info
   failed: { label: "Lookup failed, will retry if you add it again", tone: "warn" },
 };
 
-const PLATFORM_TEXT: Record<string, string> = { youtube: "YouTube", reddit: "Reddit" };
+const PLATFORM_TEXT: Record<string, string> = { youtube: "YouTube", reddit: "Reddit", web: "Website" };
 
 export default async function CreatorsPage({
   searchParams,
@@ -74,6 +77,16 @@ export default async function CreatorsPage({
       <>
         <CreatorsHeader active="mine" />
         <MyList entries={listEntries} error={query.error} notice={query.notice} />
+      </>
+    );
+  }
+  if (query.list === "leaderboard") {
+    const hidden = [...preferenceByCreator.entries()].filter(([, value]) => value === "hide").map(([id]) => id);
+    const board = await getCreatorLeaderboard(getDb(), { game: "pokemon", hiddenCreatorIds: hidden });
+    return (
+      <>
+        <CreatorsHeader active="leaderboard" />
+        <Leaderboard ranked={board.ranked} notEnough={board.notEnoughCalls} preferences={preferenceByCreator} />
       </>
     );
   }
@@ -167,7 +180,7 @@ export default async function CreatorsPage({
   );
 }
 
-function CreatorsHeader({ active }: { active: "all" | "mine" }) {
+function CreatorsHeader({ active }: { active: "all" | "leaderboard" | "mine" }) {
   return (
     <>
       <header className="page-header">
@@ -185,9 +198,117 @@ function CreatorsHeader({ active }: { active: "all" | "mine" }) {
         active={active}
         tabs={[
           { key: "all", label: "All creators", href: "/app/creators" },
+          { key: "leaderboard", label: "Leaderboard", href: "/app/creators?list=leaderboard" },
           { key: "mine", label: "Your list", href: "/app/creators?list=mine" },
         ]}
       />
+    </>
+  );
+}
+
+function percent(value: number | null) {
+  return value == null ? "—" : `${Math.round(value * 100)}%`;
+}
+
+function platforms(row: CreatorLeaderboardRow) {
+  return row.platforms.length ? row.platforms.map((key) => PLATFORM_TEXT[key] ?? key).join(", ") : "—";
+}
+
+function Leaderboard({
+  ranked,
+  notEnough,
+  preferences,
+}: {
+  ranked: CreatorLeaderboardRow[];
+  notEnough: CreatorLeaderboardRow[];
+  preferences: Map<string, string>;
+}) {
+  const returnTo = "/app/creators?list=leaderboard";
+  const name = (row: CreatorLeaderboardRow) => (
+    <Link href={`/app/creators/${encodeURIComponent(row.creatorId)}`}>{row.name ?? "Unnamed creator"}</Link>
+  );
+  return (
+    <>
+      <p className="muted">
+        Pokemon calls from the last 12 months. A call is evaluated once its horizon has passed and prices show whether
+        it came true. Creators are ranked by the lower bound of their accuracy (so a few lucky calls do not outrank a long
+        record) and need at least {LEADERBOARD_MIN_EVALUATED} evaluated calls to be ranked. Authority weight is how much
+        their posts count in card sentiment.
+      </p>
+      {ranked.length === 0 ? (
+        <EmptyState
+          title="No ranked creators yet"
+          body={`Creators are ranked once they have ${LEADERBOARD_MIN_EVALUATED} evaluated calls.`}
+        />
+      ) : (
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Rank</th>
+              <th>Creator</th>
+              <th>Platforms</th>
+              <th>Calls made</th>
+              <th>Evaluated</th>
+              <th>Came true</th>
+              <th>Accuracy</th>
+              <th>Authority weight</th>
+              <th>Last call</th>
+              <th>Your list</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ranked.map((row) => (
+              <tr key={row.creatorId}>
+                <td>{row.rank}</td>
+                <td>{name(row)}</td>
+                <td>{platforms(row)}</td>
+                <td>{row.callsMade}</td>
+                <td>{row.callsEvaluated}</td>
+                <td>{row.cameTrue}</td>
+                <td>{percent(row.accuracy)}</td>
+                <td>{row.authorityWeight == null ? "—" : row.authorityWeight.toFixed(3)}</td>
+                <td>{row.lastCallAt ? formatAge(new Date(row.lastCallAt)) : "—"}</td>
+                <td>
+                  <PreferenceButtons creatorId={row.creatorId} current={preferences.get(row.creatorId)} returnTo={returnTo} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <h2>Not enough calls yet</h2>
+      {notEnough.length === 0 ? (
+        <p className="subtle">None.</p>
+      ) : (
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Creator</th>
+              <th>Platforms</th>
+              <th>Calls made</th>
+              <th>Evaluated</th>
+              <th>Came true</th>
+              <th>Last call</th>
+              <th>Your list</th>
+            </tr>
+          </thead>
+          <tbody>
+            {notEnough.map((row) => (
+              <tr key={row.creatorId}>
+                <td>{name(row)}</td>
+                <td>{platforms(row)}</td>
+                <td>{row.callsMade}</td>
+                <td>{row.callsEvaluated}</td>
+                <td>{row.cameTrue}</td>
+                <td>{row.lastCallAt ? formatAge(new Date(row.lastCallAt)) : "—"}</td>
+                <td>
+                  <PreferenceButtons creatorId={row.creatorId} current={preferences.get(row.creatorId)} returnTo={returnTo} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </>
   );
 }

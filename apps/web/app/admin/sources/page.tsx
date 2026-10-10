@@ -1,8 +1,19 @@
-import { PROVIDER_ADAPTER_NOTES, collectSystemHealth, listAdminProviders, listWebFeedSites } from "@isp/db";
+import {
+  PROVIDER_ADAPTER_NOTES,
+  POKEMON_INFLUENCER_SEEDS,
+  POKEMON_INFLUENCER_SEED_VERSION,
+  collectSystemHealth,
+  listAdminProviders,
+  listInfluencerSeedStatus,
+  listWebBackfillProgress,
+  listWebFeedSites,
+  listYoutubeBackfillProgress,
+} from "@isp/db";
 import { requireGrantedOperator } from "@/lib/platform-admin";
 import { getDb } from "@/lib/auth";
 import {
   registerWebFeedSiteAction,
+  requestInfluencerSeedAction,
   retryProviderJobAction,
   setProviderEnabledAction,
   setProviderPausedAction,
@@ -16,16 +27,24 @@ export const dynamic = "force-dynamic";
 export default async function AdminSourcesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; website?: string }>;
+  searchParams: Promise<{ error?: string; website?: string; seed?: string; queued?: string; sites?: string }>;
 }) {
   const operator = await requireGrantedOperator();
   const query = await searchParams;
   const db = operator.adminDb ?? getDb();
-  const [health, providers, websites] = await Promise.all([
+  const [health, providers, websites, seedRows, youtubeBackfill, webBackfill] = await Promise.all([
     collectSystemHealth(db),
     listAdminProviders(db),
     listWebFeedSites(db),
+    listInfluencerSeedStatus(db),
+    listYoutubeBackfillProgress(db),
+    listWebBackfillProgress(db),
   ]);
+  const seedCounts = seedRows.reduce<Record<string, number>>((acc, row) => {
+    const key = `${row.kind}:${row.outcome ?? row.status}`;
+    acc[key] = (acc[key] ?? 0) + 1;
+    return acc;
+  }, {});
 
   return (
     <>
@@ -40,10 +59,18 @@ export default async function AdminSourcesPage({
         <p className="form-error">
           Website rejected: platforms and stores (YouTube, Reddit, marketplaces) are covered by their own providers.
         </p>
+      ) : query.error === "seed_unconfirmed" ? (
+        <p className="form-error">Type seed to confirm registering the influencer seed list.</p>
       ) : query.error ? (
         <p className="form-error">Source control was rejected.</p>
       ) : null}
       {query.website === "added" ? <p role="status">Website registered. The next hourly feed run reads it.</p> : null}
+      {query.seed === "requested" ? (
+        <p role="status">
+          Seed list registered: {Number(query.queued ?? 0)} new YouTube channels queued for lookup, {Number(query.sites ?? 0)}{" "}
+          new websites registered.
+        </p>
+      ) : null}
       {providers.map((row) => (
         <section key={row.providerKey}>
           <h2>{row.providerKey}</h2>
@@ -126,6 +153,85 @@ export default async function AdminSourcesPage({
           </form>
         </section>
       ))}
+      <h2 id="influencer-seed">Influencer seed list</h2>
+      <p className="muted">
+        {POKEMON_INFLUENCER_SEEDS.length} Pokemon influencers ({POKEMON_INFLUENCER_SEED_VERSION}). Registering is
+        idempotent: websites are registered at once (shared platforms such as Patreon are reported, not registered);
+        YouTube channels are looked up by the worker through the YouTube Data API, a few per scheduled run within the
+        daily YouTube budget. Channels that cannot be resolved are reported here, never guessed. Excluded creators stay
+        excluded.
+      </p>
+      <form className="inline-form" action={requestInfluencerSeedAction}>
+        <label>
+          Type seed to confirm
+          <input name="confirm" autoComplete="off" required />
+        </label>
+        <button type="submit">Register seed list</button>
+      </form>
+      {seedRows.length === 0 ? (
+        <p className="muted">Seed list not registered yet.</p>
+      ) : (
+        <>
+          <p className="muted">
+            {Object.entries(seedCounts)
+              .sort()
+              .map(([key, count]) => `${key} ${count}`)
+              .join(" · ")}
+          </p>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Rank</th>
+                <th>Name</th>
+                <th>Kind</th>
+                <th>Input</th>
+                <th>State</th>
+                <th>Account</th>
+              </tr>
+            </thead>
+            <tbody>
+              {seedRows.map((row) => (
+                <tr key={row.id}>
+                  <td>{row.rank}</td>
+                  <td>{row.name}</td>
+                  <td>{row.kind}</td>
+                  <td>{row.input ?? "—"}</td>
+                  <td>
+                    {row.outcome ?? row.status}
+                    {row.errorClass ? ` (${row.errorClass})` : ""}
+                  </td>
+                  <td>{row.externalAccountId ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+      <h2 id="backfill">12-month backfill</h2>
+      <p className="muted">
+        YouTube uploads (titles and descriptions only, official Data API) run when YOUTUBE_BACKFILL_DAYS is set; website
+        sitemaps run when WEB_FEED_BACKFILL_DAYS is set. Both resume where they stopped.
+      </p>
+      {youtubeBackfill.length === 0 ? <p className="muted">No YouTube backfill runs yet.</p> : null}
+      <ul>
+        {youtubeBackfill.map((row) => (
+          <li key={row.channelId}>
+            YouTube {row.channelId} · {row.done ? "done" : "in progress"} · {row.outcome ?? "—"} · pages {row.pages} ·
+            videos {row.videosStored} · mentions {row.mentions} · calls {row.callsCreated} · last run{" "}
+            {row.lastRunAt?.toISOString() ?? "—"}
+          </li>
+        ))}
+      </ul>
+      {webBackfill.length === 0 ? <p className="muted">No website backfill runs yet.</p> : null}
+      <ul>
+        {webBackfill.map((row) => (
+          <li key={row.sourceAccountId}>
+            {row.domain ?? row.sourceAccountId} · {row.phase} · {row.outcome ?? "—"} · URLs {row.urlsFound} (queued{" "}
+            {row.urlsQueued}) · posts {row.postsIngested} · mentions {row.mentions} · calls {row.callsCreated} · last run{" "}
+            {row.lastRunAt?.toISOString() ?? "—"}
+          </li>
+        ))}
+      </ul>
       <h2>Retry failed job</h2>
       <form className="inline-form" action={retryProviderJobAction}>
         <label>

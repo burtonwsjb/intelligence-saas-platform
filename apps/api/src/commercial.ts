@@ -4,6 +4,7 @@ import {
   disableWebhookEndpoint,
   getCardSentimentWithHistory,
   getCreatorAuthorityProfile,
+  getCreatorLeaderboard,
   getMarketAssetByKey,
   getPrintingCalls,
   getTopicCalls,
@@ -879,6 +880,52 @@ export function registerCommercialRoutes(
           status: row.status,
           following: preference.get(row.id) === "follow",
         })),
+      });
+    } catch (error) {
+      return commercialError(error, requestId);
+    }
+  });
+
+  // Registered before /v1/creators/:id so "leaderboard" is never read as an id.
+  app.get("/v1/creators/leaderboard", requireScope("creators:read"), async (c) => {
+    const requestId = resolveRequestId(c.req.header("x-request-id"));
+    const machine = c.get("machine");
+    const game = c.req.query("game")?.trim().toLowerCase() || null;
+    if (game && !/^[a-z][a-z0-9_]{0,39}$/.test(game)) {
+      return jsonError("validation_error", "game must be a game key such as pokemon.", 400, requestId);
+    }
+    try {
+      await withMachineContext(
+        c.get("db"),
+        { organizationId: machine.organizationId, apiKeyId: machine.apiKeyId },
+        (scoped) => assertTenantFeature(scoped, machine.organizationId, "creator_analytics"),
+      );
+      await meter(c.get("db"), machine, requestId, "creator.read");
+      // Creators this workspace hid stay off its leaderboard, as they stay out of its sentiment.
+      const hidden = await hiddenCreatorIds(c.get("db"), machine);
+      const board = await getCreatorLeaderboard(c.get("db"), { game, hiddenCreatorIds: hidden });
+      const row = (entry: (typeof board.ranked)[number]) => ({
+        rank: entry.rank,
+        creator_id: entry.creatorId,
+        display_name: entry.name,
+        platforms: entry.platforms,
+        calls_made: entry.callsMade,
+        calls_evaluated: entry.callsEvaluated,
+        came_true: entry.cameTrue,
+        accuracy: entry.accuracy,
+        accuracy_lower_bound: entry.wilsonLow,
+        authority_weight: entry.authorityWeight,
+        trust_state: entry.trustState,
+        last_call_at: entry.lastCallAt,
+      });
+      return c.json({
+        game: board.game,
+        window_days: board.windowDays,
+        min_evaluated_calls: board.minEvaluated,
+        from: board.from,
+        to: board.to,
+        data: board.ranked.map(row),
+        not_enough_calls: board.notEnoughCalls.map(row),
       });
     } catch (error) {
       return commercialError(error, requestId);
