@@ -575,6 +575,25 @@ export {
 export { printingBenchmarkContext, resolveBenchmark } from "./analytics/benchmark.js";
 export { computeCreatorAlpha, getCreatorCallAlpha } from "./analytics/alpha.js";
 export {
+  CHART_SENTIMENT_MAX_BATCH_SIZE,
+  CHART_SENTIMENT_RECOMPUTE_HOURS,
+  DEFAULT_CHART_SENTIMENT_BATCH_SIZE,
+  chartSentimentBatchSize,
+  chartTablesExist,
+  computePrintingChartSentiment,
+  getChartSentiment,
+  listChartPatterns,
+  refreshChartPatternStats,
+  runChartSentimentBatch,
+  syncChartPatternCatalog,
+  type ChartSentimentRunReport,
+  type ChartSentimentSegmentView,
+  type ChartSentimentSignalView,
+  type PrintingChartSentiment,
+} from "./analytics/chart/store.js";
+export { CHART_CATALOG_VERSION, CHART_PATTERNS, CHART_THRESHOLDS } from "./analytics/chart/patterns.js";
+export { CHART_METHOD_VERSION, CHART_SCORE_RULES, confidenceLabel } from "./analytics/chart/score.js";
+export {
   SCORE_POLICY_KEY,
   SCORE_POLICY_VERSION,
   SCORE_UNCALIBRATED,
