@@ -8,6 +8,7 @@ import {
   member,
   organization,
   readMigrationSql,
+  runChartSentimentBatch,
   seedTcgIdentityFixtures,
   setCreatorPreference,
   syncSealedProducts,
@@ -84,6 +85,26 @@ describe("sentiment API for cards and products", () => {
       [recent],
     );
 
+    // 80 days of a rising raw reference price and 40 days of PSA 10 sales for the chart.
+    const day = 86_400_000;
+    const chartStart = new Date(now.getTime() - 80 * day);
+    await client.query(
+      `INSERT INTO tcg_market_snapshot (id, printing_id, source_key, market_type, price_type, observed_at, currency, condition, price, source_record_id, fingerprint)
+       SELECT 'chart_r' || g, $1, 'tcg_card_central', 'market_price', 'reference', $2::timestamptz + g * interval '1 day',
+         'USD', 'nm', round((10 * power(1.005, g))::numeric, 2), 'chart_r' || g, 'chart_r' || g
+       FROM generate_series(0, 79) g`,
+      [seeded.printings.greninjaEnNormal.id, chartStart.toISOString()],
+    );
+    await client.query(
+      `INSERT INTO tcg_market_snapshot (id, printing_id, source_key, market_type, price_type, observed_at, currency, condition,
+         grading_company, grade_numeric, price, source_record_id, fingerprint)
+       SELECT 'chart_g' || g, $1, 'ebay', 'marketplace_sold', 'sold', $2::timestamptz + g * interval '1 day', 'USD', 'nm',
+         'psa', 10, 200, 'chart_g' || g, 'chart_g' || g
+       FROM generate_series(0, 39) g`,
+      [seeded.printings.greninjaEnNormal.id, new Date(now.getTime() - 40 * day).toISOString()],
+    );
+    expect(await runChartSentimentBatch(db, { asOf: now, batchSize: 10 })).toMatchObject({ printings: 1, segments: 2 });
+
     const key = await seedKey(db, "cards:read,signals:read");
     const app = createApiApp({ db, env: { API_KEY_PEPPER: pepper, NODE_ENV: "test" } });
     const auth = { authorization: `Bearer ${key}` };
@@ -99,6 +120,27 @@ describe("sentiment API for cards and products", () => {
     expect(cardBody.sentiment.shares.positive).toBe(1);
     expect(cardBody.history.period_days).toBe(1);
     expect(cardBody.history.points).toHaveLength(7);
+    // Chart Sentiment sits next to social sentiment, raw and each grade listed separately.
+    const chart = (cardBody as unknown as {
+      chart_sentiment: {
+        status: string;
+        raw: { segment: string; label: string; score: number; signals: { key: string; explanation: string }[]; insufficient_history: { key: string }[] };
+        graded: { segment: string; grading_company: string; grade: string; label: string }[];
+      };
+    }).chart_sentiment;
+    expect(chart.status).toBe("computed");
+    expect(chart.raw).toMatchObject({ segment: "raw", label: "bullish" });
+    expect(chart.raw.signals.map((signal) => signal.key)).toContain("uptrend");
+    expect(chart.raw.signals[0]!.explanation.length > 0).toBe(true);
+    expect(chart.raw.insufficient_history.map((item) => item.key)).toContain("golden_cross");
+    expect(chart.graded).toEqual([expect.objectContaining({ segment: "psa10", grading_company: "psa", grade: "10", label: "neutral" })]);
+    const other = await app.request(`/v1/printings/${seeded.printings.greninjaJaNormal.id}/sentiment`, { headers: auth });
+    expect(((await other.json()) as { chart_sentiment: unknown }).chart_sentiment).toEqual({
+      method: "chart-sentiment.v1",
+      status: "not_computed",
+      raw: null,
+      graded: [],
+    });
 
     expect((await app.request(`/v1/printings/${seeded.printings.greninjaEnNormal.id}/sentiment?window=1y`, { headers: auth })).status).toBe(400);
 
@@ -128,6 +170,7 @@ describe("sentiment API for cards and products", () => {
     expect(tccCardBody.tcc_card_id).toBe(tccId);
     expect(tccCardBody.printing.id).toBe(seeded.printings.greninjaEnNormal.id);
     expect(tccCardBody.sentiment.counts.positive).toBe(1);
+    expect((tccCardBody as unknown as { chart_sentiment: { raw: { label: string } } }).chart_sentiment.raw.label).toBe("bullish");
     expect((await app.request(`/v1/tcc/cards/${tccId}/sentiment?language=ja`, { headers: auth })).status).toBe(404);
     expect((await app.request("/v1/tcc/cards/not-a-uuid/sentiment", { headers: auth })).status).toBe(400);
 
@@ -141,6 +184,13 @@ describe("sentiment API for cards and products", () => {
       expect.objectContaining({ tcc_card_id: tccId, label: "too_few", posts: 1, shares: expect.objectContaining({ positive: 1 }) }),
     ]);
     expect(batchBody.not_found).toEqual([otherTccId]);
+    const batchChart = (batchBody.data[0] as unknown as {
+      chart_sentiment: { raw: { label: string; signals: unknown[]; insufficient_history?: unknown }; graded: { segment: string }[] };
+    }).chart_sentiment;
+    expect(batchChart.raw.label).toBe("bullish");
+    expect(batchChart.raw.signals.length <= 3).toBe(true);
+    expect(batchChart.raw.insufficient_history).toBeUndefined();
+    expect(batchChart.graded.map((row) => row.segment)).toEqual(["psa10"]);
     expect((await app.request("/v1/tcc/sentiment", { headers: auth })).status).toBe(400);
 
     // Hiding the creator removes their posts from this workspace's sentiment.
