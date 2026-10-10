@@ -8,6 +8,7 @@ import {
   reconcileProviderRuntimeFromEnv,
   runProviderSchedule,
   runCallScoring,
+  runChartSentiment,
   runTccCatalogImport,
   runTranscriptBackfill,
   runWebFeedSync,
@@ -124,6 +125,39 @@ describe("worker operational loops", () => {
     expect(blob).not.toContain("hunter2");
     expect(blob).not.toContain("postgresql://");
     spy.mockRestore();
+  });
+
+  it("runs chart sentiment in one transaction, skips it before migration 0033 or at batch size 0, and never throws", async () => {
+    const lines: string[] = [];
+    const info = vi.spyOn(console, "log").mockImplementation((line) => lines.push(String(line)));
+    const warn = vi.spyOn(console, "warn").mockImplementation((line) => lines.push(String(line)));
+    const error = vi.spyOn(console, "error").mockImplementation((line) => lines.push(String(line)));
+    const missingDb = {
+      transaction: async (run: (tx: { execute: () => Promise<unknown> }) => Promise<unknown>) =>
+        run({ execute: async () => [{ ok: false, locked: true }] }),
+    };
+    expect(await runChartSentiment(missingDb as never, {})).toMatchObject({ status: "skipped", reason: "tables_missing" });
+    expect(await runChartSentiment(missingDb as never, { CHART_SENTIMENT_BATCH_SIZE: "0" })).toBeNull();
+    expect(await runChartSentiment(missingDb as never, { CHART_SENTIMENT_BATCH_SIZE: "nope" })).toBeNull();
+    const lockedDb = {
+      transaction: async (run: (tx: { execute: () => Promise<unknown> }) => Promise<unknown>) =>
+        run({ execute: async () => [{ ok: true, locked: false }] }),
+    };
+    expect(await runChartSentiment(lockedDb as never, {})).toMatchObject({ status: "skipped", reason: "overlap" });
+    const failingDb = {
+      transaction: async () => {
+        throw new Error("Failed query postgresql://app_worker:hunter2@db.example/isp");
+      },
+    };
+    expect(await runChartSentiment(failingDb as never, {})).toBeNull();
+    const blob = lines.join("\n");
+    expect(blob).toContain("worker.chart_sentiment");
+    expect(blob).toContain("tables_missing");
+    expect(blob).toContain("worker.chart_sentiment_failed");
+    expect(blob).not.toContain("hunter2");
+    info.mockRestore();
+    warn.mockRestore();
+    error.mockRestore();
   });
 
   it("skips call scoring while another replica holds the lock and never throws", async () => {

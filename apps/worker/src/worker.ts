@@ -4,6 +4,7 @@ import { Worker } from "bullmq";
 import { UnrecoverableError } from "bullmq";
 import {
   applyProviderModeFromEnv,
+  chartSentimentBatchSize,
   createDbConnection,
   createDbFromWorkerEnv,
   createTranscriptFetcherFromEnv,
@@ -12,6 +13,7 @@ import {
   processQueuedEmailDeliveries,
   requireWorkerDatabaseUrl,
   resolveProviderMode,
+  runChartSentimentBatch,
   runTranscriptBackfillBatch,
   runWebBackfill,
   runYoutubeBackfill,
@@ -23,6 +25,7 @@ import {
   transcriptRequestBudget,
   upsertWorkerHeartbeat,
   withPlatformContext,
+  type ChartSentimentRunReport,
   type Database,
   type TccCatalogReport,
   type TccPriceHistoryReport,
@@ -402,6 +405,38 @@ export async function runCallScoring(db: Database, asOf = new Date()) {
   }
 }
 
+/**
+ * Chart Sentiment: scores up to CHART_SENTIMENT_BATCH_SIZE printings (default
+ * 200, 0 = off) whose chart was not computed in the last 20 hours, from the
+ * market rows already stored, and refreshes the pattern database's measured
+ * hit rates. Database-only. Skips (logged) until migration 0033 is applied;
+ * an advisory lock keeps two replicas from scoring the same batch.
+ */
+export async function runChartSentiment(
+  db: Database,
+  env: NodeJS.ProcessEnv = process.env,
+  asOf = new Date(),
+): Promise<ChartSentimentRunReport | null> {
+  try {
+    const batchSize = chartSentimentBatchSize(env);
+    if (batchSize === 0) return null;
+    const report = await withPlatformContext(db, (scoped) => runChartSentimentBatch(scoped, { asOf, batchSize, exclusive: true }));
+    logQueueEvent(report.reason === "tables_missing" ? "warn" : "info", "worker.chart_sentiment", {
+      status: report.status,
+      reason: report.reason,
+      considered: report.considered,
+      printings: report.printings,
+      segments: report.segments,
+      failed: report.failed,
+      patterns_updated: report.patternsUpdated,
+    });
+    return report;
+  } catch (error) {
+    logLoopFailure("worker.chart_sentiment_failed", "chart_sentiment", error);
+    return null;
+  }
+}
+
 export async function collectQueueCounts(
   queue: QueueCounts,
   options?: { timeoutMs?: number },
@@ -631,8 +666,8 @@ export function startWorker(options?: {
   // new YouTube videos (when a transcript provider is configured), posts from
   // registered influencer websites (when PROVIDER_WEB_FEED_MODE=live), the
   // 12-month YouTube and website backfills (when their *_BACKFILL_DAYS are
-  // set), TCC price history for calls without prices, then scoring of calls
-  // that have come due.
+  // set), TCC price history for calls without prices, scoring of calls
+  // that have come due, then a batch of Chart Sentiment.
   const runMarketWork = () => {
     if (status === "shutting_down" || status === "stopped") {
       return;
@@ -644,7 +679,8 @@ export function startWorker(options?: {
       .then(() => runYoutubeUploadsBackfill(db, env))
       .then(() => runWebSitemapBackfill(db, env))
       .then(() => runPriceHistory(db, env))
-      .then(() => runCallScoring(db));
+      .then(() => runCallScoring(db))
+      .then(() => runChartSentiment(db, env));
   };
   const firstMarketWork = setTimeout(runMarketWork, 60_000);
   const callScoring = setInterval(runMarketWork, CALL_SCORING_INTERVAL_MS);
