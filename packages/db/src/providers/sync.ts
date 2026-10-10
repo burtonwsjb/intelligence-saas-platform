@@ -1,5 +1,6 @@
 import { runCreatorMonitoring } from "./monitoring.js";
 import { promoteFollowedCreators, resolvePendingCreatorFollows } from "../creator/list.js";
+import { resolvePendingInfluencerSeeds } from "../creator/seed.js";
 import { syncWorkspaceTopics } from "../topics/topics.js";
 import { isHostedRuntime } from "@isp/shared";
 import { withPlatformContext } from "../rls.js";
@@ -146,6 +147,10 @@ export async function syncProvider(db: Database, input: ProviderSyncInput) {
       // Workspace follows: resolve a few pending handles under the same budget,
       // then keep followed creators monitored. Failures here never block monitoring.
       await resolvePendingCreatorFollows(db, { providerKey, env, transport: input.transport }).catch(() => null);
+      // Operator-seeded YouTube channels (influencer seed list), a few per tick.
+      if (providerKey === "youtube") {
+        await resolvePendingInfluencerSeeds(db, { env, transport: input.transport }).catch(() => null);
+      }
       await promoteFollowedCreators(db, providerKey).catch(() => 0);
       // Workspace topics join the discovery rotation before this tick picks a topic.
       await syncWorkspaceTopics(db).catch(() => null);

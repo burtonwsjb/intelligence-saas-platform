@@ -79,6 +79,55 @@ The provider key `web_feed` is new in `PROVIDER_KEYS`; its `provider_runtime` ro
 
 Validation state: implemented and **fixture-tested only** (RSS, Atom, homepage and robots.txt fixtures under `packages/db/src/providers/fixtures/web-feed/`, fake HTTP transports, PGlite ingest tests). No real site (for example pokeinsider.com) was reachable from the build sandbox; nothing is hosted-validated and `PROVIDER_WEB_FEED_MODE` is not set anywhere by this change. Workspace users cannot add sites yet: the workspace creator list (`tenant_creator_list`) only accepts `youtube` / `reddit` by check constraint, so a user-facing path needs a migration.
 
+## Influencer seed list, 12-month backfills and the accuracy leaderboard
+
+Goal: rank Pokemon influencers by how many of their last-12-month calls came true, and keep weighting card sentiment by the authority those outcomes produce. Card sentiment already used authority before this change (`scoring/gather.ts` weights each creator's call by the creator's newest authority slice, default 0.05 without one; excluded creators are dropped); nothing new was added to the weighting.
+
+### Seed list
+
+`packages/db/src/creator/seed/pokemon-influencers.ts` holds 50 candidate influencers generated from `top-pokemon-influencers.csv` (rank, name, YouTube channel id / @handle / URL, website, feed and newsletter URLs only). The CSV's handles are mostly unverified; rows marked `unverified` carry no handle. Regenerate with `node scripts/generate-influencer-seed.mjs <csv> 2026-10-10 > packages/db/src/creator/seed/pokemon-influencers.ts` instead of editing by hand. Being on the list schedules polling and the backfill only; it is never authority.
+
+An operator registers the list on **/admin/sources → Influencer seed list** (type `seed` to confirm; platform operators only; one break-glass audit row `discovery.monitor` / `change: influencer_seed.request`, plus each new website's own `web_feed.register` row). Idempotent:
+
+- Websites and newsletters go through `registerWebFeedSite` at once (no network request). Shared platforms where one domain holds many creators (Patreon, Ko-fi, Buy Me a Coffee, Linktree, Medium) are reported as `shared_platform`, never registered; platform/store domains refused by the registry are reported with its error code; an already registered (or paused) site is left as it is.
+- YouTube rows with a channel id (`UC…`) or `@handle` are queued. The YouTube provider's scheduled sync resolves at most 5 per tick through `channels.list?id=` / `?forHandle=` (one data request each, inside the shared daily data budget; never a search). A found channel gets its canonical `source_account` and creator and is monitored (`discovery_provenance.operator_seed = true`) unless an operator excluded it (`excluded_by_operator`). A missing channel is `not_found`; legacy `/c/` URLs (`custom_url`) and rows without an id or handle (`no_handle`) are reported, never guessed from a name. Failed lookups retry hourly up to 3 times; registering again re-queues failed ones.
+
+State: no new table. Each entry is a `provider_sync_run` row (trigger `influencer_seed`, id `pis_…`); its status is the entry's state and its checkpoint carries rank, name, input and outcome. The admin page lists every entry.
+
+### YouTube uploads backfill (12 months)
+
+`runYoutubeUploadsBackfill` (hourly market work, after the website feeds) walks each monitored channel's uploads playlist back `YOUTUBE_BACKFILL_DAYS` days (seeded channels first, at most 3 channels and 4 pages per channel per run, hard stop at 20 pages = 1,000 uploads per channel): `channels.list` (contentDetails) once for the uploads playlist id, then per page `playlistItems.list` (50) and `videos.list` (snippet, statistics) for the uploads inside the window. Official Data API only; no captions or media are downloaded. Each video is stored as ordinary `youtube` content (observation id `<videoId>:backfill`), catalog card names in the title and description (links removed, one paragraph per line) become bounded `paragraph` segments and mentions with the same detector as websites and transcripts (`source: youtube_description`, at most 40 per video, excerpts ≤ 480 characters; the description is never stored whole), and card and product calls are extracted with the video's publish time as the call time.
+
+Budget: every request is reserved in the shared YouTube daily data bucket (`YOUTUBE_DISCOVERY_DATA_REQUESTS_PER_DAY`), and the backfill itself may use at most `YOUTUBE_BACKFILL_REQUESTS_PER_DAY` (default 60) per Pacific day, so monitoring and discovery keep the rest. Each channel run is a `provider_sync_run` row (trigger `youtube_backfill`, id `pyb_…`) whose checkpoint holds the playlist, next page token, cutoff and totals, saved after every page; the next run (or next day) resumes there. A 403/429 stops the run; a deleted channel is finished as `not_found`. Pausing the YouTube provider or excluding the creator stops it between pages.
+
+### Website sitemap backfill (12 months)
+
+Feeds hold only the newest 10–20 posts. `runWebSitemapBackfill` reads, for each registered active site (at most 3 per run, not within 50 minutes of its last run): robots.txt `Sitemap:` lines (same host only), else `/sitemap.xml` and `/sitemap_index.xml`; sitemap indexes are followed (at most 25 sitemaps, `.gz` skipped); URL entries whose `lastmod` is inside the window (or missing) and that are posts of the site (same host or subdomain, under the registered path, not tag/category/author/shop/listing pages or files) are queued, newest first, at most 300 per site. Queued article pages are fetched one by one through the same `WebFeedClient` (robots.txt honored for every URL, SSRF guard, redirects by hand, 10 s / 2 MB). A post counts only when its page states a publication time (`article:published_time` and similar meta tags, then JSON-LD `datePublished`, then `<time datetime>` inside `<article>`; modification dates are never used) inside the window; it is then ingested exactly like a feed post (`published_at_source: article_metadata`, `discovered_via: sitemap`), so a post already read from the feed is never stored twice. Only the title and ≤ 480-character excerpts around card names are kept.
+
+Bounds: 10 requests per site per run, `WEB_FEED_BACKFILL_REQUESTS_PER_SITE_PER_DAY` (default 30) per site per Pacific day, and the shared `WEB_FEED_REQUESTS_PER_DAY` across feed checks and backfill runs (the feed's claim now sums both triggers). State: one `provider_sync_run` row per site run (trigger `web_backfill`, id `pwb_…`); the newest row's checkpoint holds the sitemap and URL queues and totals.
+
+### Price history for scoring
+
+Backfilled calls are older than the daily TCC quotes, so they had no prices to score against. `runPriceHistory` (hourly, before call scoring) finds printings named in finalized, resolved card calls of the last 400 days that lack a raw price within the scorer's start window (3 days before to 2 days after the call, when the call stored no price) or close window (7 days before the horizon end, once it has passed), and asks TCC:
+
+`POST {TCC_API_BASE_URL}/api/public/integrations/social-signal/price-history` (Bearer `TCC_API_TOKEN`), body `{ items: [the quote request item], from, to }`, at most 50 items and 400 days per request, requests spaced 2.5 s apart (the feed allows 30/min). Response `{ ok, from, to, histories: [{ status, reason?, product_id?, group_name?, sub_type?, points: [{ date, market, low, mid, high }] }] }` in item order. `ok` points inside a call window with a positive market price are written as `tcg_market_snapshot` reference prices (`price_type=reference`, condition `unknown`, USD, `tcc:history:<printingId>:<date>`, observed at the end of that day, `price_source: tcgplayer_market_history_via_tcg_card_central`) through the synchronous market ingest; days that already have a daily quote or a history row are skipped, and `to` is always yesterday. `pending` (TCC is backfilling) and `unavailable` are retried after about 6 h, `not_found` after 30 days, a 400 after a week; a 429 or transport failure stops the run. Outcomes of the touched printings that were `insufficient_data` for a missing price go back to `pending` so the next scoring run reads the history. State: one `provider_sync_run` row per printing (trigger `price_history`, id `pph_…`) with status, covered range and next attempt.
+
+Gating: the daily quote job's (TCC `live`, `TCC_API_BASE_URL` and `TCC_API_TOKEN` set, provider not paused, enabled when hosted, retry-after honored); at most `TCC_PRICE_HISTORY_ITEMS_PER_RUN` printings per run (default 100, 0 turns it off) and 6,000 points per run.
+
+### Leaderboard
+
+`GET /v1/creators/leaderboard?game=pokemon` (scope `creators:read`, `creator_analytics` feature, metered as `creator.read`) and **/app/creators → Leaderboard** rank creators over finalized, unrevised calls published in the last 365 days for the game. A call is evaluated when its outcome is scored and directional (correct / incorrect); accuracy = came true / evaluated. Ranking is by the lower bound of the 95% Wilson interval (then accuracy, evaluated count, name), so a short lucky streak does not outrank a long record; only creators with at least 5 evaluated calls are ranked and the rest are listed under `not_enough_calls`. Each row: rank, name, platforms, calls made, evaluated, came true, accuracy, Wilson lower bound, authority weight (the newest overall slice, the one sentiment uses), trust state and last call. Creators an operator excluded and creators the workspace hid are left out.
+
+| Env | Default | Meaning |
+| --- | --- | --- |
+| `YOUTUBE_BACKFILL_DAYS` | unset (off) | Days of uploads to backfill per monitored channel (recommended 365, max 400). Needs YouTube live and credentialed. |
+| `YOUTUBE_BACKFILL_REQUESTS_PER_DAY` | 60 | Backfill share of the shared YouTube data budget per Pacific day. |
+| `WEB_FEED_BACKFILL_DAYS` | unset (off) | Days of posts to backfill from sitemaps (recommended 365, max 400). Needs `PROVIDER_WEB_FEED_MODE=live`. |
+| `WEB_FEED_BACKFILL_REQUESTS_PER_SITE_PER_DAY` | 30 | Backfill requests per site per Pacific day (inside `WEB_FEED_REQUESTS_PER_DAY`). |
+| `TCC_PRICE_HISTORY_ITEMS_PER_RUN` | 100 | Printings asked for history per hourly run (0–500; 0 = off). |
+
+No migration was needed. Validation state: implemented and **fixture-tested only** (fake TCC transport and PGlite scoring test for price history; pure tests for sitemaps, article dates, description detection, the seed plan and leaderboard ranking; API route test). The YouTube and website backfills have no end-to-end DB test yet. Nothing is hosted-validated, the TCC price-history endpoint has not been called from here, and no new env var is set anywhere by this change.
+
 ## Segments
 
 `source_content_segment`: `timestamp_range`, `paragraph`, or `comment`, with start/end refs and optional bounded excerpt. Future creator-call evidence can point here.

@@ -277,6 +277,80 @@ export class LiveYoutubeSourceProvider implements YoutubeSourceProvider {
     return rows.filter((row) => row.account.external_account_id === externalAccountId).slice(0, limit);
   }
 
+  /** The channel's uploads playlist id. One data request; null when the channel is unavailable. */
+  async getUploadsPlaylistId(channelId: string): Promise<string | null> {
+    if (!/^UC[A-Za-z0-9_-]{22}$/.test(channelId)) {
+      throw new ProviderHttpError({ status: 0, errorClass: "invalid_account" });
+    }
+    const params = new URLSearchParams({ part: "contentDetails", id: channelId });
+    const response = await this.transport.fetch(`https://www.googleapis.com/youtube/v3/channels?${params}`, {
+      headers: { accept: "application/json", "x-goog-api-key": this.auth.apiKey },
+    });
+    const channel = requireOkJson(response, (value) => value as {
+      items?: Array<{ id?: string; contentDetails?: { relatedPlaylists?: { uploads?: string } } }>;
+    }).items?.find((item) => item.id === channelId);
+    const uploads = channel?.contentDetails?.relatedPlaylists?.uploads;
+    return typeof uploads === "string" && /^[A-Za-z0-9_-]{10,64}$/.test(uploads) ? uploads : null;
+  }
+
+  /**
+   * One page (up to 50) of an uploads playlist, newest first: video ids and
+   * their publish times. One data request (playlistItems.list, 1 quota unit).
+   */
+  async getUploadsPage(
+    playlistId: string,
+    pageToken: string | null,
+  ): Promise<{ items: Array<{ videoId: string; publishedAt: string | null }>; nextPageToken: string | null }> {
+    if (!/^[A-Za-z0-9_-]{10,64}$/.test(playlistId) || (pageToken != null && !/^[A-Za-z0-9_-]{1,200}$/.test(pageToken))) {
+      throw new ProviderHttpError({ status: 0, errorClass: "invalid_request" });
+    }
+    const params = new URLSearchParams({ part: "contentDetails", playlistId, maxResults: "50" });
+    if (pageToken) params.set("pageToken", pageToken);
+    const response = await this.transport.fetch(`https://www.googleapis.com/youtube/v3/playlistItems?${params}`, {
+      headers: { accept: "application/json", "x-goog-api-key": this.auth.apiKey },
+    });
+    const json = requireOkJson(response, (value) => value as {
+      items?: Array<{ contentDetails?: { videoId?: string; videoPublishedAt?: string } }>;
+      nextPageToken?: string;
+    });
+    const items = (json.items ?? [])
+      .map((item) => ({
+        videoId: item.contentDetails?.videoId ?? "",
+        publishedAt: typeof item.contentDetails?.videoPublishedAt === "string" ? item.contentDetails.videoPublishedAt : null,
+      }))
+      .filter((item) => /^[A-Za-z0-9_-]{6,20}$/.test(item.videoId));
+    return { items, nextPageToken: typeof json.nextPageToken === "string" && json.nextPageToken ? json.nextPageToken : null };
+  }
+
+  /**
+   * Metadata of up to 50 videos (videos.list snippet+statistics, one data
+   * request): the normalized record plus the full description, which the
+   * caller scans for card names and never stores whole.
+   */
+  async getVideoDetails(ids: string[]): Promise<Array<{ record: SourceContentRecordInput; description: string }>> {
+    const unique = [...new Set(ids.filter((id) => /^[A-Za-z0-9_-]{6,20}$/.test(id)))].slice(0, 50);
+    if (unique.length === 0) return [];
+    const params = new URLSearchParams({ part: "snippet,statistics", id: unique.join(",") });
+    const response = await this.transport.fetch(`https://www.googleapis.com/youtube/v3/videos?${params}`, {
+      headers: { accept: "application/json", "x-goog-api-key": this.auth.apiKey },
+    });
+    const json = requireOkJson(response, (value) => value as { items?: Array<{ snippet?: { description?: unknown } }> });
+    const details: Array<{ record: SourceContentRecordInput; description: string }> = [];
+    for (const item of json.items ?? []) {
+      let record: SourceContentRecordInput;
+      try {
+        record = normalizeYoutubeVideo(item);
+      } catch {
+        continue; // A malformed item is skipped, never half-stored.
+      }
+      details.push({
+        record,
+        description: typeof item.snippet?.description === "string" ? item.snippet.description.slice(0, 10_000) : "",
+      });
+    }
+    return details;
+  }
+
   /**
    * Resolve a channel ID (UC...) or @handle to its channel. One data request,
    * never a search request. Returns null when YouTube has no such channel.

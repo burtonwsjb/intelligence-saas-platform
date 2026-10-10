@@ -19,7 +19,7 @@ export const TCC_WATCH_DAYS = 120;
 export const TCC_QUOTE_GAMES = ["pokemon", "one_piece", "dragon_ball", "yugioh"] as const;
 const SEALED_TYPES = ["booster_pack", "booster_bundle", "booster_box", "elite_trainer_box"];
 
-type CardTarget = {
+export type CardTarget = {
   kind: "card";
   printingId: string;
   game: string;
@@ -30,8 +30,8 @@ type CardTarget = {
   language: string;
   variant: string;
 };
-type SealedTarget = { kind: "sealed"; assetKey: string; game: string; setName: string; productType: string };
-type Target = CardTarget | SealedTarget;
+export type SealedTarget = { kind: "sealed"; assetKey: string; game: string; setName: string; productType: string };
+export type Target = CardTarget | SealedTarget;
 
 type Quote =
   | {
@@ -166,7 +166,7 @@ export async function listQuoteTargets(db: Database, now = new Date(), limit = T
   return targets.slice(0, limit);
 }
 
-function requestItem(target: Target) {
+export function requestItem(target: Target) {
   return target.kind === "card"
     ? {
         kind: "card",

@@ -55,6 +55,8 @@ import { normalizeMentionText, stableSourceId, type SourceContentRecordInput } f
 export const WEB_FEED_EXTRACTOR_VERSION = "source.web_feed.v1";
 export const WEB_FEED_SYNC_TRIGGER = "web_feed";
 export const WEB_FEED_RUN_ID_PREFIX = "pwf_";
+/** Sitemap backfill runs (source/web-backfill.ts) share the daily request budget. */
+export const WEB_BACKFILL_TRIGGER = "web_backfill";
 export const WEB_FEED_MAX_SITES_PER_RUN = 10;
 export const WEB_FEED_SITE_INTERVAL_HOURS = 6;
 export const DEFAULT_WEB_FEED_REQUESTS_PER_DAY = 200;
@@ -369,37 +371,41 @@ export function planWebPostSegments(
   title: string | null,
   text: string,
   index: CardNameIndex,
+  options: { extractorVersion?: string; source?: string; maxMentions?: number } = {},
 ): CardMentionSegment[] {
+  const extractorVersion = options.extractorVersion ?? WEB_FEED_EXTRACTOR_VERSION;
+  const source = options.source ?? "web_feed";
+  const maxMentions = options.maxMentions ?? MAX_MENTIONS_PER_POST;
   const planned: CardMentionSegment[] = [];
   const seen = new Set<string>();
   let total = 0;
   for (const window of webPostWindows(title, text)) {
-    if (total >= MAX_MENTIONS_PER_POST) break;
+    if (total >= maxMentions) break;
     const detected = detectCardMentions(window.text, index).filter((mention) => {
       const key = `${mention.name.toLowerCase()}|${mention.collectorNumber ?? ""}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
     });
-    const kept = detected.slice(0, MAX_MENTIONS_PER_POST - total);
+    const kept = detected.slice(0, maxMentions - total);
     if (kept.length === 0) continue;
     total += kept.length;
     planned.push({
-      id: stableSourceId("ssg", [contentId, "paragraph", window.startRef, window.endRef, WEB_FEED_EXTRACTOR_VERSION]),
+      id: stableSourceId("ssg", [contentId, "paragraph", window.startRef, window.endRef, extractorVersion]),
       kind: "paragraph",
       startRef: window.startRef,
       endRef: window.endRef,
       excerpt: boundedWindowExcerpt(window.text, kept),
-      metadata: { source: "web_feed", extractor_version: WEB_FEED_EXTRACTOR_VERSION },
+      metadata: { source, extractor_version: extractorVersion },
       mentions: kept.map((mention) => {
         const rawEntityText = mention.collectorNumber ? `${mention.name} ${mention.collectorNumber}` : mention.name;
         const normalized = normalizeMentionText(rawEntityText);
         return {
-          id: cardMentionId(contentId, normalized, WEB_FEED_EXTRACTOR_VERSION, window.startRef),
+          id: cardMentionId(contentId, normalized, extractorVersion, window.startRef),
           rawEntityText,
           normalized,
           hints: {
-            source: "web_feed",
+            source,
             card_name: mention.name,
             matched_text: mention.matchedText,
             collector_number: mention.collectorNumber,
@@ -432,7 +438,15 @@ export type WebFeedPostResult =
  */
 export async function ingestWebFeedPost(
   db: Database,
-  input: { site: WebFeedSite; post: WebFeedPost; feedUrl: string; index: CardNameIndex; now?: Date },
+  input: {
+    site: WebFeedSite;
+    post: WebFeedPost;
+    feedUrl: string;
+    index: CardNameIndex;
+    now?: Date;
+    /** "sitemap" when the post was found by the sitemap backfill; its date then comes from the article page. */
+    discoveredVia?: "feed" | "sitemap";
+  },
 ): Promise<WebFeedPostResult> {
   const link = canonicalPostUrl(input.post.link);
   if (!link) return { status: "no_link", contentId: null, segments: 0, mentions: 0, callsCreated: 0 };
@@ -478,8 +492,13 @@ export async function ingestWebFeedPost(
           feed_url: input.feedUrl.slice(0, 500),
           feed_guid: input.post.id?.slice(0, 300) ?? null,
           feed_author: input.post.author?.slice(0, 120) ?? null,
-          published_at_source: input.post.publishedAt ? "feed" : "observed",
+          published_at_source: input.post.publishedAt
+            ? input.discoveredVia === "sitemap"
+              ? "article_metadata"
+              : "feed"
+            : "observed",
           text_source: input.post.textSource,
+          ...(input.discoveredVia === "sitemap" ? { discovered_via: "sitemap" } : {}),
         },
       },
     };
@@ -573,7 +592,7 @@ async function claimSiteCheck(
     const used = rowsOf<{ used: number | string | null }>(
       await tx.execute(sql`
         SELECT COALESCE(SUM(limit_count), 0) AS used FROM provider_sync_run
-        WHERE provider_key = 'web_feed' AND "trigger" = ${WEB_FEED_SYNC_TRIGGER}
+        WHERE provider_key = 'web_feed' AND "trigger" IN (${WEB_FEED_SYNC_TRIGGER}, ${WEB_BACKFILL_TRIGGER})
           AND (started_at AT TIME ZONE 'America/Los_Angeles')::date = (now() AT TIME ZONE 'America/Los_Angeles')::date`),
     );
     if (Number(used[0]?.used ?? 0) + input.reserve > input.budget) return { claimed: false, reason: "budget_exhausted" };

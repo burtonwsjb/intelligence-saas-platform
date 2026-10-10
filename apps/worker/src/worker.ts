@@ -13,8 +13,11 @@ import {
   requireWorkerDatabaseUrl,
   resolveProviderMode,
   runTranscriptBackfillBatch,
+  runWebBackfill,
+  runYoutubeBackfill,
   scoreDueCreatorCalls,
   syncSealedProducts,
+  syncTccPriceHistory,
   syncWebFeeds,
   transcriptProviderConfig,
   transcriptRequestBudget,
@@ -22,9 +25,12 @@ import {
   withPlatformContext,
   type Database,
   type TccCatalogReport,
+  type TccPriceHistoryReport,
   type TranscriptBackfillReport,
   type TranscriptFetcher,
+  type WebBackfillReport,
   type WebFeedSyncReport,
+  type YoutubeBackfillReport,
 } from "@isp/db";
 import {
   JOB_TIMEOUT_MS,
@@ -261,6 +267,111 @@ export async function runWebFeedSync(
     return report;
   } catch (error) {
     logLoopFailure("worker.web_feed_sync_failed", "web_feed_sync", error);
+    return null;
+  }
+}
+
+type YoutubeBackfillTransport = NonNullable<Parameters<typeof runYoutubeBackfill>[1]>["transport"];
+
+/**
+ * Walks the uploads of monitored YouTube channels back twelve months (seeded
+ * influencers first) through the official Data API, and turns card names in
+ * video titles and descriptions into mentions and creator calls. Runs only
+ * with YOUTUBE_BACKFILL_DAYS set and YouTube live; bounded by
+ * YOUTUBE_BACKFILL_REQUESTS_PER_DAY inside the shared YouTube data budget,
+ * and resumes from each channel's checkpoint. Logs counts only.
+ */
+export async function runYoutubeUploadsBackfill(
+  db: Database,
+  env: NodeJS.ProcessEnv = process.env,
+  options: { transport?: YoutubeBackfillTransport } = {},
+): Promise<YoutubeBackfillReport | null> {
+  try {
+    const report = await runYoutubeBackfill(db, { env, transport: options.transport });
+    if (report.status === "skipped" && report.reason === "disabled") return report;
+    logQueueEvent(report.status === "stopped" ? "warn" : "info", "worker.youtube_backfill", {
+      status: report.status,
+      reason: report.reason,
+      channels: report.channels,
+      finished: report.finished,
+      requests: report.requests,
+      pages: report.pages,
+      videos: report.videos,
+      stored: report.stored,
+      mentions: report.mentions,
+      calls_created: report.callsCreated,
+    });
+    return report;
+  } catch (error) {
+    logLoopFailure("worker.youtube_backfill_failed", "youtube_backfill", error);
+    return null;
+  }
+}
+
+/**
+ * Reads registered influencer websites' sitemaps for posts of the last
+ * WEB_FEED_BACKFILL_DAYS days, within robots.txt, the per-site daily cap and
+ * the shared WEB_FEED_REQUESTS_PER_DAY budget. Logs counts only, never a URL.
+ */
+export async function runWebSitemapBackfill(
+  db: Database,
+  env: NodeJS.ProcessEnv = process.env,
+  options: { transport?: WebFeedTransport; lookup?: WebFeedLookup } = {},
+): Promise<WebBackfillReport | null> {
+  try {
+    const report = await runWebBackfill(db, { env, transport: options.transport, lookup: options.lookup });
+    if (report.status === "skipped" && (report.reason === "disabled" || report.reason === "web_feed_not_live")) return report;
+    logQueueEvent(report.status === "stopped" ? "warn" : "info", "worker.web_backfill", {
+      status: report.status,
+      reason: report.reason,
+      sites: report.sites,
+      finished: report.finished,
+      requests: report.requests,
+      sitemaps: report.sitemaps,
+      pages: report.pages,
+      posts: report.posts,
+      mentions: report.mentions,
+      calls_created: report.callsCreated,
+    });
+    return report;
+  } catch (error) {
+    logLoopFailure("worker.web_backfill_failed", "web_backfill", error);
+    return null;
+  }
+}
+
+type PriceHistoryTransport = NonNullable<Parameters<typeof syncTccPriceHistory>[1]>["transport"];
+
+/**
+ * Fetches daily TCG Card Central price history for printings whose calls lack
+ * a price at the call or at the horizon end, so backfilled calls can be
+ * scored. Runs only when TCC is live with its URL and token; bounded by
+ * TCC_PRICE_HISTORY_ITEMS_PER_RUN printings in requests of at most 50.
+ */
+export async function runPriceHistory(
+  db: Database,
+  env: NodeJS.ProcessEnv = process.env,
+  options: { transport?: PriceHistoryTransport; sleep?: (ms: number) => Promise<void> } = {},
+): Promise<TccPriceHistoryReport | null> {
+  try {
+    const report = await syncTccPriceHistory(db, { env, transport: options.transport, sleep: options.sleep });
+    if (report.status === "skipped" && report.reason !== "throttled" && report.reason !== "overlap") return report;
+    logQueueEvent(report.status === "stopped" ? "warn" : "info", "worker.price_history", {
+      status: report.status,
+      reason: report.reason,
+      printings: report.printings,
+      requests: report.requests,
+      ok: report.ok,
+      pending: report.pending,
+      not_found: report.notFound,
+      failed: report.failed,
+      points: report.points,
+      written: report.written,
+      outcomes_reset: report.outcomesReset,
+    });
+    return report;
+  } catch (error) {
+    logLoopFailure("worker.price_history_failed", "price_history", error);
     return null;
   }
 }
@@ -518,8 +629,10 @@ export function startWorker(options?: {
   // Hourly, and once a minute after startup: the TCG Card Central card
   // catalog, sealed products for any new set, transcript card mentions for
   // new YouTube videos (when a transcript provider is configured), posts from
-  // registered influencer websites (when PROVIDER_WEB_FEED_MODE=live), then
-  // scoring of calls that have come due.
+  // registered influencer websites (when PROVIDER_WEB_FEED_MODE=live), the
+  // 12-month YouTube and website backfills (when their *_BACKFILL_DAYS are
+  // set), TCC price history for calls without prices, then scoring of calls
+  // that have come due.
   const runMarketWork = () => {
     if (status === "shutting_down" || status === "stopped") {
       return;
@@ -528,6 +641,9 @@ export function startWorker(options?: {
       .then(() => runSealedCatalogSync(db))
       .then(() => runTranscriptBackfill(db, env))
       .then(() => runWebFeedSync(db, env))
+      .then(() => runYoutubeUploadsBackfill(db, env))
+      .then(() => runWebSitemapBackfill(db, env))
+      .then(() => runPriceHistory(db, env))
       .then(() => runCallScoring(db));
   };
   const firstMarketWork = setTimeout(runMarketWork, 60_000);

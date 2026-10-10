@@ -16,6 +16,7 @@ describe("admin server actions", () => {
     ].map((match) => match[1]);
     expect(exported).toContain("registerWebFeedSiteAction");
     expect(exported).toContain("setWebFeedSiteStateAction");
+    expect(exported).toContain("requestInfluencerSeedAction");
     expect(guarded).toEqual(exported);
   });
 
@@ -23,6 +24,7 @@ describe("admin server actions", () => {
     const page = read("admin/sources/page.tsx");
     expect(page).toContain("await requireGrantedOperator()");
     expect(page).toContain("registerWebFeedSiteAction");
+    expect(page).toContain("requestInfluencerSeedAction");
     expect(isProtectedPath("/admin/sources")).toBe(true);
   });
 });
