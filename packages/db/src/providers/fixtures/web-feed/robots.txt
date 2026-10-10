@@ -1,0 +1,12 @@
+# robots for cards.example.com
+User-agent: *
+Disallow: /wp-admin/
+Allow: /wp-admin/admin-ajax.php
+
+User-agent: GPTBot
+User-agent: SentimentBot
+Disallow: /private/
+Allow: /private/ok$
+
+User-agent: BadBot
+Disallow: /

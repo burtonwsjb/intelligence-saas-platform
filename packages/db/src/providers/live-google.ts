@@ -34,7 +34,8 @@ export function siteDomain(hostname: string): string {
   return hostname.toLowerCase().replace(/^www\./, "").replace(/\.$/, "");
 }
 
-function skipped(domain: string): boolean {
+/** Platforms and stores that are never treated as a creator's own website. */
+export function isSkippedSiteDomain(domain: string): boolean {
   return GOOGLE_SKIPPED_DOMAINS.some((root) => domain === root || domain.endsWith(`.${root}`));
 }
 
@@ -79,7 +80,7 @@ export function normalizeGoogleResult(raw: unknown, input: { query: string; now?
   }
   if (url.protocol !== "https:") return null;
   const domain = siteDomain(url.hostname);
-  if (!domain || skipped(domain)) return null;
+  if (!domain || isSkippedSiteDomain(domain)) return null;
   url.hash = "";
   const canonical = url.toString();
   const id = createHash("sha256").update(canonical).digest("hex").slice(0, 32);

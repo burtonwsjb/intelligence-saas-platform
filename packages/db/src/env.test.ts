@@ -338,6 +338,11 @@ describe("committed env example", () => {
     expect(example).toMatch(/^TCC_API_TOKEN=$/m);
     expect(example).toMatch(/^PROVIDER_DEFAULT_MODE=$/m);
     expect(example).toMatch(/^YOUTUBE_API_KEY=$/m);
+    expect(example).toMatch(/^TRANSCRIPT_PROVIDER=$/m);
+    expect(example).toMatch(/^PROVIDER_WEB_FEED_MODE=$/m);
+    expect(example).toMatch(/^WEB_FEED_REQUESTS_PER_DAY=$/m);
+    expect(example).toMatch(/^SUPADATA_API_KEY=$/m);
+    expect(example).toMatch(/^YOUTUBE_TRANSCRIPT_REQUESTS_PER_DAY=$/m);
     expect(example).toMatch(/^REDDIT_CLIENT_SECRET=$/m);
     expect(example).not.toMatch(/sk_live_|ya29\.|Bearer /);
     expect(example).toMatch(/^ISP_ENV=$/m);

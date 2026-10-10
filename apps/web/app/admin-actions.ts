@@ -26,6 +26,9 @@ import {
   retryProviderJob,
   reviewMarketQuarantine,
   resolveIntelligenceQuarantine,
+  registerWebFeedSite,
+  setWebFeedSiteState,
+  WebFeedSiteError,
 } from "@isp/db";
 import { requireGrantedOperator } from "@/lib/platform-admin";
 
@@ -262,6 +265,49 @@ export async function retryProviderJobAction(formData: FormData) {
     throw error;
   }
   redirect("/admin/sources");
+}
+
+/** Registers an influencer website as a creator source (platform operators only). */
+export async function registerWebFeedSiteAction(formData: FormData) {
+  const operator = await requireGrantedOperator();
+  if (!operator.adminDb) {
+    redirect("/admin/sources?error=config");
+  }
+  try {
+    await registerWebFeedSite(operator.adminDb, {
+      siteUrl: String(formData.get("siteUrl") ?? ""),
+      feedUrl: String(formData.get("feedUrl") ?? "") || null,
+      displayName: String(formData.get("displayName") ?? "") || null,
+      actorUserId: operator.session.user.id,
+    });
+  } catch (error) {
+    if (error instanceof WebFeedSiteError) {
+      redirect(`/admin/sources?error=${error.code === "platform_site" ? "website_platform" : "website_invalid"}#websites`);
+    }
+    throw error;
+  }
+  redirect("/admin/sources?website=added#websites");
+}
+
+/** Pauses or resumes a registered website (platform operators only). */
+export async function setWebFeedSiteStateAction(formData: FormData) {
+  const operator = await requireGrantedOperator();
+  if (!operator.adminDb) {
+    redirect("/admin/sources?error=config");
+  }
+  try {
+    await setWebFeedSiteState(operator.adminDb, {
+      sourceAccountId: String(formData.get("sourceAccountId") ?? ""),
+      state: String(formData.get("state") ?? "") === "paused" ? "paused" : "active",
+      actorUserId: operator.session.user.id,
+    });
+  } catch (error) {
+    if (error instanceof WebFeedSiteError) {
+      redirect("/admin/sources?error=rejected#websites");
+    }
+    throw error;
+  }
+  redirect("/admin/sources#websites");
 }
 
 export async function setDiscoveryTopicEnabledAction(formData: FormData) {

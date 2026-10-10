@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title type="text">Atom Card Blog</title>
+  <link href="https://atom.example.org/" rel="alternate" type="text/html"/>
+  <link href="https://atom.example.org/atom.xml" rel="self"/>
+  <id>urn:uuid:60a76c80-d399-11d9-b93C-0003939e0af6</id>
+  <updated>2026-09-03T18:30:02Z</updated>
+  <entry>
+    <title type="html">Why I&amp;apos;m selling &lt;em&gt;Pikachu&lt;/em&gt;</title>
+    <link rel="alternate" type="text/html" href="/posts/selling-pikachu"/>
+    <link rel="edit" href="https://atom.example.org/api/posts/2"/>
+    <id>tag:atom.example.org,2026:2</id>
+    <published>2026-09-02T12:00:00Z</published>
+    <updated>2026-09-03T12:00:00Z</updated>
+    <author><name>Alex Atom</name></author>
+    <content type="xhtml">
+      <div xmlns="http://www.w3.org/1999/xhtml">
+        <p>Prices are wild.</p>
+        <p>I think Charizard ex is overpriced, sell now.</p>
+      </div>
+    </content>
+  </entry>
+  <entry>
+    <title>Plain summary entry</title>
+    <link href="https://atom.example.org/posts/summary-only"/>
+    <id>tag:atom.example.org,2026:1</id>
+    <updated>2026-09-01T09:00:00Z</updated>
+    <summary type="html">&lt;p&gt;Keep an eye on Greninja ex.&lt;/p&gt;</summary>
+  </entry>
+</feed>

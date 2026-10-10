@@ -76,6 +76,10 @@ Web on Vercel. API and worker on Railway. Do not click hosted controls from this
 
 Modes are `disabled` | `fixture` | `live`. Live never infers from credential presence. Keep providers disabled until an operator explicitly sets live mode and has budget approval.
 
+YouTube transcripts are off unless `TRANSCRIPT_PROVIDER` is `youtube_captions` (unofficial YouTube web endpoints; may be blocked from cloud IPs) or `supadata` (with `SUPADATA_API_KEY`). `YOUTUBE_TRANSCRIPT_REQUESTS_PER_DAY` (default 50) caps requests per Pacific day. Only bounded excerpts of windows that name a card are kept. Fixture-tested only; see [PHASE_09.md](PHASE_09.md#transcript-backfill-youtube).
+
+Influencer websites (RSS/Atom feeds) are off unless `PROVIDER_WEB_FEED_MODE=live`. Register sites on /admin/sources → Influencer websites; pause a site there, or pause/disable the `web_feed` provider to stop all reads. robots.txt is honored; at most 10 sites per hourly run, 10 requests per site, `WEB_FEED_REQUESTS_PER_DAY` (default 200) per Pacific day. Only excerpts (≤ 480 chars) around card names are kept. Fixture-tested only; see [PHASE_09.md](PHASE_09.md#website-feeds-influencer-sites).
+
 ## Provider credentials
 
 Stay in Railway/Vercel env, never in git. Rotating a provider token does not change mode.
