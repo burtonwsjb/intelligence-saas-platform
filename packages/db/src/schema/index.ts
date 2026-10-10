@@ -27,3 +27,4 @@ export * from "./discovery.js";
 export * from "./creator-list.js";
 export * from "./topic.js";
 export * from "./asset.js";
+export * from "./chart.js";
