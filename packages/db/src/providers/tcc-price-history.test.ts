@@ -6,6 +6,8 @@ import {
   extractCreatorCallsFromContent,
   getChartSentiment,
   ingestSourceContentRecord,
+  insertTcgPrinting,
+  insertTcgSet,
   readMigrationSql,
   runChartSentimentBatch,
   seedTcgIdentityFixtures,
@@ -245,7 +247,7 @@ const MINUTE = 60_000;
 async function indexMember(client: PGlite, printingId: string) {
   await client.query(
     `INSERT INTO tcg_index_definition (index_key, name, game_key, membership_rule, weighting_method, method_version)
-     VALUES ('fixture_index', 'Fixture', 'pokemon', '{}'::jsonb, 'equal', 'v1') ON CONFLICT DO NOTHING`,
+     VALUES ('fixture_index', 'Fixture', 'pokemon', '{}'::jsonb, 'equal.v1', 'v1') ON CONFLICT DO NOTHING`,
   );
   await client.query(
     `INSERT INTO tcg_index_membership (id, index_key, printing_id, effective_from, weight, method_version)
@@ -258,18 +260,30 @@ describe("price history chart universe", () => {
   it("orders called printings, then index members, then the catalog by newest set; English Pokemon / One Piece only", async () => {
     const { client, db, seeded } = await setup();
     const p = seeded.printings;
-    await client.query(`UPDATE tcg_set SET release_date = '2024-06-01' WHERE canonical_set_key = 'sv2'`);
+    // Canonical sets are immutable, so the dated set is added rather than updated:
+    // it is the newest Pokemon set, and the undated fixture sets sort after it.
+    const sv3 = await insertTcgSet(db, { gameKey: "pokemon", canonicalSetKey: "sv3", name: "Obsidian Flames", languageScope: "multi", releaseDate: "2024-06-01" });
+    const pikachuSv3 = await insertTcgPrinting(db, {
+      cardId: seeded.concepts.pikachu.id,
+      setId: sv3.id,
+      gameKey: "pokemon",
+      conceptKey: seeded.concepts.pikachu.conceptKey,
+      setKey: sv3.canonicalSetKey,
+      collectorNumber: "025/197",
+      language: "en",
+      variantKey: "normal",
+    });
     await indexMember(client, p.charizardPromo.id);
     const now = new Date("2026-03-01T09:00:00Z");
     const first = await listChartHistoryTargets(db, { now, limit: 4 });
     // The fixture call names English Greninja; the index holds the promo; then the catalog
-    // alternates games: Paldea Evolved is the newest Pokemon set, Luffy the first One Piece card.
-    expect(first.map((t) => t.printingId)).toEqual([p.greninjaEnNormal.id, p.charizardPromo.id, p.pikachuSv2.id, p.luffyEn.id]);
+    // alternates games: Obsidian Flames is the newest Pokemon set, Luffy the first One Piece card.
+    expect(first.map((t) => t.printingId)).toEqual([p.greninjaEnNormal.id, p.charizardPromo.id, pikachuSv3.id, p.luffyEn.id]);
     expect(first[0]).toMatchObject({ chart: true, needFrom: "2025-03-01", needTo: "2026-02-28", windows: [{ from: "2025-03-01", to: "2026-02-28" }] });
 
     const all = await listChartHistoryTargets(db, { now, limit: 100 });
     const ids = new Set(all.map((t) => t.printingId));
-    expect(all).toHaveLength(12);
+    expect(all).toHaveLength(13);
     for (const other of [p.greninjaJaNormal, p.greninjaZhNormal, p.luffyJa]) expect(ids.has(other.id)).toBe(false);
     expect(ids.has(p.luffyEn.id)).toBe(true);
 
