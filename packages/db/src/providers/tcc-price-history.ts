@@ -492,7 +492,10 @@ export function planPriceHistoryRequests(targets: PriceHistoryTarget[]) {
 }
 
 function finitePrice(value: unknown): number | null {
-  const n = typeof value === "number" ? value : typeof value === "string" && value.trim() !== "" ? Number(value) : NaN;
+  const raw = typeof value === "number" ? value : typeof value === "string" && value.trim() !== "" ? Number(value) : NaN;
+  // Float noise from the feed's arithmetic (29.149999999999999) would fail the
+  // market ingest's 8-decimal money check and drop the whole day.
+  const n = Number.isFinite(raw) ? Number(raw.toFixed(8)) : NaN;
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 

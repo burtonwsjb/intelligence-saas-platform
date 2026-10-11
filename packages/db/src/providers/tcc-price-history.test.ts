@@ -210,6 +210,14 @@ describe("price history planning", () => {
     );
     expect([...points.keys()]).toEqual(["2026-01-01"]);
   });
+
+  it("rounds float noise in feed prices so the day still passes the money check", () => {
+    const points = usableHistoryPoints(
+      { windows: [{ from: "2026-01-01", to: "2026-01-01" }] },
+      { status: "ok", points: [{ date: "2026-01-01", market: 31.15, low: 31.15 - 2, mid: "31.15", high: 0.1 + 0.2 }] },
+    );
+    expect(points.get("2026-01-01")).toEqual({ market: 31.15, low: 29.15, mid: 31.15, high: 0.3 });
+  });
 });
 
 type HistoryRequest = { items: Array<Record<string, string>>; from: string; to: string };
