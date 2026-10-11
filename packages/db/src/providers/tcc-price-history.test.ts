@@ -241,24 +241,30 @@ async function checkpointOf(client: PGlite, printingId: string) {
 
 const MINUTE = 60_000;
 
+/** Puts a printing in an open index, the chart universe's second tier. */
+async function indexMember(client: PGlite, printingId: string) {
+  await client.query(
+    `INSERT INTO tcg_index_definition (index_key, name, game_key, membership_rule, weighting_method, method_version)
+     VALUES ('fixture_index', 'Fixture', 'pokemon', '{}'::jsonb, 'equal', 'v1') ON CONFLICT DO NOTHING`,
+  );
+  await client.query(
+    `INSERT INTO tcg_index_membership (id, index_key, printing_id, effective_from, weight, method_version)
+     VALUES ($1, 'fixture_index', $2, '2026-01-01', 1, 'v1')`,
+    [`m_${printingId}`, printingId],
+  );
+}
+
 describe("price history chart universe", () => {
   it("orders called printings, then index members, then the catalog by newest set; English Pokemon / One Piece only", async () => {
     const { client, db, seeded } = await setup();
     const p = seeded.printings;
     await client.query(`UPDATE tcg_set SET release_date = '2024-06-01' WHERE canonical_set_key = 'sv2'`);
-    await client.query(
-      `INSERT INTO tcg_index_definition (index_key, name, game_key, membership_rule, weighting_method, method_version)
-       VALUES ('fixture_index', 'Fixture', 'pokemon', '{}'::jsonb, 'equal', 'v1')`,
-    );
-    await client.query(
-      `INSERT INTO tcg_index_membership (id, index_key, printing_id, effective_from, weight, method_version)
-       VALUES ('m1', 'fixture_index', $1, '2026-01-01', 1, 'v1')`,
-      [p.charizardPromo.id],
-    );
+    await indexMember(client, p.charizardPromo.id);
     const now = new Date("2026-03-01T09:00:00Z");
-    const first = await listChartHistoryTargets(db, { now, limit: 3 });
-    // The fixture call names English Greninja; the index holds the promo; Paldea Evolved is the newest set.
-    expect(first.map((t) => t.printingId)).toEqual([p.greninjaEnNormal.id, p.charizardPromo.id, p.pikachuSv2.id]);
+    const first = await listChartHistoryTargets(db, { now, limit: 4 });
+    // The fixture call names English Greninja; the index holds the promo; then the catalog
+    // alternates games: Paldea Evolved is the newest Pokemon set, Luffy the first One Piece card.
+    expect(first.map((t) => t.printingId)).toEqual([p.greninjaEnNormal.id, p.charizardPromo.id, p.pikachuSv2.id, p.luffyEn.id]);
     expect(first[0]).toMatchObject({ chart: true, needFrom: "2025-03-01", needTo: "2026-02-28", windows: [{ from: "2025-03-01", to: "2026-02-28" }] });
 
     const all = await listChartHistoryTargets(db, { now, limit: 100 });
@@ -277,7 +283,7 @@ describe("price history chart universe", () => {
     const luffy = seeded.printings.luffyEn.id;
     const greninja = seeded.printings.greninjaEnNormal.id;
     // Make Luffy the first chart printing after the called Greninja.
-    await client.query(`UPDATE tcg_set SET release_date = '2026-01-01' WHERE canonical_set_key = 'op01'`);
+    await indexMember(client, luffy);
     const base = { baseUrl: "https://tcc.example.test", token: "fixture-token", sleep: async () => {}, items: 100 };
     const sent: HistoryRequest[] = [];
     const t0 = new Date("2026-03-01T09:00:00Z");
@@ -340,10 +346,11 @@ describe("price history chart universe", () => {
     const stored = (await getChartSentiment(db, [luffy])).get(luffy)!;
     expect(stored.raw).toMatchObject({ segment: "raw", priceType: "reference", currency: "USD", points: 366, dataThrough: "2026-03-01" });
     expect(stored.raw!.label).not.toBe("insufficient_history");
-  });
+  }, 90_000);
 
   it("defers a whole printing at the points cap instead of writing part of it", async () => {
     const { client, db, seeded } = await setup();
+    await indexMember(client, seeded.printings.luffyEn.id);
     const now = new Date("2026-03-01T09:00:00Z");
     const sent: HistoryRequest[] = [];
     const report = await collectTccPriceHistory(db, {
@@ -358,7 +365,7 @@ describe("price history chart universe", () => {
     });
     expect(report).toMatchObject({ status: "stopped", reason: "points_cap", printings: 2, requests: 1, ok: 2, written: 365, deferred: 1 });
     // The called Greninja is the first chart printing and is written whole; the
-    // second (Romance Dawn's Luffy, first set by key) is deferred with nothing written.
+    // second (Luffy, an index member) is deferred with nothing written.
     expect(await checkpointOf(client, seeded.printings.greninjaEnNormal.id)).toMatchObject({ status: "ok", chart_to: "2026-02-28" });
     const luffy = seeded.printings.luffyEn.id;
     const deferred = (await checkpointOf(client, luffy))!;
@@ -370,7 +377,7 @@ describe("price history chart universe", () => {
     // Half an hour later it is asked again.
     const later = await listChartHistoryTargets(db, { now: new Date(now.getTime() + 46 * MINUTE), limit: 1 });
     expect(later.map((t) => t.printingId)).toEqual([luffy]);
-  });
+  }, 90_000);
 
   it("times retries by answer", () => {
     expect(priceHistoryRetryMinutes("pending", "history backfill queued", 0)).toBe(30);

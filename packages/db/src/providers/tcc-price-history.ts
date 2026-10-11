@@ -373,7 +373,8 @@ function addDays(day: string, days: number) {
  * Sentiment has a year of daily prices to read. In order: printings named in
  * creator calls or exactly resolved mentions (most recent first), then open
  * index members (the product has no watchlist or collection tables), then
- * the rest of the catalog by newest set, set and printing id. Printings
+ * the rest of the catalog, alternating games (Pokemon first), each by newest
+ * set, set key (descending) and printing id. Printings
  * waiting for their next check, already fetched through yesterday, or in
  * `exclude` (this run's call targets) are left out. A first request covers
  * TCC_PRICE_HISTORY_CHART_DAYS days to yesterday; later ones start a few
@@ -435,7 +436,11 @@ export async function listChartHistoryTargets(
         AND (ch.chart_to IS NULL OR ch.chart_to < ${yesterday})
         ${exclude.length ? sql`AND p.id NOT IN (${sql.join(exclude.map((id) => sql`${id}`), sql`, `)})` : sql``}
       ORDER BY CASE WHEN t.printing_id IS NOT NULL THEN 0 WHEN i.printing_id IS NOT NULL THEN 1 ELSE 2 END,
-        t.last_at DESC NULLS LAST, s.release_date DESC NULLS LAST, s.canonical_set_key ASC, p.id ASC
+        t.last_at DESC NULLS LAST,
+        -- The catalog alternates games (Pokemon first), each newest set first, so a game
+        -- without release dates (One Piece) is not left behind the whole Pokemon catalog.
+        row_number() OVER (PARTITION BY p.game_key ORDER BY s.release_date DESC NULLS LAST, s.canonical_set_key DESC, p.id ASC),
+        CASE p.game_key WHEN 'pokemon' THEN 0 ELSE 1 END, p.id ASC
       LIMIT ${input.limit}`),
   );
   return rows.map((row) => {
