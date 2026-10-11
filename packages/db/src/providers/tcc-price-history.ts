@@ -20,8 +20,9 @@
  * market ingest, so history never enqueues recompute work. Days that already
  * have a daily quote are skipped, and `to` is always yesterday, so today's
  * live quote stays the daily quote job's. Only days inside some call's window
- * (or, for a chart printing, its requested year) are kept. Outcomes those printings left as insufficient_data for missing
- * prices go back to pending so the scorer reads the new prices.
+ * (or, for a chart printing, its requested range) are kept. Outcomes those
+ * printings left as insufficient_data for missing prices go back to pending
+ * so the scorer reads the new prices.
  *
  * State: one provider_sync_run row per printing (provider tcg_card_central,
  * trigger `price_history`, id `pph_…`) whose checkpoint holds the last status,
@@ -98,7 +99,7 @@ export const TCC_PRICE_HISTORY_RETRY_JITTER_MINUTES = 15;
 const NO_SOURCE_REASON = /no historical price source/i;
 
 /** Minutes until the next attempt for this answer; `random` in [0, 1) spreads short retries. */
-export function priceHistoryRetryMinutes(status: string, reason: string | null, random: number = Math.random()): number {
+export function priceHistoryRetryMinutes(status: string, reason: string | null, random = Math.random()): number {
   const jitter = Math.floor(Math.min(Math.max(random, 0), 0.999) * (TCC_PRICE_HISTORY_RETRY_JITTER_MINUTES + 1));
   if (status === "unavailable" && reason && NO_SOURCE_REASON.test(reason)) return TCC_PRICE_HISTORY_RETRY_MINUTES.no_source;
   if (status === "pending" || status === "unavailable" || status === "deferred") return TCC_PRICE_HISTORY_RETRY_MINUTES[status] + jitter;
@@ -696,7 +697,8 @@ export async function collectTccPriceHistory(
   const batches = [...planPriceHistoryRequests(callTargets), ...planPriceHistoryRequests(chartTargets)];
 
   for (const [index, batch] of batches.entries()) {
-    if (report.written >= maxPoints) {
+    // Once a printing had to be deferred, later requests would mostly be deferred too.
+    if (report.written >= maxPoints || report.deferred > 0) {
       report.status = "stopped";
       report.reason = "points_cap";
       break;
