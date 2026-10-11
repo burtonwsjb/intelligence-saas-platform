@@ -348,8 +348,10 @@ type PriceHistoryTransport = NonNullable<Parameters<typeof syncTccPriceHistory>[
 /**
  * Fetches daily TCG Card Central price history for printings whose calls lack
  * a price at the call or at the horizon end, so backfilled calls can be
- * scored. Runs only when TCC is live with its URL and token; bounded by
- * TCC_PRICE_HISTORY_ITEMS_PER_RUN printings in requests of at most 50.
+ * scored, then for the chart universe (English Pokemon / One Piece) so Chart
+ * Sentiment has a year of prices. Runs only when TCC is live with its URL and
+ * token; bounded by TCC_PRICE_HISTORY_ITEMS_PER_RUN plus
+ * TCC_PRICE_HISTORY_CHART_ITEMS_PER_RUN printings in requests of at most 50.
  */
 export async function runPriceHistory(
   db: Database,
@@ -359,10 +361,13 @@ export async function runPriceHistory(
   try {
     const report = await syncTccPriceHistory(db, { env, transport: options.transport, sleep: options.sleep });
     if (report.status === "skipped" && report.reason !== "throttled" && report.reason !== "overlap") return report;
-    logQueueEvent(report.status === "stopped" ? "warn" : "info", "worker.price_history", {
+    // Reaching the points cap is the normal end of a chart universe run.
+    const level = report.status === "stopped" && report.reason !== "points_cap" ? "warn" : "info";
+    logQueueEvent(level, "worker.price_history", {
       status: report.status,
       reason: report.reason,
       printings: report.printings,
+      chart_printings: report.chartPrintings,
       requests: report.requests,
       ok: report.ok,
       pending: report.pending,
@@ -370,6 +375,7 @@ export async function runPriceHistory(
       failed: report.failed,
       points: report.points,
       written: report.written,
+      deferred: report.deferred,
       outcomes_reset: report.outcomesReset,
     });
     return report;
@@ -666,7 +672,7 @@ export function startWorker(options?: {
   // new YouTube videos (when a transcript provider is configured), posts from
   // registered influencer websites (when PROVIDER_WEB_FEED_MODE=live), the
   // 12-month YouTube and website backfills (when their *_BACKFILL_DAYS are
-  // set), TCC price history for calls without prices, scoring of calls
+  // set), TCC price history for calls without prices and the chart universe, scoring of calls
   // that have come due, then a batch of Chart Sentiment.
   const runMarketWork = () => {
     if (status === "shutting_down" || status === "stopped") {
