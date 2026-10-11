@@ -344,6 +344,7 @@ describe("committed env example", () => {
     expect(example).toMatch(/^WEB_FEED_BACKFILL_DAYS=$/m);
     expect(example).toMatch(/^YOUTUBE_BACKFILL_DAYS=$/m);
     expect(example).toMatch(/^TCC_PRICE_HISTORY_ITEMS_PER_RUN=$/m);
+    expect(example).toMatch(/^CHART_SENTIMENT_BATCH_SIZE=$/m);
     expect(example).toMatch(/^SUPADATA_API_KEY=$/m);
     expect(example).toMatch(/^YOUTUBE_TRANSCRIPT_REQUESTS_PER_DAY=$/m);
     expect(example).toMatch(/^REDDIT_CLIENT_SECRET=$/m);
