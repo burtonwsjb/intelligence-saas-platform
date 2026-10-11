@@ -218,6 +218,7 @@ export {
 export {
   getTcgMarketSnapshot,
   ingestTcgMarketRecord,
+  ingestTcgMarketRecordsBatch,
   IMPOSSIBLE_OBSERVED_AT_SKEW_MS,
   listTcgMarketQuarantine,
   listTcgMarketRevisions,

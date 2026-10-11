@@ -37,7 +37,7 @@ import { DEFAULT_EVALUATION_DAYS } from "../creator/outcomes.js";
 import { withPlatformContext } from "../rls.js";
 import { providerSyncRun } from "../schema/provider.js";
 import { tcgMarketIngest } from "../schema/tcg-market.js";
-import { ingestTcgMarketRecord } from "../tcg/market-ingest.js";
+import { ingestTcgMarketRecordsBatch } from "../tcg/market-ingest.js";
 import type { TcgMarketRecordInput } from "../tcg/market-identity.js";
 import { providerCredentialStatus, resolveProviderMode } from "./catalog.js";
 import { ensureProviderRuntimeRows, getProviderRuntime } from "./runtime.js";
@@ -790,15 +790,15 @@ export async function collectTccPriceHistory(
         continue;
       }
       let written = 0;
-      for (const [date, point] of fresh) {
-        try {
-          const result = await ingestTcgMarketRecord(db, historyRecord(target, history, date, point));
-          if (result.status === "processed") {
-            written += 1;
-            report.written += 1;
-          }
-        } catch {
-          // A record the market ingest refuses (identity, revision) is skipped; the rest still land.
+      // A record the market ingest refuses (identity, revision, amount) is skipped; the rest still land.
+      const results = await ingestTcgMarketRecordsBatch(
+        db,
+        fresh.map(([date, point]) => historyRecord(target, history, date, point)),
+      );
+      for (const result of results) {
+        if (!(result instanceof Error) && result.status === "processed") {
+          written += 1;
+          report.written += 1;
         }
       }
       if (written > 0) touched.add(target.printingId);
