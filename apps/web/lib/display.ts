@@ -12,6 +12,25 @@ export const RECOMMENDATION_TEXT: Record<string, string> = {
   insufficient_data: "Not enough data",
 };
 
+/** Five-step buy/sell scale shown as the headline reading on a card. */
+export const VERDICT_STEPS = ["Strong sell", "Sell", "Hold", "Buy", "Strong buy"] as const;
+
+const VERDICT_STEP: Record<string, number> = {
+  strong_sell: 0,
+  sell: 1,
+  reduce: 1,
+  hold: 2,
+  watch: 2,
+  buy: 3,
+  strong_buy: 4,
+};
+
+/** Position on the five-step scale, or null when there is no reading to show. */
+export function verdictStep(recommendation: string | null | undefined): number | null {
+  if (!recommendation) return null;
+  return VERDICT_STEP[recommendation] ?? null;
+}
+
 export function recommendationText(value: string | null | undefined): string {
   if (!value) return "No recommendation";
   return RECOMMENDATION_TEXT[value] ?? value.replaceAll("_", " ");

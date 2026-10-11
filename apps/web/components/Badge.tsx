@@ -16,10 +16,10 @@ export function Badge({
   );
 }
 
-const TONE_ICON = { good: "●", warn: "▲", info: "○" } as const;
+const TONE_ICON = { good: "●", warn: "▲", bad: "▼", info: "○" } as const;
 
 /** Status badge: the shape and the words carry the meaning, color only reinforces it. */
-export function StatusBadge({ tone, label }: { tone: "good" | "warn" | "info"; label: string }) {
+export function StatusBadge({ tone, label }: { tone: "good" | "warn" | "bad" | "info"; label: string }) {
   return (
     <Badge tone={tone}>
       <span aria-hidden="true">{TONE_ICON[tone]}</span>

@@ -10,6 +10,7 @@ import {
   providerText,
   recommendationText,
   timeSeriesGeometry,
+  verdictStep,
 } from "./display";
 
 const day = 86_400_000;
@@ -74,5 +75,14 @@ describe("chart geometry", () => {
     expect(languageText("multi")).toBe("Multiple languages");
     expect(plural(1, "printing")).toBe("1 printing");
     expect(plural(1200, "printing")).toBe("1,200 printings");
+  });
+
+  it("places recommendations on the five-step buy/sell scale", () => {
+    expect(verdictStep("strong_sell")).toBe(0);
+    expect(verdictStep("reduce")).toBe(1);
+    expect(verdictStep("watch")).toBe(2);
+    expect(verdictStep("strong_buy")).toBe(4);
+    expect(verdictStep("insufficient_data")).toBeNull();
+    expect(verdictStep(null)).toBeNull();
   });
 });

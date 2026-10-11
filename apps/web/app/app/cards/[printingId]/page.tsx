@@ -5,6 +5,7 @@ import { EmptyState, LockedFeature } from "@/components/EmptyState";
 import { PriceTrendChart } from "@/components/PriceTrendChart";
 import { MorePager } from "@/components/ResultPager";
 import { ScoreRing } from "@/components/ScoreRing";
+import { SentimentVerdict } from "@/components/SentimentVerdict";
 import { SentimentDonut } from "@/components/SentimentSummary";
 import { Tabs } from "@/components/Tabs";
 import { TechnicalDetails, explanationText } from "@/components/TechnicalDetails";
@@ -19,6 +20,7 @@ import {
   formatDate,
   languageText,
   priceFreshness,
+  providerText,
   recommendationText,
   variantText,
 } from "@/lib/display";
@@ -153,7 +155,7 @@ export default async function CardDetailPage({
               <>
                 <span className="amount">{formatMoney(headline.price, headline.currency)}</span>
                 <span className="subtle">
-                  Last sold · {conditionText(headline.condition)} · ungraded · {headline.currency} · {headline.sourceKey}
+                  Last sold · {conditionText(headline.condition)} · ungraded · {headline.currency} · {providerText(headline.sourceKey)}
                 </span>
                 {change ? (
                   <span className={`change ${change.direction}`}>
@@ -176,10 +178,20 @@ export default async function CardDetailPage({
 
       {tab === "overview" ? (
         <>
+          <OverviewVerdict
+            printingId={printingId}
+            recommendation={score?.recommendation ?? null}
+            uncalibrated={score?.uncalibrated === "true"}
+            confirmation={confirmation}
+            hiddenCreatorIds={await loadHiddenCreatorIds(organizationId, userId)}
+            hrefs={{
+              sentiment: href({ tab: "sentiment", page: 1 }),
+              creators: href({ tab: "creators", page: 1 }),
+              market: href({ tab: "market", page: 1 }),
+            }}
+          />
           <section className="panel" aria-labelledby="scores-heading">
-            <h2 id="scores-heading" className="visually-hidden">
-              Scores
-            </h2>
+            <h2 id="scores-heading">Score details</h2>
             {score ? (
               <>
                 <div className="ring-row">
@@ -268,7 +280,7 @@ export default async function CardDetailPage({
               <dt>Last valid sale</dt>
               <dd>
                 {headline
-                  ? `${formatMoney(headline.price, headline.currency)} · ${formatAge(headline.observedAt)} · ${headline.sourceKey}`
+                  ? `${formatMoney(headline.price, headline.currency)} · ${formatAge(headline.observedAt)} · ${providerText(headline.sourceKey)}`
                   : "—"}
               </dd>
               <dt>Lowest ask</dt>
@@ -339,6 +351,18 @@ export default async function CardDetailPage({
       {tab === "evidence" ? <EvidencePanel printingId={printingId} page={page} pageHref={(p) => href({ page: p })} /> : null}
     </>
   );
+}
+
+async function OverviewVerdict({
+  printingId,
+  hiddenCreatorIds,
+  ...props
+}: Omit<Parameters<typeof SentimentVerdict>[0], "social" | "chart"> & { printingId: string; hiddenCreatorIds: string[] }) {
+  const [social, charts] = await Promise.all([
+    getCardSentiment(getDb(), printingId, "30d", { hiddenCreatorIds }),
+    getChartSentiment(getDb(), [printingId]),
+  ]);
+  return <SentimentVerdict {...props} social={social} chart={charts.get(printingId)?.raw ?? null} />;
 }
 
 async function SentimentPanel({
