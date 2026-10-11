@@ -102,3 +102,42 @@ describe("chart sentiment storage", () => {
     expect((await getChartSentiment(bareDb, ["x"])).size).toBe(0);
   });
 });
+
+describe("chart sentiment pick-up of newly arrived history", () => {
+  it("rescores a printing as soon as rows arrive after its last score, not only after the recompute interval", async () => {
+    const client = new PGlite();
+    await client.exec(await readMigrationSql());
+    const db = drizzle(client) as unknown as Database;
+    const printing = (await seedTcgIdentityFixtures(db)).printings.luffyEn.id;
+    const asOf = new Date("2026-09-08T18:00:00.000Z");
+    // A single daily quote, stored before the first score.
+    await client.query(
+      `INSERT INTO tcg_market_snapshot (id, printing_id, source_key, market_type, price_type, observed_at, currency, condition, price,
+         source_record_id, fingerprint, created_at)
+       VALUES ('today', $1, 'tcg_card_central', 'market_price', 'reference', '2026-09-08 12:00Z', 'USD', 'unknown', 30, 'today', 'today',
+         '2026-09-08 12:30Z')`,
+      [printing],
+    );
+    expect(await runChartSentimentBatch(db, { asOf, batchSize: 10 })).toMatchObject({ considered: 1, printings: 1 });
+    expect((await getChartSentiment(db, [printing])).get(printing)!.raw).toMatchObject({ label: "insufficient_history" });
+
+    // A year of imported history lands an hour later.
+    await client.query(
+      `INSERT INTO tcg_market_snapshot (id, printing_id, source_key, market_type, price_type, observed_at, currency, condition, price,
+         source_record_id, fingerprint, created_at)
+       SELECT 'h' || g, $1, 'tcg_card_central', 'market_price', 'reference', timestamptz '2025-09-08 23:59:59Z' + g * interval '1 day',
+         'USD', 'unknown', round((20 + g * 0.03)::numeric, 2), 'h' || g, 'h' || g, timestamptz '2026-09-08 19:00Z'
+       FROM generate_series(0, 364) g`,
+      [printing],
+    );
+    // Rows that arrive after the as-of time are not counted yet.
+    expect(await runChartSentimentBatch(db, { asOf: new Date(asOf.getTime() + 30 * 60_000), batchSize: 10 })).toMatchObject({ considered: 0 });
+    const next = new Date(asOf.getTime() + 2 * 3_600_000);
+    expect(await runChartSentimentBatch(db, { asOf: next, batchSize: 10 })).toMatchObject({ considered: 1, printings: 1 });
+    const raw = (await getChartSentiment(db, [printing])).get(printing)!.raw!;
+    expect(raw.points).toBeGreaterThanOrEqual(365);
+    expect(raw.label).not.toBe("insufficient_history");
+    // Nothing new: not due again until the recompute interval.
+    expect(await runChartSentimentBatch(db, { asOf: new Date(next.getTime() + 3_600_000), batchSize: 10 })).toMatchObject({ considered: 0 });
+  });
+});
