@@ -1,5 +1,6 @@
 import { Badge, StatusBadge } from "@/components/Badge";
 import { CardArt } from "@/components/CardArt";
+import { ChartSentimentPanel } from "@/components/ChartSentiment";
 import { EmptyState, LockedFeature } from "@/components/EmptyState";
 import { PriceTrendChart } from "@/components/PriceTrendChart";
 import { MorePager } from "@/components/ResultPager";
@@ -26,6 +27,7 @@ import {
   comparableSoldSeries,
   explorerQueryToSearch,
   getCardSentiment,
+  getChartSentiment,
   getPrintingWorkspace,
   listCardCreatorCalls,
   listCardEvidence,
@@ -350,25 +352,31 @@ async function SentimentPanel({
   windowHref: (window: ExplorerWindow) => string;
   hiddenCreatorIds: string[];
 }) {
-  const summary = await getCardSentiment(getDb(), printingId, window, { hiddenCreatorIds });
+  const [summary, charts] = await Promise.all([
+    getCardSentiment(getDb(), printingId, window, { hiddenCreatorIds }),
+    getChartSentiment(getDb(), [printingId]),
+  ]);
   return (
-    <section className="panel">
-      <div className="section-head" style={{ marginTop: 0 }}>
-        <h2>Social sentiment</h2>
-        <nav className="segmented" aria-label="Sentiment window">
-          {EXPLORER_WINDOWS.map((w) => (
-            <Link key={w} href={windowHref(w)} aria-current={w === window ? "page" : undefined} scroll={false}>
-              {w}
-            </Link>
-          ))}
-        </nav>
-      </div>
-      <SentimentDonut summary={summary} />
-      <p className="notice info">
-        Sentiment describes what people are saying. It is not market confirmation: check the Market tab for whether sales
-        support it. Coverage is limited to the sources currently monitored, not every conversation online.
-      </p>
-    </section>
+    <div className="panel-grid">
+      <section className="panel">
+        <div className="section-head" style={{ marginTop: 0 }}>
+          <h2>Market sentiment</h2>
+          <nav className="segmented" aria-label="Sentiment window">
+            {EXPLORER_WINDOWS.map((w) => (
+              <Link key={w} href={windowHref(w)} aria-current={w === window ? "page" : undefined} scroll={false}>
+                {w}
+              </Link>
+            ))}
+          </nav>
+        </div>
+        <SentimentDonut summary={summary} />
+        <p className="notice info">
+          Sentiment describes what people are saying. It is not market confirmation: check the Market tab for whether sales
+          support it. Coverage is limited to the sources currently monitored, not every conversation online.
+        </p>
+      </section>
+      <ChartSentimentPanel chart={charts.get(printingId)} />
+    </div>
   );
 }
 

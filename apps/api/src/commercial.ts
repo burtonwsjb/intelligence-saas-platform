@@ -3,6 +3,7 @@ import type { Hono } from "hono";
 import {
   disableWebhookEndpoint,
   getCardSentimentWithHistory,
+  getChartSentiment,
   getCreatorAuthorityProfile,
   getCreatorLeaderboard,
   getMarketAssetByKey,
@@ -43,7 +44,11 @@ import {
   tcgSet,
   withMachineContext,
   WebhookUrlRejectedError,
+  CHART_METHOD_VERSION,
+  confidenceLabel,
+  type ChartSentimentSegmentView,
   type Database,
+  type PrintingChartSentiment,
   type DnsLookup,
   type SentimentHistoryPoint,
   type SentimentSummary,
@@ -235,6 +240,60 @@ function sentimentShares(summary: SentimentSummary) {
   const share = (key: "positive" | "neutral" | "negative" | "mixed") =>
     summary.weightTotal > 0 ? round4(summary.weighted[key] / summary.weightTotal) : 0;
   return { positive: share("positive"), neutral: share("neutral"), negative: share("negative"), mixed: share("mixed") };
+}
+
+function chartSegmentBody(view: ChartSentimentSegmentView, options: { maxSignals?: number; insufficient?: boolean }) {
+  return {
+    segment: view.segment,
+    grading_company: view.gradingCompany,
+    grade: view.grade,
+    score: view.score,
+    label: view.label,
+    confidence: round4(view.confidence),
+    confidence_label: confidenceLabel(view.confidence),
+    points: view.points,
+    data_from: view.dataFrom,
+    data_through: view.dataThrough,
+    last_price: view.lastPrice,
+    currency: view.currency,
+    price_type: view.priceType,
+    change_30d_pct: view.change30dPct,
+    computed_at: view.computedAt.toISOString(),
+    signals: view.signals.slice(0, options.maxSignals ?? view.signals.length).map((signal) => ({
+      key: signal.key,
+      name: signal.name,
+      direction: signal.direction,
+      strength: signal.strength,
+      contribution: signal.contribution,
+      hit_rate: signal.hitRate,
+      samples: signal.samples,
+      horizon_days: signal.horizonDays,
+      detail: signal.detail,
+      explanation: signal.explanation,
+    })),
+    ...(options.insufficient === false
+      ? {}
+      : {
+          insufficient_history: view.insufficient.map((item) => ({
+            key: item.key,
+            reason: item.reason,
+            ...(item.needs != null ? { needs_points: item.needs } : {}),
+          })),
+        }),
+  };
+}
+
+/**
+ * Chart Sentiment (what the price, demand and population charts say), kept
+ * apart from social sentiment, with raw and each grade listed separately.
+ */
+function chartSentimentBody(chart: PrintingChartSentiment | undefined, options: { maxSignals?: number; insufficient?: boolean } = {}) {
+  return {
+    method: CHART_METHOD_VERSION,
+    status: chart ? "computed" : "not_computed",
+    raw: chart?.raw ? chartSegmentBody(chart.raw, options) : null,
+    graded: (chart?.graded ?? []).map((view) => chartSegmentBody(view, options)),
+  };
 }
 
 function sentimentBody(input: {
@@ -578,11 +637,16 @@ export function registerCommercialRoutes(
         return jsonError("not_found", "Printing not found.", 404, requestId);
       }
       const hidden = await hiddenCreatorIds(c.get("db"), c.get("machine"));
-      const [sentiment, calls] = await Promise.all([
+      const [sentiment, calls, chart] = await Promise.all([
         getCardSentimentWithHistory(c.get("db"), row.printing.id, window, { hiddenCreatorIds: hidden }),
         getPrintingCalls(c.get("db"), row.printing.id, { hiddenCreatorIds: hidden }),
+        getChartSentiment(c.get("db"), [row.printing.id]),
       ]);
-      return c.json({ printing: exactPrinting(row), ...sentimentBody({ window, ...sentiment, calls }) });
+      return c.json({
+        printing: exactPrinting(row),
+        ...sentimentBody({ window, ...sentiment, calls }),
+        chart_sentiment: chartSentimentBody(chart.get(row.printing.id)),
+      });
     } catch (error) {
       return commercialError(error, requestId);
     }
@@ -601,14 +665,16 @@ export function registerCommercialRoutes(
         return jsonError("not_found", "No printing for this TCG Card Central card in this language.", 404, requestId);
       }
       const hidden = await hiddenCreatorIds(c.get("db"), c.get("machine"));
-      const [sentiment, calls] = await Promise.all([
+      const [sentiment, calls, chart] = await Promise.all([
         getCardSentimentWithHistory(c.get("db"), row.printing.id, window, { hiddenCreatorIds: hidden }),
         getPrintingCalls(c.get("db"), row.printing.id, { hiddenCreatorIds: hidden }),
+        getChartSentiment(c.get("db"), [row.printing.id]),
       ]);
       return c.json({
         tcc_card_id: tccCardId,
         printing: exactPrinting(row),
         ...sentimentBody({ window, ...sentiment, calls }),
+        chart_sentiment: chartSentimentBody(chart.get(row.printing.id)),
       });
     } catch (error) {
       return commercialError(error, requestId);
@@ -627,9 +693,11 @@ export function registerCommercialRoutes(
       const hidden = await hiddenCreatorIds(c.get("db"), c.get("machine"));
       const to = new Date();
       const range = { from: new Date(to.getTime() - EXPLORER_WINDOW_DAYS[window] * 86_400_000), to };
-      const evidence = await listSentimentEvidence(c.get("db"), [...new Set(printings.values())], range, {
-        hiddenCreatorIds: hidden,
-      });
+      const printingIds = [...new Set(printings.values())];
+      const [evidence, charts] = await Promise.all([
+        listSentimentEvidence(c.get("db"), printingIds, range, { hiddenCreatorIds: hidden }),
+        getChartSentiment(c.get("db"), printingIds),
+      ]);
       const byPrinting = new Map<string, typeof evidence>();
       for (const row of evidence) byPrinting.set(row.printingId, [...(byPrinting.get(row.printingId) ?? []), row]);
       return c.json({
@@ -650,6 +718,7 @@ export function registerCommercialRoutes(
               posts: summary.contentItems,
               classified_posts: summary.classified,
               accounts: summary.uniqueAccounts,
+              chart_sentiment: chartSentimentBody(charts.get(printingId), { maxSignals: 3, insufficient: false }),
             };
           }),
         not_found: ids.filter((id) => !printings.has(id)),
