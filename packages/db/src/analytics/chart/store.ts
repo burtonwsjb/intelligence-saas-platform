@@ -215,8 +215,9 @@ export type ChartSentimentRunReport = {
 
 /**
  * One bounded batch: printings with chart-usable prices in the read window
- * that were never scored, or not within CHART_SENTIMENT_RECOMPUTE_HOURS, oldest
- * first. Then the pattern database's measured hit rates are refreshed.
+ * that were never scored, that received rows since they were last scored
+ * (e.g. a price history import), or not within
+ * CHART_SENTIMENT_RECOMPUTE_HOURS, in that order, oldest first. Then the pattern database's measured hit rates are refreshed.
  * Idempotent: rerunning replaces the same rows. With `exclusive`, call inside
  * a transaction; another run holding the lock makes this one skip.
  */
@@ -243,16 +244,20 @@ export async function runChartSentimentBatch(
     await db.execute(sql`
       SELECT p.printing_id
       FROM (
-        SELECT DISTINCT printing_id FROM tcg_market_snapshot
+        SELECT printing_id, max(created_at) AS arrived_at FROM tcg_market_snapshot
         WHERE price_type IN ('reference', 'sold') AND price IS NOT NULL AND outlier_flag = false
           AND quality_label NOT IN ('outlier', 'suspect')
           AND observed_at >= ${from.toISOString()}::timestamptz
           AND observed_at <= ${asOf.toISOString()}::timestamptz
+        GROUP BY printing_id
       ) p
       LEFT JOIN (SELECT printing_id, min(computed_at) AS computed_at FROM chart_sentiment GROUP BY printing_id) c
         ON c.printing_id = p.printing_id
       WHERE c.computed_at IS NULL OR c.computed_at < ${staleBefore.toISOString()}::timestamptz
-      ORDER BY c.computed_at ASC NULLS FIRST, p.printing_id ASC
+        OR (p.arrived_at > c.computed_at AND p.arrived_at <= ${asOf.toISOString()}::timestamptz)
+      ORDER BY c.computed_at IS NULL DESC,
+        (p.arrived_at > c.computed_at AND p.arrived_at <= ${asOf.toISOString()}::timestamptz) DESC,
+        c.computed_at ASC, p.printing_id ASC
       LIMIT ${batchSize}
     `),
   );
