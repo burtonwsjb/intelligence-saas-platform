@@ -22,6 +22,7 @@ import {
   getLatestTcgMarketSnapshot,
   getTcgAskSoldSpread,
   ingestTcgMarketRecord,
+  ingestTcgMarketRecordsBatch,
   IMPOSSIBLE_OBSERVED_AT_SKEW_MS,
   listObservationMetrics,
   listTcgListingHistory,
@@ -294,6 +295,75 @@ describe("TCG market history", () => {
     expect(src).not.toMatch(/https?:\/\/.*ebay\.com/i);
     expect(src).not.toMatch(/https?:\/\/tcgcardcentral\.com/i);
   });
+
+  it("batch ingest of one printing's history writes what one-by-one ingest writes", async () => {
+    const reference = (day: number, overrides: Partial<TcgMarketRecordInput> = {}): TcgMarketRecordInput =>
+      sold({
+        provider: "tcg_card_central",
+        provider_record_id: `hist_${day}`,
+        event_type: "tcg.market.reference_price",
+        market_type: "market_price",
+        price_type: "reference",
+        observed_at: new Date(Date.UTC(2026, 0, 1 + day, 23, 59, 59)).toISOString(),
+        condition: "unknown",
+        quantity: undefined,
+        price: 40 + day,
+        low_price: 38 + day,
+        high_price: 45 + day,
+        ...overrides,
+      });
+    const far = new Date(Date.now() + IMPOSSIBLE_OBSERVED_AT_SKEW_MS + 86_400_000).toISOString();
+    const batch: TcgMarketRecordInput[] = [
+      ...Array.from({ length: 30 }, (_, day) => reference(day)),
+      reference(30, { low_price: 29.149999999999999 + 1e-9 }), // refused amount
+      reference(31, { provider_record_id: "hist_0" }), // same id as day 0, new numbers: revision
+      reference(32, { observed_at: far }), // impossible timestamp
+      reference(33, { price: 1000 }), // disagrees with the other source's sale
+      { ...reference(34), provider_record_id: "hist_unknown", printing: { ...reference(34).printing!, collector_number: "999/999" } },
+    ];
+    const setupDb = async () => {
+      const client = new PGlite();
+      await client.exec(await readMigrationSql());
+      const db = drizzle(client) as unknown as Database;
+      await seedTcgIdentityFixtures(db);
+      await ingestTcgMarketRecord(db, sold({ provider: "ebay", provider_record_id: "peer_sale", condition: "unknown", price: 40 }));
+      return { client, db };
+    };
+    const one = await setupDb();
+    const many = await setupDb();
+    const oneResults: string[] = [];
+    for (const record of batch) {
+      try {
+        oneResults.push((await ingestTcgMarketRecord(one.db, record)).status);
+      } catch (error) {
+        oneResults.push((error as Error).name);
+      }
+    }
+    const manyResults = (await ingestTcgMarketRecordsBatch(many.db, batch)).map((result) =>
+      result instanceof Error ? result.name : result.status,
+    );
+    expect(manyResults).toEqual(oneResults);
+    expect(manyResults.filter((status) => status === "processed")).toHaveLength(31);
+
+    const dump = async (client: PGlite) => ({
+      snapshots: (
+        await client.query<Record<string, unknown> & { attributes: { provenance?: Record<string, unknown> } }>(
+          `SELECT id, printing_id, source_key, price_type, observed_at, price, low_price, high_price, quality_label, outlier_flag,
+                  outlier_reason, fingerprint, attributes
+             FROM tcg_market_snapshot ORDER BY id`,
+        )
+      ).rows.map((row) => ({ ...row, attributes: { ...row.attributes, provenance: { ...row.attributes.provenance, ingested_at: null } } })),
+      ingests: (
+        await client.query<Record<string, unknown>>(
+          `SELECT id, source_record_id, fingerprint, processing_status, snapshot_id, quarantine_id IS NOT NULL AS quarantined, payload
+             FROM tcg_market_ingest ORDER BY id`,
+        )
+      ).rows,
+      quarantine: (await client.query(`SELECT source_record_id, reason FROM tcg_market_quarantine ORDER BY 1`)).rows,
+      revisions: (await client.query(`SELECT source_record_id FROM tcg_market_revision ORDER BY 1`)).rows,
+    });
+    expect(await dump(many.client)).toEqual(await dump(one.client));
+  }, 90_000);
 
   it("quarantines impossible timestamps without rejecting near-future backfill", async () => {
     const client = new PGlite();
