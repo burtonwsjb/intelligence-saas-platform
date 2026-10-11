@@ -56,11 +56,12 @@ export const TCC_PRICE_HISTORY_MAX_ITEMS_PER_RUN = 500;
 /** 30 requests a minute is the feed's limit; one every 2.5 s stays well under it. */
 export const TCC_PRICE_HISTORY_REQUEST_SPACING_MS = 2_500;
 /**
- * At most this many daily points are written per run (about 33 printings'
- * first year). A printing whose points would pass it is deferred whole, not
+ * At most this many daily points are written per run (about 164 printings'
+ * first year; batched writes land 12,000 points in about a minute on
+ * staging). A printing whose points would pass it is deferred whole, not
  * written in part, and asked again after TCC_PRICE_HISTORY_RETRY_MINUTES.deferred.
  */
-export const TCC_PRICE_HISTORY_MAX_POINTS_PER_RUN = 12_000;
+export const TCC_PRICE_HISTORY_MAX_POINTS_PER_RUN = 60_000;
 /** Chart universe: printings asked for history so Chart Sentiment has a series. */
 export const DEFAULT_TCC_PRICE_HISTORY_CHART_ITEMS_PER_RUN = 150;
 export const TCC_PRICE_HISTORY_MAX_CHART_ITEMS_PER_RUN = 500;
