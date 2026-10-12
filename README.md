@@ -28,7 +28,7 @@ pnpm dev:api
 pnpm dev:worker
 ```
 
-TypeScript, pnpm/Turborepo, Next.js, Hono, PostgreSQL/Neon, Drizzle, Better Auth, BullMQ, local Docker Redis. Later: R2, Resend, Stripe, Vercel, Railway.
+TypeScript, pnpm/Turborepo, Next.js, Hono, PostgreSQL (Supabase hosted; previously Neon), Drizzle, Better Auth, BullMQ, local Docker Redis. Later: R2, Resend, Stripe, Vercel, Railway.
 
 ## Documentation
 

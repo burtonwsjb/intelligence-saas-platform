@@ -31,3 +31,11 @@ export {
   queueFailureDetails, readQueueFailureSnapshot,
   type QueueFailureClass, type QueueFailureGroup, type QueueFailureSnapshot,
 } from "./queue-failure.js";
+export {
+  describeDatabaseTarget,
+  isHostedDatabaseHostname,
+  isNeonHostname,
+  isSupabaseHostname,
+  type DatabaseTarget,
+  type HostedDbProvider,
+} from "./db-host.js";

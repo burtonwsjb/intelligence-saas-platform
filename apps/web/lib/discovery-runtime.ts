@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
 import type { Database } from "@isp/db";
+import { describeDatabaseTarget } from "@isp/shared";
 
 const EXPECTED = {
   discovery_topic: ["id", "provider_key", "query", "strategy_key", "enabled", "priority", "last_run_at", "last_error_class", "metadata", "created_at", "updated_at"],
@@ -50,9 +51,8 @@ export function databaseTargetFingerprint(raw?: string): string | null {
   try {
     const url = new URL(raw);
     if (!["postgres:", "postgresql:"].includes(url.protocol)) return null;
-    const hostname = url.hostname.toLowerCase();
-    const host = hostname.endsWith(".neon.tech") ? hostname.replace(/-pooler(?=\.)/, "") : hostname;
-    return hash(JSON.stringify([host, url.port || "5432", decodeURIComponent(url.pathname)]));
+    const target = describeDatabaseTarget(url);
+    return hash(JSON.stringify([target.host, target.port, decodeURIComponent(url.pathname)]));
   } catch { return null; }
 }
 export function runtimeContext(env: NodeJS.ProcessEnv = process.env) {
@@ -68,7 +68,7 @@ function bool(value: unknown): boolean { return value === true || value === "t";
 export function summarizeRuntimeCatalog(context: Record<string, unknown> | undefined, inventory: Record<string, unknown>[]) {
   const role = typeof context?.role === "string" ? context.role : "unknown";
   return {
-    role: ["app_admin", "app_user", "app_worker", "app_migrate", "neondb_owner"].includes(role) ? role : "other",
+    role: ["app_admin", "app_user", "app_worker", "app_migrate", "neondb_owner", "postgres"].includes(role) ? role : "other",
     databaseFingerprint: typeof context?.database_name === "string" ? hash(context.database_name) : null,
     migrationLedgerPresent: bool(context?.ledger_present),
     publicInSearchPath: bool(context?.public_in_path),

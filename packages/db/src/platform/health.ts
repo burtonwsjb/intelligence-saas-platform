@@ -74,7 +74,7 @@ export function classifyPlatformHealth(input: {
 export function operatorGuidanceForHealth(status: PlatformHealthStatus): string {
   switch (status) {
     case "failed":
-      return "Database or Redis is not answering. Check Neon compute and Redis before restarting the worker.";
+      return "Database or Redis is not answering. Check the Postgres host (Supabase/Neon) and Redis before restarting the worker.";
     case "missing":
       return "No ingest heartbeat row. Confirm the Railway worker process is running and using APP_DATABASE_URL.";
     case "stale":

@@ -14,6 +14,7 @@ function shouldRequireSsl(url: string): boolean {
   return (
     lower.includes("sslmode=require") ||
     lower.includes("neon.tech") ||
+    lower.includes(".supabase.co") ||
     process.env.DATABASE_SSL === "require"
   );
 }

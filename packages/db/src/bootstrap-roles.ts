@@ -1,4 +1,5 @@
 import postgres, { type Sql } from "postgres";
+import { isHostedDatabaseHostname } from "@isp/shared";
 import { DB_ROLES } from "./roles.js";
 
 export type RolePasswords = {
@@ -27,7 +28,7 @@ export class RoleInvariantError extends Error {
 export class HostedTestDatabaseError extends Error {
   constructor() {
     super(
-      "Isolation and integration tests must use disposable local or CI Postgres, not Neon.",
+      "Isolation and integration tests must use disposable local or CI Postgres, not hosted Neon or Supabase.",
     );
     this.name = "HostedTestDatabaseError";
   }
@@ -89,7 +90,7 @@ export function correctRoleSql(
 
 export function isHostedPostgresUrl(url: string): boolean {
   try {
-    return /\.neon\.tech$/i.test(new URL(url).hostname);
+    return isHostedDatabaseHostname(new URL(url).hostname);
   } catch {
     return false;
   }
@@ -157,8 +158,8 @@ async function ensureApplicationRole(
   }
   throw new RoleInvariantError(
     `Role ${role} exists but does not match required attributes: ${mismatch}. ` +
-      "This provisioner cannot ALTER ROLE (Neon owners typically cannot). " +
-      "Fix the role in the Neon SQL editor or recreate it with LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT and the expected BYPASSRLS/NOBYPASSRLS.",
+      "This provisioner cannot ALTER ROLE (hosted owners such as neondb_owner typically cannot). " +
+      "Fix the role in the provider's SQL editor or recreate it with LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT and the expected BYPASSRLS/NOBYPASSRLS.",
   );
 }
 
@@ -172,6 +173,34 @@ async function transferOwnerIfAllowed(sql: Sql, statement: string): Promise<void
     throw error;
   }
 }
+
+// Supabase creates `anon` and `authenticated` and exposes `public` through its
+// Data API (PostgREST/GraphQL) to anyone holding the publishable key, with
+// default privileges granting ALL on new tables to those roles. This product
+// never uses the Data API; every runtime goes through app_user/app_worker with
+// FORCE RLS. Strip those grants so the publishable key reaches nothing.
+// A no-op wherever the roles do not exist (Neon, local, CI).
+export const SUPABASE_API_ROLE_LOCKDOWN_SQL = `
+  DO $supabase_lockdown$
+  DECLARE
+    api_role text;
+  BEGIN
+    FOREACH api_role IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+      IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = api_role) THEN
+        EXECUTE format('REVOKE ALL ON ALL TABLES IN SCHEMA public FROM %I', api_role);
+        EXECUTE format('REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM %I', api_role);
+        EXECUTE format('REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM %I', api_role);
+        EXECUTE format('REVOKE ALL ON ALL TABLES IN SCHEMA app FROM %I', api_role);
+        EXECUTE format('REVOKE ALL ON ALL FUNCTIONS IN SCHEMA app FROM %I', api_role);
+        EXECUTE format('REVOKE ALL ON SCHEMA app FROM %I', api_role);
+        EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM %I', api_role);
+        EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON SEQUENCES FROM %I', api_role);
+        EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON FUNCTIONS FROM %I', api_role);
+      END IF;
+    END LOOP;
+  END
+  $supabase_lockdown$;
+`;
 
 export async function bootstrapRoles(
   adminUrl: string,
@@ -612,6 +641,7 @@ export async function bootstrapRoles(
       REVOKE EXECUTE ON FUNCTION app.list_pending_platform_outbox(integer) FROM ${DB_ROLES.user};
       GRANT EXECUTE ON FUNCTION app.list_pending_platform_outbox(integer) TO ${DB_ROLES.worker};
     `);
+    await sql.unsafe(SUPABASE_API_ROLE_LOCKDOWN_SQL);
   } finally {
     await sql.end({ timeout: 5 });
   }
