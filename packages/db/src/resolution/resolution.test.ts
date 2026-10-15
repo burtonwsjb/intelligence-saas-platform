@@ -18,7 +18,7 @@ import {
 import { FUZZY_PROBABLE_THRESHOLD, nameSimilarity, normalizeMatchText, primaryScript } from "./identity.js";
 import { findNameConcepts, withoutNonCollectorNumbers } from "./resolve.js";
 import { inferSetFromText } from "./signals.js";
-import { insertTcgCardConcept, insertTcgCardNameAlias } from "../tcg/catalog.js";
+import { insertTcgCardConcept, insertTcgCardNameAlias, insertTcgPrinting, insertTcgSet } from "../tcg/catalog.js";
 
 describe("entity resolution", () => {
   async function setup() {
@@ -388,6 +388,39 @@ describe("entity resolution", () => {
     expect(resolved.attempt.inputSignals).toMatchObject({ set: "sv2", collector_number: "025", card_name: "Pikachu 025" });
     expect(resolved.attempt.status).toBe("exact");
     expect(resolved.attempt.chosenPrintingId).toBe(seeded.printings.pikachuSv2.id);
+  });
+
+  it("narrows a name-and-set mention to one printing by the rarity written next to it", async () => {
+    const { db } = await setup();
+    const set = await insertTcgSet(db, { gameKey: "pokemon", canonicalSetKey: "me02", name: "Phantasmal Flames", languageScope: "en" });
+    const concept = await insertTcgCardConcept(db, { gameKey: "pokemon", conceptKey: "mega-charizard-x-ex", canonicalName: "Mega Charizard X ex" });
+    const printings = new Map<string, string>();
+    for (const [number, rarity] of [["013/094", "Double Rare"], ["109/094", "Ultra Rare"], ["125/094", "Special Illustration Rare"], ["130/094", "Mega Hyper Rare"]] as const) {
+      const printing = await insertTcgPrinting(db, {
+        cardId: concept.id, setId: set.id, gameKey: "pokemon", conceptKey: concept.conceptKey, setKey: "me02",
+        collectorNumber: number, language: "en", variantKey: "holofoil", rarity,
+      });
+      printings.set(rarity, printing!.id);
+    }
+    const context = "Mega Charizard X ex SIR from Phantasmal Flames keeps climbing";
+
+    const nameOnly = await resolveEntity(db, { subjectType: "provider_reference", subjectId: "m_rarity_none", signals: { card_name: "Mega Charizard X ex", set: "me02", context_text: context } });
+    expect(nameOnly.attempt.status).toBe("ambiguous");
+    expect(nameOnly.attempt.chosenPrintingId).toBeNull();
+
+    const withRarity = await resolveEntity(db, {
+      subjectType: "provider_reference", subjectId: "m_rarity_sir",
+      signals: { card_name: "Mega Charizard X ex", set: "me02", rarity: "special illustration rare", context_text: context },
+    });
+    expect(withRarity.attempt.status).toBe("exact");
+    expect(withRarity.attempt.chosenPrintingId).toBe(printings.get("Special Illustration Rare"));
+
+    // A rarity no printing carries is ignored rather than ruling every printing out.
+    const unknown = await resolveEntity(db, {
+      subjectType: "provider_reference", subjectId: "m_rarity_unknown",
+      signals: { card_name: "Mega Charizard X ex", set: "me02", rarity: "Secret Rare", context_text: context },
+    });
+    expect(unknown.attempt.status).toBe("ambiguous");
   });
 
   it("blanks prices, percentages and years in segment context", () => {

@@ -249,6 +249,12 @@ async function loadCandidates(
   };
 }
 
+/** Rarity names compare without case or extra spaces ("Special Illustration Rare" = "special illustration rare"). */
+function rarityMatches(signal: string, rarity: string | null): boolean {
+  const norm = (value: string) => value.toLocaleLowerCase("en").replace(/[\s_-]+/g, " ").trim();
+  return rarity != null && norm(signal) === norm(rarity);
+}
+
 function setMatches(signal: string, printing: CatalogPrinting): boolean {
   const value = normalizeMatchText(signal);
   return value === normalizeMatchText(printing.setKey) || value === normalizeMatchText(printing.setName);
@@ -335,7 +341,7 @@ function scorePrinting(
     ATTR_SCORE.variant,
   );
   if (optionalSignal(signals.rarity)) {
-    check(signals.rarity ?? undefined, (signals.rarity ?? null) === printing.rarity, "rarity", "rarity_exact", ATTR_SCORE.rarity);
+    check(signals.rarity ?? undefined, rarityMatches(signals.rarity!, printing.rarity), "rarity", "rarity_exact", ATTR_SCORE.rarity);
   }
   if (optionalSignal(signals.finish)) {
     check(signals.finish ?? undefined, (signals.finish ?? null) === printing.finish, "finish", "finish_exact", ATTR_SCORE.finish);
@@ -396,6 +402,9 @@ function hardFilter(printings: CatalogPrinting[], signals: ResolutionSignals): C
       return false;
     }
     if (optionalSignal(signals.variant) && signals.variant !== printing.variantKey) {
+      return false;
+    }
+    if (optionalSignal(signals.rarity) && !rarityMatches(signals.rarity!, printing.rarity)) {
       return false;
     }
     return true;
@@ -474,6 +483,7 @@ function decideStatus(
       optionalSignal(signals.collector_number) ||
       optionalSignal(signals.language) ||
       optionalSignal(signals.variant) ||
+      optionalSignal(signals.rarity) ||
       signals.external_id,
   );
 
@@ -624,6 +634,13 @@ export async function resolveEntity(
       })
     : null;
   const catalog = await loadCandidates(db, signals, { game, externalPrintingId: mapped?.printingId });
+  // A rarity written next to the name (a website post's "SIR") narrows the
+  // printings like a set or number would. One no candidate carries (another
+  // spelling, or a rarity the catalog leaves empty) is dropped, not counted
+  // against every printing.
+  if (optionalSignal(signals.rarity) && !catalog.printings.some((row) => rarityMatches(signals.rarity!, row.rarity))) {
+    delete signals.rarity;
+  }
   const exactExternal: CatalogPrinting | null = mapped
     ? (catalog.printings.find((row) => row.printingId === mapped.printingId) ?? null)
     : null;
@@ -641,6 +658,7 @@ export async function resolveEntity(
       optionalSignal(signals.collector_number) ||
       optionalSignal(signals.language) ||
       optionalSignal(signals.variant) ||
+      optionalSignal(signals.rarity) ||
       signals.external_id,
   );
 
@@ -783,6 +801,7 @@ export async function resolveSourceMention(db: Database, mentionId: string): Pro
       card_name: transcript.cardName ?? record.mention.normalizedEntityText,
       collector_number: transcript.collectorNumber,
       set: transcript.setKey,
+      rarity: transcript.rarity,
       context_text: context,
       content_language: record.content?.language ?? null,
     },
@@ -803,6 +822,7 @@ function transcriptMentionHints(metadata: unknown): {
   cardName: string | null;
   collectorNumber: string | null;
   setKey: string | null;
+  rarity: string | null;
 } {
   const root = metadata && typeof metadata === "object" ? (metadata as Record<string, unknown>) : {};
   // Transcript mentions keep their hints under `transcript`; website feed
@@ -814,5 +834,6 @@ function transcriptMentionHints(metadata: unknown): {
     cardName: text(hints.card_name),
     collectorNumber: text(hints.collector_number),
     setKey: text(hints.set_key),
+    rarity: text(hints.rarity),
   };
 }
