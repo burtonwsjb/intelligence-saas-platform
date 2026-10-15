@@ -2,10 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   donutSegments,
   formatChange,
+  gameText,
+  languageText,
   monogram,
+  plural,
   priceFreshness,
+  providerText,
   recommendationText,
   timeSeriesGeometry,
+  verdictStep,
 } from "./display";
 
 const day = 86_400_000;
@@ -60,5 +65,24 @@ describe("chart geometry", () => {
     expect(segments.map((segment) => segment.key)).toEqual(["positive", "negative"]);
     expect(segments[0]!.share).toBeCloseTo(0.75);
     expect(donutSegments([{ key: "positive", value: 2 }])).toHaveLength(1);
+  });
+
+  it("names games, providers and counts in plain words", () => {
+    expect(gameText("one_piece")).toBe("One Piece");
+    expect(gameText("yugioh")).toBe("Yu-Gi-Oh!");
+    expect(gameText("new_game")).toBe("New Game");
+    expect(providerText("tcg_card_central")).toBe("TCG Card Central");
+    expect(languageText("multi")).toBe("Multiple languages");
+    expect(plural(1, "printing")).toBe("1 printing");
+    expect(plural(1200, "printing")).toBe("1,200 printings");
+  });
+
+  it("places recommendations on the five-step buy/sell scale", () => {
+    expect(verdictStep("strong_sell")).toBe(0);
+    expect(verdictStep("reduce")).toBe(1);
+    expect(verdictStep("watch")).toBe(2);
+    expect(verdictStep("strong_buy")).toBe(4);
+    expect(verdictStep("insufficient_data")).toBeNull();
+    expect(verdictStep(null)).toBeNull();
   });
 });

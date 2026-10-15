@@ -45,8 +45,8 @@ export default async function TopicsPage({ searchParams }: { searchParams: Promi
           <p className="eyebrow">Topics</p>
           <h1>What you are tracking</h1>
           <p className="muted">
-            Add anything you want to follow: a set, a card, a product, or something outside cards entirely. The platform
-            searches YouTube and Reddit for it, finds the people talking about it, and keeps listening.
+            Add a set, a card or a sealed product from Pokémon, One Piece, Dragon Ball or Yu-Gi-Oh!. Sentiment searches
+            YouTube, Reddit, creator sites and Google for it, finds the people talking about it, and keeps listening.
           </p>
         </div>
       </header>

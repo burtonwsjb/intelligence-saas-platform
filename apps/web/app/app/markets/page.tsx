@@ -4,7 +4,7 @@ import { Sparkline } from "@/components/Sparkline";
 import { StatusBadge } from "@/components/Badge";
 import { ANALYTICS_LOCKED_BODY, loadAppAccess } from "@/lib/app-access";
 import { getDb } from "@/lib/auth";
-import { dataQualityText, formatAge, formatChange, languageText } from "@/lib/display";
+import { dataQualityText, formatAge, formatChange, gameText, languageText, plural } from "@/lib/display";
 import { listIndexSummaries, listSetSummaries, windowChange } from "@isp/db";
 import Link from "next/link";
 
@@ -58,7 +58,7 @@ export default async function MarketsPage({
               return (
                 <li key={index.indexKey} className="panel" style={{ position: "relative", margin: 0 }}>
                   <p className="eyebrow">
-                    {index.gameKey}
+                    {gameText(index.gameKey)}
                     {index.languageCode ? ` · ${languageText(index.languageCode)}` : ""}
                   </p>
                   <h3 className="card-title">
@@ -112,13 +112,13 @@ export default async function MarketsPage({
                   <span className="item-main">
                     <Link href={`/app/cards?set=${encodeURIComponent(set.setKey)}`}>{set.name}</Link>
                     <span className="subtle">
-                      {set.gameKey}
+                      {gameText(set.gameKey)}
                       {set.languageScope ? ` · ${languageText(set.languageScope)}` : ""}
                       {set.releaseDate ? ` · released ${set.releaseDate}` : ""}
                     </span>
                   </span>
                   <span className="subtle">
-                    {set.printings} printings · {set.scored} scored
+                    {plural(set.printings, "printing")} · {set.scored.toLocaleString("en-US")} scored
                   </span>
                 </li>
               ))}
