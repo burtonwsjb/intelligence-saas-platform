@@ -1,5 +1,7 @@
 # Neon provisioning (staging)
 
+> Historical. New hosted databases use Supabase: see [supabase-migration.md](supabase-migration.md).
+
 Do not create a Neon project from this repository. When authorized:
 
 1. Neon console → New project. Region: choose the same region as Railway staging (often `us-east-1` / `aws-us-east-1`). Free/launch tier is enough for staging.

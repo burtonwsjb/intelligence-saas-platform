@@ -41,6 +41,13 @@ describe("deployed discovery diagnostics", () => {
     expect(runtimeContext({DATABASE_ADMIN_URL:a,APP_DATABASE_URL:b,VERCEL_GIT_COMMIT_SHA:"secret"})).toMatchObject({adminAndAppSameTarget:true,deployment:"unknown"});
     expect(JSON.stringify(runtimeContext({DATABASE_ADMIN_URL:a}))).not.toMatch(/secret|ep-check|owner/);
   });
+  it("fingerprints a Supabase project the same across direct, session and transaction URLs", () => {
+    const ref = "abcdefghijklmnopqrst";
+    const direct = `postgresql://postgres:secret@db.${ref}.supabase.co:5432/postgres`;
+    const pooled = `postgresql://app_user.${ref}:other@aws-0-us-east-1.pooler.supabase.com:6543/postgres`;
+    expect(databaseTargetFingerprint(direct)).toBe(databaseTargetFingerprint(pooled));
+    expect(databaseTargetFingerprint(pooled)).not.toBe(databaseTargetFingerprint(pooled.replace(ref, "zyxwvutsrqponmlkjihg")));
+  });
   it("distinguishes a present public table from runtime visibility and missing columns", () => {
     const report = summarizeRuntimeCatalog({role:"app_admin",ledger_present:true,public_in_path:false}, [{
       name:"discovered_creator",public_exists:true,resolves_to_public:false,select_allowed:true,exists_outside_public:true,

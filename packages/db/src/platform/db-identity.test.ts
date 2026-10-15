@@ -43,6 +43,23 @@ describe("database identity fingerprints", () => {
     expect(sameDatabaseIdentity(left, otherDb)).toBe(false);
   });
 
+  it("treats a Supabase project's direct host and pooler as the same database", () => {
+    const ref = "abcdefghijklmnopqrst";
+    const admin = fingerprintConnectionTarget(`postgresql://postgres:hunter2@db.${ref}.supabase.co:5432/postgres`);
+    const app = fingerprintConnectionTarget(
+      `postgresql://app_user.${ref}:otherpass@aws-0-us-east-1.pooler.supabase.com:6543/postgres`,
+    );
+    const otherProject = fingerprintConnectionTarget(
+      "postgresql://app_user.zyxwvutsrqponmlkjihg@aws-0-us-east-1.pooler.supabase.com:6543/postgres",
+    );
+    expect(admin.host_kind).toBe("supabase");
+    expect(app.host_kind).toBe("supabase_pooler");
+    expect(app.supabase_project).toBe(ref);
+    expect(sameDatabaseIdentity(admin, app)).toBe(true);
+    expect(sameDatabaseIdentity(app, otherProject)).toBe(false);
+    expect(JSON.stringify(app)).not.toMatch(/hunter2|otherpass|postgresql:\/\//);
+  });
+
   it("refuses production and does not print secrets", async () => {
     await expect(collectStagingDatabaseIdentities({ ISP_ENV: "production" })).rejects.toThrow(
       StagingSourceCommandError,

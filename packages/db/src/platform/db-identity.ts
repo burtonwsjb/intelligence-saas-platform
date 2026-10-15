@@ -1,14 +1,23 @@
 import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
-import { isLocalHostname } from "@isp/shared";
+import { describeDatabaseTarget, isLocalHostname } from "@isp/shared";
 import type { Database } from "../client.js";
 import { providerRuntime, workerHeartbeat } from "../schema/provider.js";
 
 export type ConnectionTargetFingerprint = {
   configured: boolean;
-  host_kind: "neon" | "neon_pooler" | "local" | "other" | "invalid" | "missing";
+  host_kind:
+    | "neon"
+    | "neon_pooler"
+    | "supabase"
+    | "supabase_pooler"
+    | "local"
+    | "other"
+    | "invalid"
+    | "missing";
   host_fingerprint: string | null;
   neon_endpoint: string | null;
+  supabase_project: string | null;
   database_name: string | null;
 };
 
@@ -55,22 +64,26 @@ export function fingerprintConnectionTarget(url: string | undefined | null): Con
       host_kind: "missing",
       host_fingerprint: null,
       neon_endpoint: null,
+      supabase_project: null,
       database_name: null,
     };
   }
   try {
     const parsed = new URL(trimmed);
     const hostname = parsed.hostname.toLowerCase();
-    const first = hostname.split(".")[0] ?? "";
-    const neon = hostname.endsWith(".neon.tech");
-    const pooled = neon && first.endsWith("-pooler");
-    const neonEndpoint = neon ? first.replace(/-pooler$/i, "") : null;
+    const target = describeDatabaseTarget(parsed);
     const databaseName = decodeURIComponent((parsed.pathname.replace(/^\//, "").split("/")[0] ?? "").trim());
+    const hostKind: ConnectionTargetFingerprint["host_kind"] = target.provider
+      ? `${target.provider}${target.pooled ? "_pooler" : ""}`
+      : isLocalHostname(trimmed)
+        ? "local"
+        : "other";
     return {
       configured: true,
-      host_kind: neon ? (pooled ? "neon_pooler" : "neon") : isLocalHostname(trimmed) ? "local" : "other",
+      host_kind: hostKind,
       host_fingerprint: createHash("sha256").update(hostname).digest("hex").slice(0, 16),
-      neon_endpoint: neonEndpoint,
+      neon_endpoint: target.provider === "neon" ? target.instance : null,
+      supabase_project: target.provider === "supabase" ? target.instance : null,
       database_name: databaseName || null,
     };
   } catch {
@@ -79,14 +92,15 @@ export function fingerprintConnectionTarget(url: string | undefined | null): Con
       host_kind: "invalid",
       host_fingerprint: "invalid",
       neon_endpoint: null,
+      supabase_project: null,
       database_name: null,
     };
   }
 }
 
 export function sameDatabaseIdentity(
-  left: Pick<ConnectionTargetFingerprint, "neon_endpoint" | "host_fingerprint" | "database_name">,
-  right: Pick<ConnectionTargetFingerprint, "neon_endpoint" | "host_fingerprint" | "database_name">,
+  left: Pick<ConnectionTargetFingerprint, "neon_endpoint" | "supabase_project" | "host_fingerprint" | "database_name">,
+  right: Pick<ConnectionTargetFingerprint, "neon_endpoint" | "supabase_project" | "host_fingerprint" | "database_name">,
 ): boolean {
   const leftDb = left.database_name;
   const rightDb = right.database_name;
@@ -95,6 +109,9 @@ export function sameDatabaseIdentity(
   }
   if (left.neon_endpoint && right.neon_endpoint) {
     return left.neon_endpoint === right.neon_endpoint;
+  }
+  if (left.supabase_project && right.supabase_project) {
+    return left.supabase_project === right.supabase_project;
   }
   return Boolean(left.host_fingerprint && left.host_fingerprint === right.host_fingerprint);
 }
@@ -173,6 +190,7 @@ export function formatDatabaseIdentityReport(identities: DatabaseIdentity[]): st
         `host_kind=${row.host_kind}`,
         `host_fingerprint=${row.host_fingerprint ?? "-"}`,
         `neon_endpoint=${row.neon_endpoint ?? "-"}`,
+        `supabase_project=${row.supabase_project ?? "-"}`,
         `database=${row.database_name ?? row.current_database ?? "-"}`,
         `user=${row.current_user ?? "-"}`,
         `schema=${row.schema_marker ?? "-"}`,

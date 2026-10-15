@@ -43,7 +43,7 @@ const PERMISSION_CODES = new Set(["42501", "42502", "42503"]);
 const CONSTRAINT_CODES = new Set(["23502", "23503", "23505", "23514", "23P01"]);
 
 const TRANSIENT_MESSAGE =
-  /connection (terminated|reset|refused|closed)|econnreset|econnrefused|etimedout|enotfound|socket hang up|compute is not active|server closed the connection|too many clients|remaining connection slots|neon.*unavailable|the database system is (starting|shutting)/i;
+  /connection (terminated|reset|refused|closed)|econnreset|econnrefused|etimedout|enotfound|socket hang up|compute is not active|server closed the connection|too many clients|remaining connection slots|neon.*unavailable|max client connections reached|emaxconn|the database system is (starting|shutting)/i;
 
 function readCode(value: unknown): string | null {
   if (value && typeof value === "object" && "code" in value && typeof value.code === "string") {

@@ -8,6 +8,7 @@ import {
   roleFlagsMatch,
   describeRoleMismatch,
   testRolePasswords,
+  SUPABASE_API_ROLE_LOCKDOWN_SQL,
 } from "./bootstrap-roles.js";
 
 describe("application role invariants", () => {
@@ -42,6 +43,21 @@ describe("application role invariants", () => {
     expect(() =>
       assertDisposableAdminUrl("postgresql://neondb_owner@ep-x.us-east-1.aws.neon.tech/neondb"),
     ).toThrow(HostedTestDatabaseError);
+  });
+
+  it("rejects Supabase hosts for disposable isolation tests", () => {
+    const direct = "postgresql://postgres@db.abcdefghijklmnopqrst.supabase.co:5432/postgres";
+    const pooled = "postgresql://postgres.abcdefghijklmnopqrst@aws-0-us-east-1.pooler.supabase.com:6543/postgres";
+    expect(isHostedPostgresUrl(direct)).toBe(true);
+    expect(isHostedPostgresUrl(pooled)).toBe(true);
+    expect(() => assertDisposableAdminUrl(pooled)).toThrow(HostedTestDatabaseError);
+  });
+
+  it("locks Supabase Data API roles out only where they exist", () => {
+    expect(SUPABASE_API_ROLE_LOCKDOWN_SQL).toMatch(/IF EXISTS \(SELECT 1 FROM pg_roles WHERE rolname = api_role\)/);
+    expect(SUPABASE_API_ROLE_LOCKDOWN_SQL).toMatch(/REVOKE ALL ON ALL TABLES IN SCHEMA public/);
+    expect(SUPABASE_API_ROLE_LOCKDOWN_SQL).toMatch(/ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES/);
+    expect(SUPABASE_API_ROLE_LOCKDOWN_SQL).not.toMatch(/service_role|GRANT /);
   });
 
   it("uses CI passwords unless APP_*_PASSWORD is set", () => {
