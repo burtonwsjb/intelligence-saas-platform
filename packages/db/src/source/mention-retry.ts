@@ -17,7 +17,7 @@ import { providerSyncRun } from "../schema/provider.js";
 /** Bumped when the resolver learns something that can bind mentions it left unbound; restarts the walk. */
 export const MENTION_RETRY_KEY = "short_set_keys.v1";
 export const MENTION_RETRY_TRIGGER = "mention_retry";
-export const MENTION_RETRY_DEFAULT_LIMIT = 1_000;
+export const MENTION_RETRY_DEFAULT_LIMIT = 5_000;
 
 export type MentionRetryReport = { scanned: number; retried: number; bound: number; callsCreated: number };
 
