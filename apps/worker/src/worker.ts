@@ -20,6 +20,7 @@ import {
   scoreDueCreatorCalls,
   syncSealedProducts,
   syncTccPriceHistory,
+  retryUnboundDetectedMentions,
   syncWebFeeds,
   transcriptProviderConfig,
   transcriptRequestBudget,
@@ -32,6 +33,7 @@ import {
   type TranscriptBackfillReport,
   type TranscriptFetcher,
   type WebBackfillReport,
+  type MentionRetryReport,
   type WebFeedSyncReport,
   type YoutubeBackfillReport,
 } from "@isp/db";
@@ -270,6 +272,30 @@ export async function runWebFeedSync(
     return report;
   } catch (error) {
     logLoopFailure("worker.web_feed_sync_failed", "web_feed_sync", error);
+    return null;
+  }
+}
+
+/**
+ * Gives card mentions from posts and transcripts that the resolver left
+ * unbound one more try after the resolver improves (MENTION_RETRY_KEY), a
+ * bounded batch per run. Database only; logs counts.
+ */
+export async function runMentionRetry(db: Database): Promise<MentionRetryReport | null> {
+  try {
+    const report = await retryUnboundDetectedMentions(db);
+    if (report.scanned > 0) {
+      logQueueEvent("info", "worker.mention_retry", {
+        status: "completed",
+        scanned: report.scanned,
+        retried: report.retried,
+        bound: report.bound,
+        calls_created: report.callsCreated,
+      });
+    }
+    return report;
+  } catch (error) {
+    logLoopFailure("worker.mention_retry_failed", "mention_retry", error);
     return null;
   }
 }
@@ -684,6 +710,7 @@ export function startWorker(options?: {
       .then(() => runWebFeedSync(db, env))
       .then(() => runYoutubeUploadsBackfill(db, env))
       .then(() => runWebSitemapBackfill(db, env))
+      .then(() => runMentionRetry(db))
       .then(() => runPriceHistory(db, env))
       .then(() => runCallScoring(db))
       .then(() => runChartSentiment(db, env));
