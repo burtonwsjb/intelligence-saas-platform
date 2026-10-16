@@ -72,6 +72,10 @@ function escapeRegex(value: string): string {
  * A set key counts only as a whole word, and a key without digits ("twm")
  * only when written in capitals ("TWM"), so ordinary words never become sets.
  */
+function wordInText(lower: string, phrase: string): boolean {
+  return new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRegex(phrase)}($|[^\\p{L}\\p{N}])`, "u").test(lower);
+}
+
 function setKeyInText(text: string, key: string): boolean {
   if (!key) {
     return false;
@@ -90,8 +94,10 @@ export function inferSetFromText(
   const lower = text.toLocaleLowerCase("en");
   let best: { key: string; length: number } | undefined;
   for (const set of Array.isArray(sets) ? sets : []) {
-    const name = set.name.toLocaleLowerCase("en");
-    if (name && lower.includes(name) && (!best || name.length > best.length)) {
+    const name = set.name.toLocaleLowerCase("en").trim();
+    // A one- or two-character name ("E") would match almost any text.
+    if (name.length < 3) continue;
+    if (wordInText(lower, name) && (!best || name.length > best.length)) {
       best = { key: set.canonicalSetKey, length: name.length };
     }
   }
