@@ -15,6 +15,8 @@ import { sourceMention } from "../schema/source.js";
 import { tcgPrinting } from "../schema/tcg.js";
 import { MENTION_RETRY_KEY, MENTION_RETRY_TRIGGER, retryUnboundDetectedMentions } from "./mention-retry.js";
 import { traceSourcePost } from "./post-trace.js";
+import { listCardEvidence, listSentimentEvidence, summarizeSentiment } from "../dashboard/explorer.js";
+import { sourceSentiment } from "../schema/provider.js";
 import { registerWebFeedSite, runWebFeedSyncBatch } from "./web-feed-ingest.js";
 
 const ENV = { NODE_ENV: "test" };
@@ -129,5 +131,63 @@ describe("website mentions of a card printed in several languages", () => {
     );
     expect((trace as { printings: unknown[] }).printings).toHaveLength(6);
     expect((trace as { runs: unknown[] }).runs.length).toBeGreaterThan(0);
+  });
+
+  it("counts a matched post's sentiment toward the card", async () => {
+    const { db, printing } = await setup();
+    const range = { from: new Date("2026-09-20T00:00:00Z"), to: new Date("2026-10-20T00:00:00Z") };
+    const sir = printing("125/094", "en");
+    const rows = await listSentimentEvidence(db, [sir], range);
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every((row) => row.sentiment !== "unknown")).toBe(true);
+    const summary = summarizeSentiment(rows, range);
+    expect(summary).toMatchObject({ contentItems: 1, classified: 1 });
+    expect(summary.label).not.toBe("no_evidence");
+    const evidence = await listCardEvidence(db, sir);
+    expect(evidence.items).toHaveLength(1);
+    expect(evidence.items[0]!.sentiment).not.toBe("unknown");
+  });
+
+  it("reads the analysis for mentions stored before their sentiment was copied over", async () => {
+    const { db, printing } = await setup();
+    const sir = printing("125/094", "en");
+    const range = { from: new Date("2026-09-20T00:00:00Z"), to: new Date("2026-10-20T00:00:00Z") };
+    const [before] = await listSentimentEvidence(db, [sir], range);
+    const [mention] = await db.select().from(sourceMention).where(eq(sourceMention.rawEntityText, "Mega Charizard X ex 125/094"));
+    // An older mention row: same post, stored as unknown, with its analysis only in source_sentiment.
+    const legacyId = `${mention!.id}_legacy`;
+    await db.insert(sourceMention).values({ ...mention!, id: legacyId, normalizedEntityText: "legacy", sentiment: "unknown" });
+    await db.insert(sourceSentiment).values({
+      id: `sst_${legacyId}`,
+      mentionId: legacyId,
+      analyzerVersion: "test",
+      direction: "bearish",
+      strength: "moderate",
+      subject: "card",
+      entityKind: "printing",
+      timeHorizon: "unspecified",
+      marketRelevance: "direct",
+      excitement: "absent",
+      purchaseIntent: "none",
+      priceExpectation: "none",
+      creatorRecommendation: "none",
+      marketConcern: "none",
+      evidence: [],
+    });
+    await persistResolution(db, {
+      subjectType: "mention",
+      subjectId: legacyId,
+      mentionId: legacyId,
+      status: "exact",
+      targetLayer: "printing",
+      chosenPrintingId: sir,
+      chosenConceptId: null,
+      confidence: 1,
+      signals: {},
+      candidates: [],
+    });
+    const rows = await listSentimentEvidence(db, [sir], range);
+    expect(rows.find((row) => row.sentiment === "negative")).toBeTruthy();
+    expect(rows.find((row) => row.sentiment === before!.sentiment)).toBeTruthy();
   });
 });

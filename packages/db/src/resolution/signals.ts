@@ -99,6 +99,8 @@ export function inferSetFromText(
     return best.key;
   }
   for (const set of Array.isArray(sets) ? sets : []) {
+    // A one- or two-character key ("e") is an ordinary word or letter in prose.
+    if (set.canonicalSetKey.length < 3) continue;
     if (setKeyInText(text, set.canonicalSetKey) && (!best || set.canonicalSetKey.length > best.length)) {
       best = { key: set.canonicalSetKey, length: set.canonicalSetKey.length };
     }

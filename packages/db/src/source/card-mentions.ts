@@ -102,6 +102,10 @@ export async function storeCardMentionSegments(
       })
       .onConflictDoNothing();
     for (const mention of segment.mentions) {
+      const analysis = analyzeSourceSentiment({
+        text: `${input.contentTitle ?? ""} ${segment.excerpt} ${mention.rawEntityText}`,
+        mention_context: "other",
+      });
       const inserted = await tx
         .insert(sourceMention)
         .values({
@@ -111,7 +115,8 @@ export async function storeCardMentionSegments(
           rawEntityText: mention.rawEntityText,
           normalizedEntityText: mention.normalized,
           mentionContext: "other",
-          sentiment: "unknown",
+          // Card sentiment counts this coarse value; the full analysis is in source_sentiment.
+          sentiment: analysis.coarse_sentiment,
           extractionVersion: input.extractionVersion,
           metadata: {
             printing_id: null,
@@ -123,10 +128,6 @@ export async function storeCardMentionSegments(
         .returning({ id: sourceMention.id });
       if (inserted.length === 0) continue;
       mentions += 1;
-      const analysis = analyzeSourceSentiment({
-        text: `${input.contentTitle ?? ""} ${segment.excerpt} ${mention.rawEntityText}`,
-        mention_context: "other",
-      });
       await tx
         .insert(sourceSentiment)
         .values({

@@ -735,6 +735,17 @@ export const SENTIMENT_LABEL_TEXT: Record<SentimentLabel, string> = {
  * printing exactly (exact / high_confidence). Content from accounts linked to an
  * excluded creator is left out.
  */
+/**
+ * A mention's coarse sentiment. Mentions found in posts and transcripts were
+ * stored as "unknown" before their analysis was copied onto the mention, so
+ * those read the latest source_sentiment direction instead.
+ */
+const MENTION_SENTIMENT = sql.raw(`COALESCE(NULLIF(sm.sentiment, 'unknown'), (
+  SELECT CASE ss.direction WHEN 'bullish' THEN 'positive' WHEN 'bearish' THEN 'negative' WHEN 'neutral' THEN 'neutral' END
+  FROM source_sentiment ss WHERE ss.mention_id = sm.id
+  ORDER BY ss.created_at DESC, ss.id DESC LIMIT 1
+), 'unknown')`);
+
 export async function listSentimentEvidence(
   db: Database,
   printingIds: string[],
@@ -763,7 +774,7 @@ export async function listSentimentEvidence(
       ) trust ON TRUE
       WHERE trust.trust_state = 'excluded'
     )
-    SELECT l.chosen_printing_id AS printing_id, sm.content_id, sc.account_id, sm.sentiment, sc.published_at,
+    SELECT l.chosen_printing_id AS printing_id, sm.content_id, sc.account_id, ${MENTION_SENTIMENT} AS sentiment, sc.published_at,
       authority.authority_weight, authority.creator_id IS NOT NULL AS rated
     FROM latest l
     JOIN source_mention sm ON sm.id = l.mention_id
@@ -961,13 +972,17 @@ export async function listCardEvidence(
       )
       ORDER BY a.mention_id, a.created_at DESC, a.id DESC
     ),
-    per_content AS (
-      SELECT sm.content_id,
-        CASE WHEN count(DISTINCT sm.sentiment) FILTER (WHERE sm.sentiment <> 'unknown') > 1 THEN 'mixed'
-             ELSE coalesce(max(sm.sentiment) FILTER (WHERE sm.sentiment <> 'unknown'), 'unknown') END AS sentiment
+    resolved AS (
+      SELECT sm.content_id, ${MENTION_SENTIMENT} AS sentiment
       FROM latest l JOIN source_mention sm ON sm.id = l.mention_id
       WHERE l.status IN ('exact', 'high_confidence') AND l.chosen_printing_id = ${printingId}
-      GROUP BY sm.content_id
+    ),
+    per_content AS (
+      SELECT content_id,
+        CASE WHEN count(DISTINCT sentiment) FILTER (WHERE sentiment <> 'unknown') > 1 THEN 'mixed'
+             ELSE coalesce(max(sentiment) FILTER (WHERE sentiment <> 'unknown'), 'unknown') END AS sentiment
+      FROM resolved
+      GROUP BY content_id
     )
     SELECT sc.id AS content_id, sc.source_type, sc.title, sc.canonical_url, sc.published_at,
       pc.sentiment, sa.display_name AS account_name
