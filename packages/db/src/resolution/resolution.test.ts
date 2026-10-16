@@ -316,7 +316,10 @@ describe("entity resolution", () => {
       { canonicalSetKey: "svp", name: "Scarlet & Violet Promos" },
       { canonicalSetKey: "core", name: "Core Set" },
       { canonicalSetKey: "op01", name: "Romance Dawn" },
+      { canonicalSetKey: "e", name: "" },
     ];
+    // A one- or two-character key is a letter in prose, never a set mention.
+    expect(inferSetFromText("the price is E and I wait for $600", sets)).toBeUndefined();
     expect(inferSetFromText("Scarlet & Violet Promos Pikachu", sets)).toBe("svp");
     expect(inferSetFromText("Scarlet & Violet Pikachu", sets)).toBe("sv1");
     expect(inferSetFromText("the core of my collection", sets)).toBeUndefined();

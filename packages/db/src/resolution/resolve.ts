@@ -775,8 +775,8 @@ export async function resolveSourceMention(db: Database, mentionId: string): Pro
   const context = [
     record.mention.rawEntityText,
     record.segment?.excerpt ? withoutNonCollectorNumbers(record.segment.excerpt) : null,
-    record.content?.title,
-    record.content?.summary,
+    record.content?.title ? withoutNonCollectorNumbers(record.content.title) : null,
+    record.content?.summary ? withoutNonCollectorNumbers(record.content.summary) : null,
   ]
     .filter(Boolean)
     .join(" ");
