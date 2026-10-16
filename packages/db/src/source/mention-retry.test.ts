@@ -131,6 +131,12 @@ describe("website mentions of a card printed in several languages", () => {
     );
     expect((trace as { printings: unknown[] }).printings).toHaveLength(6);
     expect((trace as { runs: unknown[] }).runs.length).toBeGreaterThan(0);
+    expect(posts[0]!.mentions).toEqual(
+      expect.arrayContaining([expect.objectContaining({ raw: "Mega Charizard X ex 125/094", sentiment: expect.any(String) })]),
+    );
+    expect((trace as { sentiment: unknown[] }).sentiment).toEqual(
+      expect.arrayContaining([expect.objectContaining({ collector_number: "125/094", label: "too_few", posts: 1, classified: 1 })]),
+    );
   });
 
   it("counts a matched post's sentiment toward the card", async () => {
