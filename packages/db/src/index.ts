@@ -434,6 +434,13 @@ export {
   type CardMentionSegment,
 } from "./source/card-mentions.js";
 export {
+  MENTION_RETRY_DEFAULT_LIMIT,
+  MENTION_RETRY_KEY,
+  MENTION_RETRY_TRIGGER,
+  retryUnboundDetectedMentions,
+  type MentionRetryReport,
+} from "./source/mention-retry.js";
+export {
   WEB_FEED_BOT_TOKEN,
   WEB_FEED_FALLBACK_PATHS,
   WEB_FEED_MAX_REQUESTS_PER_SITE,

@@ -731,6 +731,15 @@ export async function resolveEntity(
   } else if (!hasHardIdentity) {
     pool = [];
   }
+  // A card named in a post with no language of its own is read in the
+  // post's language: an English article about a card printed in English and
+  // Japanese means the English printing. Text that names a language (for
+  // example "Japanese") sets signals.language and skips this.
+  const contentLanguage = optionalSignal(signals.content_language);
+  if (!optionalSignal(signals.language) && contentLanguage && uniqueValues(pool.map((row) => row.languageCode)) > 1) {
+    const sameLanguage = pool.filter((printing) => printing.languageCode === contentLanguage);
+    if (sameLanguage.length > 0) pool = sameLanguage;
+  }
 
   const decision = decideStatus(signals, pool, scored, exactExternal, structuredComplete);
   const inPool = new Set(pool.map((row) => row.printingId));
@@ -784,7 +793,9 @@ export async function resolveSourceMention(db: Database, mentionId: string): Pro
       collector_number: transcript.collectorNumber,
       set: transcript.setKey,
       context_text: context,
-      content_language: record.content?.language ?? null,
+      // Detected mentions match English card names, so a post with no
+      // language of its own is read as English.
+      content_language: record.content?.language ?? (transcript.cardName ? "en" : null),
     },
   });
 }
