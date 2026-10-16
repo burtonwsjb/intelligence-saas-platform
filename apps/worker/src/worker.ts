@@ -21,6 +21,7 @@ import {
   syncSealedProducts,
   syncTccPriceHistory,
   retryUnboundDetectedMentions,
+  traceSourcePost,
   syncWebFeeds,
   transcriptProviderConfig,
   transcriptRequestBudget,
@@ -297,6 +298,23 @@ export async function runMentionRetry(db: Database): Promise<MentionRetryReport 
   } catch (error) {
     logLoopFailure("worker.mention_retry_failed", "mention_retry", error);
     return null;
+  }
+}
+
+/**
+ * When MENTION_TRACE_URL is set, logs what was stored for that one post
+ * (site reads, its mentions and how each resolved) and, with
+ * MENTION_TRACE_CARD, the catalog printings for that card name. Read only;
+ * for finding why a post does not count toward a card.
+ */
+export async function runPostTrace(db: Database, env: NodeJS.ProcessEnv = process.env): Promise<void> {
+  const url = env.MENTION_TRACE_URL?.trim();
+  if (!url) return;
+  try {
+    const trace = await traceSourcePost(db, { url, cardName: env.MENTION_TRACE_CARD?.trim() || null });
+    logQueueEvent("info", "worker.post_trace", { trace: JSON.stringify(trace).slice(0, 60_000) });
+  } catch (error) {
+    logLoopFailure("worker.post_trace_failed", "post_trace", error);
   }
 }
 
@@ -711,6 +729,7 @@ export function startWorker(options?: {
       .then(() => runYoutubeUploadsBackfill(db, env))
       .then(() => runWebSitemapBackfill(db, env))
       .then(() => runMentionRetry(db))
+      .then(() => runPostTrace(db, env))
       .then(() => runPriceHistory(db, env))
       .then(() => runCallScoring(db))
       .then(() => runChartSentiment(db, env));

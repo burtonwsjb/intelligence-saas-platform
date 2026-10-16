@@ -440,6 +440,7 @@ export {
   retryUnboundDetectedMentions,
   type MentionRetryReport,
 } from "./source/mention-retry.js";
+export { traceSourcePost } from "./source/post-trace.js";
 export {
   WEB_FEED_BOT_TOKEN,
   WEB_FEED_FALLBACK_PATHS,

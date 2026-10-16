@@ -14,6 +14,7 @@ import { entityResolutionAttempt } from "../schema/resolution.js";
 import { sourceMention } from "../schema/source.js";
 import { tcgPrinting } from "../schema/tcg.js";
 import { MENTION_RETRY_KEY, MENTION_RETRY_TRIGGER, retryUnboundDetectedMentions } from "./mention-retry.js";
+import { traceSourcePost } from "./post-trace.js";
 import { registerWebFeedSite, runWebFeedSyncBatch } from "./web-feed-ingest.js";
 
 const ENV = { NODE_ENV: "test" };
@@ -112,5 +113,21 @@ describe("website mentions of a card printed in several languages", () => {
     expect(run!.checkpoint).toMatchObject({ key: MENTION_RETRY_KEY, bound: 1 });
     // The cursor is past every mention, so the next run reads nothing new.
     expect(await retryUnboundDetectedMentions(db)).toEqual({ scanned: 0, retried: 0, bound: 0, callsCreated: 0 });
+  });
+
+  it("traces a stored post, its mentions and the card's printings", async () => {
+    const { db } = await setup();
+    const trace = await traceSourcePost(db, {
+      url: "https://insider.example.com/2026/10/07/mega-charizard-x-ex-price/?utm_source=rss",
+      cardName: "Mega Charizard X ex",
+    });
+    expect(trace).toMatchObject({ domain: "insider.example.com", accounts: [{ handle: "insider.example.com" }] });
+    const posts = (trace as { posts: Array<{ mentions: Array<{ raw: string; status: string; chosen_language: string | null }> }> }).posts;
+    expect(posts).toHaveLength(1);
+    expect(posts[0]!.mentions).toEqual(
+      expect.arrayContaining([expect.objectContaining({ raw: "Mega Charizard X ex 125/094", status: "exact", chosen_language: "en" })]),
+    );
+    expect((trace as { printings: unknown[] }).printings).toHaveLength(6);
+    expect((trace as { runs: unknown[] }).runs.length).toBeGreaterThan(0);
   });
 });
