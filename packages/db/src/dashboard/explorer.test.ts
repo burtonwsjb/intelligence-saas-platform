@@ -109,6 +109,20 @@ describe("sentiment summary", () => {
     expect(summary.label).toBe("mostly_positive");
   });
 
+  it("falls back to one vote per post when every creator's track record weighs 0", () => {
+    const summary = summarizeSentiment(
+      [
+        { printingId: "p", contentId: "c1", accountId: "a1", sentiment: "positive", weight: 0, rated: true },
+        { printingId: "p", contentId: "c2", accountId: "a1", sentiment: "unknown", weight: 0, rated: true },
+      ],
+      range,
+    );
+    expect(summary.classified).toBe(1);
+    expect(summary.weighted.positive).toBe(1);
+    expect(summary.weightTotal).toBe(1);
+    expect(summary.label).toBe("too_few");
+  });
+
   it("needs enough posts even when one creator carries a lot of weight", () => {
     const summary = summarizeSentiment(
       [{ printingId: "p", contentId: "c1", accountId: "a1", sentiment: "positive", weight: 0.9, rated: true }],

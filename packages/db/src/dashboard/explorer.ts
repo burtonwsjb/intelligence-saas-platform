@@ -679,7 +679,14 @@ export function summarizeSentiment(rows: SentimentEvidenceRow[], range: { from: 
     if (entry.rated) ratedPosts += 1;
   }
   const classified = counts.positive + counts.neutral + counts.negative + counts.mixed;
-  const weightTotal = weighted.positive + weighted.neutral + weighted.negative + weighted.mixed;
+  let weightTotal = weighted.positive + weighted.neutral + weighted.negative + weighted.mixed;
+  if (!(weightTotal > 0) && classified > 0) {
+    // Every classified post comes from creators whose track record weighs 0
+    // (rated, nothing came true yet): fall back to one vote per post rather
+    // than report no direction at all.
+    for (const key of SENTIMENT_KEYS) weighted[key] = counts[key];
+    weightTotal = classified;
+  }
   return {
     counts,
     weighted,
@@ -744,6 +751,10 @@ const MENTION_SENTIMENT = sql.raw(`COALESCE(NULLIF(sm.sentiment, 'unknown'), (
   SELECT CASE ss.direction WHEN 'bullish' THEN 'positive' WHEN 'bearish' THEN 'negative' WHEN 'neutral' THEN 'neutral' END
   FROM source_sentiment ss WHERE ss.mention_id = sm.id
   ORDER BY ss.created_at DESC, ss.id DESC LIMIT 1
+), (
+  SELECT CASE cc.direction WHEN 'bullish' THEN 'positive' WHEN 'bearish' THEN 'negative' WHEN 'neutral' THEN 'neutral' END
+  FROM creator_call cc WHERE cc.mention_id = sm.id
+  ORDER BY cc.created_at DESC, cc.id DESC LIMIT 1
 ), 'unknown')`);
 
 export async function listSentimentEvidence(

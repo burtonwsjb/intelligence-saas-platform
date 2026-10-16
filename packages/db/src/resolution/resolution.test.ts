@@ -317,9 +317,15 @@ describe("entity resolution", () => {
       { canonicalSetKey: "core", name: "Core Set" },
       { canonicalSetKey: "op01", name: "Romance Dawn" },
       { canonicalSetKey: "e", name: "" },
+      { canonicalSetKey: "e2", name: "E" },
+      { canonicalSetKey: "ex", name: "Ex" },
     ];
     // A one- or two-character key is a letter in prose, never a set mention.
     expect(inferSetFromText("the price is E and I wait for $600", sets)).toBeUndefined();
+    // Nor is a one- or two-character set name, which would match almost any text.
+    expect(inferSetFromText("Mega Charizard X ex 130/094 is the gold card", sets)).toBeUndefined();
+    // Names match whole words only.
+    expect(inferSetFromText("the score set a record", sets)).toBeUndefined();
     expect(inferSetFromText("Scarlet & Violet Promos Pikachu", sets)).toBe("svp");
     expect(inferSetFromText("Scarlet & Violet Pikachu", sets)).toBe("sv1");
     expect(inferSetFromText("the core of my collection", sets)).toBeUndefined();

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
-import { eq } from "drizzle-orm";
+import { eq, isNotNull } from "drizzle-orm";
 import { persistResolution } from "../resolution/persist.js";
 import { readMigrationSql, type Database } from "../index.js";
 import { importTccCatalog } from "../providers/tcc-catalog.js";
@@ -195,5 +195,31 @@ describe("website mentions of a card printed in several languages", () => {
     const rows = await listSentimentEvidence(db, [sir], range);
     expect(rows.find((row) => row.sentiment === "negative")).toBeTruthy();
     expect(rows.find((row) => row.sentiment === before!.sentiment)).toBeTruthy();
+  });
+
+  it("falls back to the creator call's direction when the mention has no readable sentiment", async () => {
+    const { db, printing } = await setup();
+    const sir = printing("125/094", "en");
+    const range = { from: new Date("2026-09-20T00:00:00Z"), to: new Date("2026-10-20T00:00:00Z") };
+    const [call] = await db.select().from(creatorCall).where(isNotNull(creatorCall.mentionId)).limit(1);
+    const [mention] = await db.select().from(sourceMention).where(eq(sourceMention.id, call!.mentionId!));
+    // Same post and call, but the stored mention and its analysis say nothing.
+    const legacyId = `${mention!.id}_nocall`;
+    await db.insert(sourceMention).values({ ...mention!, id: legacyId, normalizedEntityText: "no-analysis", sentiment: "unknown" });
+    await db.insert(creatorCall).values({ ...call!, id: `${call!.id}_nocall`, mentionId: legacyId, direction: "bearish", fingerprint: `${call!.fingerprint}_nocall` });
+    await persistResolution(db, {
+      subjectType: "mention",
+      subjectId: legacyId,
+      mentionId: legacyId,
+      status: "exact",
+      targetLayer: "printing",
+      chosenPrintingId: sir,
+      chosenConceptId: null,
+      confidence: 1,
+      signals: {},
+      candidates: [],
+    });
+    const rows = await listSentimentEvidence(db, [sir], range);
+    expect(rows.find((row) => row.sentiment === "negative")).toBeTruthy();
   });
 });
