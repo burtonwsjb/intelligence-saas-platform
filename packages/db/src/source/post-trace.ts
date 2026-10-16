@@ -6,6 +6,7 @@
  */
 import { sql } from "drizzle-orm";
 import type { Database } from "../client.js";
+import { getCardSentiment } from "../dashboard/explorer.js";
 import { withPlatformContext } from "../rls.js";
 import { canonicalPostUrl } from "./web-feed-ingest.js";
 
@@ -51,7 +52,9 @@ export async function traceSourcePost(db: Database, input: { url: string; cardNa
     for (const post of posts) {
       const rows = rowsOf(
         await tx.execute(sql`
-          SELECT sm.raw_entity_text AS raw, sm.metadata->'card_detect' AS hints, sm.created_at,
+          SELECT sm.raw_entity_text AS raw, sm.metadata->'card_detect' AS hints, sm.created_at, sm.sentiment,
+            (SELECT ss.direction FROM source_sentiment ss WHERE ss.mention_id = sm.id
+              ORDER BY ss.created_at DESC, ss.id DESC LIMIT 1) AS analysis_direction,
             latest.status, latest.input_signals - 'context_text' AS signals,
             p.collector_number AS chosen_number, p.language_code AS chosen_language, s.canonical_set_key AS chosen_set,
             (SELECT count(*)::int FROM entity_resolution_candidate c WHERE c.attempt_id = latest.id) AS candidates
@@ -77,7 +80,7 @@ export async function traceSourcePost(db: Database, input: { url: string; cardNa
     const printings = input.cardName
       ? rowsOf(
           await tx.execute(sql`
-            SELECT c.canonical_name AS name, s.canonical_set_key AS set_key, s.name AS set_name, p.collector_number,
+            SELECT p.id, c.canonical_name AS name, s.canonical_set_key AS set_key, s.name AS set_name, p.collector_number,
               p.collector_number_normalized AS normalized, p.language_code, p.variant_key, p.rarity
             FROM tcg_printing p
             JOIN tcg_card_concept c ON c.id = p.card_id
@@ -89,6 +92,21 @@ export async function traceSourcePost(db: Database, input: { url: string; cardNa
           `),
         )
       : [];
-    return { url, domain, accounts, runs, stored, posts: mentions, printings };
+    // What the card page would get: the 30-day summary per printing.
+    const sentiment = [];
+    for (const printing of printings as { id: string; set_key: string; collector_number: string }[]) {
+      const summary = await getCardSentiment(tx, printing.id, "30d");
+      if (summary.contentItems === 0) continue;
+      sentiment.push({
+        set_key: printing.set_key,
+        collector_number: printing.collector_number,
+        label: summary.label,
+        posts: summary.contentItems,
+        classified: summary.classified,
+        counts: summary.counts,
+        weighted: summary.weighted,
+      });
+    }
+    return { url, domain, accounts, runs, stored, posts: mentions, printings, sentiment };
   });
 }
