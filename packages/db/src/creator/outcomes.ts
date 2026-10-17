@@ -1,12 +1,24 @@
-import { and, asc, eq, gt, inArray, isNull, lte } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, lte, sql } from "drizzle-orm";
 import type { Database } from "../client.js";
 import { creatorCall, creatorCallOutcome } from "../schema/creator.js";
+import { marketAsset } from "../schema/asset.js";
 import { tcgMarketSnapshot } from "../schema/tcg-market.js";
 import { tcgPrinting, tcgSet } from "../schema/tcg.js";
 import { assetPriceAt, assetPricesBetween } from "./assets.js";
 import { callGradeFromEvidence, type CallGrade } from "./grade.js";
 
-export const OUTCOME_VERSION = "outcome.v1";
+export const OUTCOME_VERSION = "outcome.v2";
+
+/**
+ * A move within this share of the starting price either way is "flat": the
+ * price stagnated. Card prices wander a little day to day, so a call that said
+ * up or down needs a real move to count as right. A flat result counts
+ * against the call (see creator/authority.ts).
+ */
+export const FLAT_BAND = 0.02;
+
+/** A set call is scored only when at least this many of the set's cards have a price at both ends. */
+export const SET_BASKET_MIN_PRINTINGS = 3;
 export const EARLY_CALL_VERSION = "early_call.v1";
 
 const HORIZON_DAYS: Record<string, number> = {
@@ -247,9 +259,9 @@ function grade(input: {
   const mae = path.length ? Math.min(...path, 0) : 0;
   let directional = "not_applicable";
   if (input.direction === "bullish") {
-    directional = ret > 0.005 ? "correct" : ret < -0.005 ? "incorrect" : "flat";
+    directional = ret > FLAT_BAND ? "correct" : ret < -FLAT_BAND ? "incorrect" : "flat";
   } else if (input.direction === "bearish") {
-    directional = ret < -0.005 ? "correct" : ret > 0.005 ? "incorrect" : "flat";
+    directional = ret < -FLAT_BAND ? "correct" : ret > FLAT_BAND ? "incorrect" : "flat";
   }
   let targetHit: string | null = null;
   if (input.targetPrice != null) {
@@ -293,6 +305,47 @@ async function evaluateAssetCall(
   if (asOf.getTime() < endAt.getTime()) {
     return finish({ evaluationStatus: "pending", dataQuality: "horizon_not_elapsed" });
   }
+  const [asset] = await db
+    .select({ kind: marketAsset.kind, setId: marketAsset.setId })
+    .from(marketAsset)
+    .where(eq(marketAsset.id, call.assetId!))
+    .limit(1);
+  if (asset?.kind === "set" && asset.setId) {
+    const basket = await setBasketMove(db, { setId: asset.setId, from: call.publishedAt, to: endAt });
+    if (!basket) {
+      const waiting = asOf.getTime() < endAt.getTime() + ASSET_CLOSE_GRACE_DAYS * 86_400_000;
+      return finish(
+        waiting
+          ? { evaluationStatus: "pending", dataQuality: "awaiting_market_data" }
+          : { evaluationStatus: "insufficient_data", dataQuality: "missing_market_data", evaluatedAt: asOf },
+      );
+    }
+    // A set has no single price, so the starting and ending prices stay empty.
+    const graded = grade({
+      direction: call.direction,
+      start: 1,
+      end: 1 + basket.ret,
+      path: basket.path.map((move) => 1 + move),
+      targetPrice: null,
+      targetPercent: call.targetPercent,
+    });
+    return finish({
+      evaluationStatus: "evaluated",
+      returnPct: graded.ret.toFixed(6),
+      directionalCorrect: graded.directional,
+      targetHit: graded.targetHit,
+      maxFavorableExcursion: graded.mfe.toFixed(6),
+      maxAdverseExcursion: graded.mae.toFixed(6),
+      dataQuality: [
+        input.defaultHorizon ? "complete_default_horizon" : "complete",
+        `set_card_median_n${basket.printings}`,
+        basket.startAfterCall ? "start_after_call" : null,
+      ]
+        .filter(Boolean)
+        .join("+"),
+      evaluatedAt: asOf,
+    });
+  }
   const startRow = call.priceAtCall == null ? await assetPriceAt(db, { assetId: call.assetId!, at: call.publishedAt }) : null;
   const startPrice = call.priceAtCall ?? startRow?.price ?? null;
   const window = await assetPricesBetween(db, { assetId: call.assetId!, from: call.publishedAt, to: endAt });
@@ -333,6 +386,79 @@ async function evaluateAssetCall(
     dataQuality: input.defaultHorizon ? "complete_default_horizon" : "complete",
     evaluatedAt: asOf,
   });
+}
+
+/**
+ * How a set's cards moved between `from` and `to`: the median of each card's
+ * own move, over the set's raw cards with a USD market price at both ends. A
+ * card's start is its newest price in the 2 days up to `from` (or, failing
+ * that, its first in the 2 days after); its close is its newest price in the
+ * 7 days up to `to`. Nothing after `to` is read. `path` is the median move on
+ * each day in between, for the best and worst point of the call. Null when
+ * fewer than SET_BASKET_MIN_PRINTINGS cards qualify.
+ */
+export async function setBasketMove(db: Database, input: { setId: string; from: Date; to: Date }) {
+  const fromIso = input.from.toISOString();
+  const toIso = input.to.toISOString();
+  const rows = (await db.execute(sql`
+    WITH r AS (
+      SELECT m.printing_id, m.observed_at, m.price::double precision AS price
+      FROM tcg_market_snapshot m
+      JOIN tcg_printing p ON p.id = m.printing_id
+      WHERE p.set_id = ${input.setId}
+        AND m.price_type = 'reference'
+        AND m.grading_company IS NULL
+        AND m.outlier_flag = false
+        AND m.currency = 'USD'
+        AND m.price > 0
+        AND m.observed_at > ${fromIso}::timestamptz - interval '2 days'
+        AND m.observed_at <= ${toIso}::timestamptz
+    ),
+    before_post AS (
+      SELECT DISTINCT ON (printing_id) printing_id, price, false AS after_call
+      FROM r WHERE observed_at <= ${fromIso}::timestamptz
+      ORDER BY printing_id, observed_at DESC
+    ),
+    after_post AS (
+      SELECT DISTINCT ON (printing_id) printing_id, price, true AS after_call
+      FROM r
+      WHERE observed_at > ${fromIso}::timestamptz
+        AND observed_at <= least(${fromIso}::timestamptz + interval '2 days', ${toIso}::timestamptz)
+        AND printing_id NOT IN (SELECT printing_id FROM before_post)
+      ORDER BY printing_id, observed_at ASC
+    ),
+    s AS (SELECT * FROM before_post UNION ALL SELECT * FROM after_post),
+    c AS (
+      SELECT DISTINCT ON (printing_id) printing_id, price
+      FROM r WHERE observed_at >= ${toIso}::timestamptz - interval '7 days'
+      ORDER BY printing_id, observed_at DESC
+    ),
+    basket AS (
+      SELECT s.printing_id, s.price AS start, c.price AS close, s.after_call FROM s JOIN c USING (printing_id)
+    ),
+    days AS (
+      SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY r.price / b.start - 1) AS move
+      FROM r JOIN basket b USING (printing_id)
+      WHERE r.observed_at > ${fromIso}::timestamptz
+      GROUP BY date_trunc('day', r.observed_at)
+      ORDER BY date_trunc('day', r.observed_at)
+    )
+    SELECT
+      (SELECT count(*)::int FROM basket) AS printings,
+      (SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY close / start - 1) FROM basket) AS ret,
+      (SELECT bool_or(after_call) FROM basket) AS start_after_call,
+      (SELECT coalesce(array_agg(move), '{}') FROM days) AS path
+  `)) as unknown;
+  const row = (Array.isArray(rows) ? rows : (rows as { rows: unknown[] }).rows)[0] as
+    | { printings: number; ret: number | string | null; start_after_call: boolean | null; path: (number | string)[] | null }
+    | undefined;
+  if (!row || Number(row.printings) < SET_BASKET_MIN_PRINTINGS || row.ret == null) return null;
+  return {
+    printings: Number(row.printings),
+    ret: Number(row.ret),
+    path: (row.path ?? []).map(Number),
+    startAfterCall: row.start_after_call === true,
+  };
 }
 
 export async function getOutcome(db: Database, callId: string) {

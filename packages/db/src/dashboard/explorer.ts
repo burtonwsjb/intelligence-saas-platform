@@ -1097,7 +1097,7 @@ export type CreatorTrackRecord = {
   unmatched: number;
 };
 
-/** Counts for the creator's call record. Correct/incorrect only count evaluated directional calls. */
+/** Counts for the creator's call record. Correct/incorrect only count evaluated directional calls; a flat result is incorrect. */
 export async function getCreatorTrackRecord(db: Database, creatorId: string): Promise<CreatorTrackRecord> {
   const rows = asRows(
     await db.execute(sql`
@@ -1105,7 +1105,7 @@ export async function getCreatorTrackRecord(db: Database, creatorId: string): Pr
         count(*)::int AS total,
         count(*) FILTER (WHERE o.evaluation_status = 'evaluated')::int AS evaluated,
         count(*) FILTER (WHERE o.evaluation_status = 'evaluated' AND o.directional_correct = 'correct')::int AS correct,
-        count(*) FILTER (WHERE o.evaluation_status = 'evaluated' AND o.directional_correct = 'incorrect')::int AS incorrect,
+        count(*) FILTER (WHERE o.evaluation_status = 'evaluated' AND o.directional_correct IN ('incorrect', 'flat'))::int AS incorrect,
         count(*) FILTER (WHERE (cc.printing_id IS NOT NULL OR cc.asset_id IS NOT NULL)
           AND (o.id IS NULL OR o.evaluation_status = 'pending'))::int AS pending,
         count(*) FILTER (WHERE cc.printing_id IS NULL AND cc.asset_id IS NULL)::int AS unmatched

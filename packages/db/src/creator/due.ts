@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import type { Database } from "../client.js";
-import { recomputeCreatorAuthority } from "./authority.js";
+import { AUTHORITY_VERSION, recomputeCreatorAuthority } from "./authority.js";
 import { DEFAULT_EVALUATION_DAYS, evaluateCreatorCallOutcome } from "./outcomes.js";
 
 function rowsOf<T>(result: unknown): T[] {
@@ -85,8 +85,9 @@ export async function scoreDueCreatorCalls(
     }
   }
   // Creators whose newest scored call is newer than their newest authority
-  // snapshot. Read from the database rather than this run, so a creator
-  // deferred by the batch limit is picked up on the next run.
+  // snapshot, or whose snapshot is from an older formula. Read from the
+  // database rather than this run, so a creator deferred by the batch limit
+  // is picked up on the next run.
   const stale = rowsOf<{ creator_id: string }>(await db.execute(sql`
     SELECT c.creator_id
     FROM creator_call c
@@ -94,8 +95,15 @@ export async function scoreDueCreatorCalls(
     WHERE o.evaluation_status = 'evaluated'
     GROUP BY c.creator_id
     HAVING max(o.evaluated_at) > COALESCE(
-      (SELECT max(s.created_at) FROM creator_authority_slice s WHERE s.creator_id = c.creator_id),
-      '-infinity'::timestamptz)
+        (SELECT max(s.created_at) FROM creator_authority_slice s WHERE s.creator_id = c.creator_id),
+        '-infinity'::timestamptz)
+      -- A record built by an older formula is rebuilt with the current one.
+      OR EXISTS (
+        SELECT 1 FROM (
+          SELECT s.formula_version FROM creator_authority_slice s
+          WHERE s.creator_id = c.creator_id
+          ORDER BY s.created_at DESC, s.id DESC LIMIT 1
+        ) latest WHERE latest.formula_version <> ${AUTHORITY_VERSION})
     ORDER BY max(o.evaluated_at) ASC, c.creator_id ASC
     LIMIT ${authorityLimit + 1}
   `));

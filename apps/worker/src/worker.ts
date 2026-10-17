@@ -19,6 +19,8 @@ import {
   runYoutubeBackfill,
   scoreDueCreatorCalls,
   syncSealedProducts,
+  syncSetAssets,
+  rescanAssetCalls,
   syncTccPriceHistory,
   retryUnboundDetectedMentions,
   traceSourcePost,
@@ -35,6 +37,7 @@ import {
   type TranscriptFetcher,
   type WebBackfillReport,
   type MentionRetryReport,
+  type AssetCallRescanReport,
   type WebFeedSyncReport,
   type YoutubeBackfillReport,
 } from "@isp/db";
@@ -183,6 +186,53 @@ export async function runSealedCatalogSync(db: Database) {
     return report;
   } catch (error) {
     logLoopFailure("worker.sealed_catalog_failed", "sealed_catalog", error);
+    return null;
+  }
+}
+
+/** Postgres check_violation: market_asset rejects kind 'set' until migration 0034 is applied. */
+function isCheckViolation(error: unknown) {
+  const code = (error as { code?: unknown; cause?: { code?: unknown } } | null)?.code ?? (error as { cause?: { code?: unknown } } | null)?.cause?.code;
+  return code === "23514";
+}
+
+/**
+ * Adds a set asset for any new set, so posts that call a whole set become
+ * calls. Database only. Skips (logged) until migration 0034 is applied.
+ */
+export async function runSetCatalogSync(db: Database) {
+  try {
+    const report = await withPlatformContext(db, (scoped) => syncSetAssets(scoped));
+    if (report.added > 0) logQueueEvent("info", "worker.set_catalog", { status: "ok", added: report.added });
+    return report;
+  } catch (error) {
+    if (isCheckViolation(error)) {
+      logQueueEvent("info", "worker.set_catalog", { status: "skipped", reason: "migration_0034_missing" });
+      return null;
+    }
+    logLoopFailure("worker.set_catalog_failed", "set_catalog", error);
+    return null;
+  }
+}
+
+/**
+ * Reads set and sealed-product calls out of posts stored before those assets
+ * existed, a bounded batch per run behind a cursor. Database only.
+ */
+export async function runAssetCallRescan(db: Database): Promise<AssetCallRescanReport | null> {
+  try {
+    const report = await rescanAssetCalls(db);
+    if (report.scanned > 0) {
+      logQueueEvent("info", "worker.asset_call_rescan", {
+        status: "completed",
+        scanned: report.scanned,
+        calls_created: report.callsCreated,
+        failed: report.failed,
+      });
+    }
+    return report;
+  } catch (error) {
+    logLoopFailure("worker.asset_call_rescan_failed", "asset_call_rescan", error);
     return null;
   }
 }
@@ -712,7 +762,7 @@ export function startWorker(options?: {
   });
 
   // Hourly, and once a minute after startup: the TCG Card Central card
-  // catalog, sealed products for any new set, transcript card mentions for
+  // catalog, sealed products and a set asset for any new set, transcript card mentions for
   // new YouTube videos (when a transcript provider is configured), posts from
   // registered influencer websites (when PROVIDER_WEB_FEED_MODE=live), the
   // 12-month YouTube and website backfills (when their *_BACKFILL_DAYS are
@@ -724,11 +774,13 @@ export function startWorker(options?: {
     }
     void runTccCatalogImport(db, env)
       .then(() => runSealedCatalogSync(db))
+      .then(() => runSetCatalogSync(db))
       .then(() => runTranscriptBackfill(db, env))
       .then(() => runWebFeedSync(db, env))
       .then(() => runYoutubeUploadsBackfill(db, env))
       .then(() => runWebSitemapBackfill(db, env))
       .then(() => runMentionRetry(db))
+      .then(() => runAssetCallRescan(db))
       .then(() => runPostTrace(db, env))
       .then(() => runPriceHistory(db, env))
       .then(() => runCallScoring(db))
