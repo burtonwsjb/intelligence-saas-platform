@@ -16,7 +16,7 @@ EXCEPTION
 END;
 $$;
 
--- outcome.v2 calls a move of less than 1% either way "flat" (it was 0.5%), and a
+-- outcome.v2 calls a move within 2% either way "flat" (it was 0.5%), and a
 -- call that said up or down but stayed flat now counts against the creator.
 -- Regrade already scored calls with the new band so old and new agree.
 UPDATE "creator_call_outcome" o
@@ -26,5 +26,5 @@ WHERE c.id = o.call_id
   AND o.evaluation_status = 'evaluated'
   AND c.direction IN ('bullish', 'bearish')
   AND o.return_pct IS NOT NULL
-  AND abs(o.return_pct) < 0.01
+  AND abs(o.return_pct) <= 0.02
   AND o.directional_correct IN ('correct', 'incorrect');

@@ -239,6 +239,13 @@
       "when": 33,
       "tag": "0034_set_calls",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 34,
+      "tag": "0035_flat_band_one_percent",
+      "breakpoints": true
     }
   ]
 }
