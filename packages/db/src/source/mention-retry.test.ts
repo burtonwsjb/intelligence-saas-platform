@@ -197,6 +197,33 @@ describe("website mentions of a card printed in several languages", () => {
     expect(rows.find((row) => row.sentiment === before!.sentiment)).toBeTruthy();
   });
 
+  it("falls back to the post's calls when neither the mention nor its own call says anything", async () => {
+    const { db, printing } = await setup();
+    const mhr = printing("130/094", "en");
+    const range = { from: new Date("2026-09-20T00:00:00Z"), to: new Date("2026-10-20T00:00:00Z") };
+    const [mention] = await db.select().from(sourceMention).where(eq(sourceMention.rawEntityText, "Mega Charizard X ex 125/094"));
+    const calls = await db.select().from(creatorCall).where(eq(creatorCall.contentId, mention!.contentId));
+    expect(calls.some((call) => call.direction === "bullish")).toBe(true);
+    // A recap mention of another printing in the same post, with no analysis and no call of its own.
+    const recapId = `${mention!.id}_recap`;
+    await db.insert(sourceMention).values({ ...mention!, id: recapId, normalizedEntityText: "recap", sentiment: "unknown" });
+    await persistResolution(db, {
+      subjectType: "mention",
+      subjectId: recapId,
+      mentionId: recapId,
+      status: "exact",
+      targetLayer: "printing",
+      chosenPrintingId: mhr,
+      chosenConceptId: null,
+      confidence: 1,
+      signals: {},
+      candidates: [],
+    });
+    const rows = (await listSentimentEvidence(db, [mhr], range)).filter((row) => row.contentId === mention!.contentId);
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every((row) => row.sentiment === "positive")).toBe(true);
+  });
+
   it("falls back to the creator call's direction when the mention has no readable sentiment", async () => {
     const { db, printing } = await setup();
     const sir = printing("125/094", "en");

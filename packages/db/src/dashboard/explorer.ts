@@ -755,6 +755,15 @@ const MENTION_SENTIMENT = sql.raw(`COALESCE(NULLIF(sm.sentiment, 'unknown'), (
   SELECT CASE cc.direction WHEN 'bullish' THEN 'positive' WHEN 'bearish' THEN 'negative' WHEN 'neutral' THEN 'neutral' END
   FROM creator_call cc WHERE cc.mention_id = sm.id
   ORDER BY cc.created_at DESC, cc.id DESC LIMIT 1
+), (
+  -- Last resort: the post's own stance, the most common direction among the
+  -- calls made in the same post (a price recap paragraph reads as nothing).
+  SELECT CASE calls.direction WHEN 'bullish' THEN 'positive' WHEN 'bearish' THEN 'negative' WHEN 'neutral' THEN 'neutral' END
+  FROM (
+    SELECT cc.direction, count(*) AS n FROM creator_call cc
+    WHERE cc.content_id = sm.content_id AND cc.direction IN ('bullish', 'bearish', 'neutral')
+    GROUP BY cc.direction ORDER BY n DESC, cc.direction LIMIT 1
+  ) calls
 ), 'unknown')`);
 
 export async function listSentimentEvidence(
