@@ -26,7 +26,16 @@ import { callGradeFromEvidence } from "./grade.js";
 import { marketAsset } from "../schema/asset.js";
 import { ALPHA_METHOD_VERSION } from "../analytics/catalog.js";
 
-export const AUTHORITY_VERSION = "authority.v1";
+export const AUTHORITY_VERSION = "authority.v2";
+
+/**
+ * Outcomes that count toward a creator's record: right, wrong, or flat. A call
+ * that said up or down while the price stagnated was not right, so flat counts
+ * as a miss. Calls with no direction (watch, hold) never count.
+ */
+function scoredDirection(value: string | null) {
+  return value === "correct" || value === "incorrect" || value === "flat";
+}
 /** game_key on authority slices built from non-card asset calls. */
 export const ASSET_SLICE_GAME_KEY = "asset";
 export const BENCHMARK_REQUIREMENT = "phase_13_language_era_set_tier_index";
@@ -136,7 +145,7 @@ export async function recomputeCreatorAuthority(db: Database, creatorId: string,
   const snapshots = [];
   for (const [id, members] of buckets) {
     const parts = id.split("|");
-    const directional = members.filter((row) => row.outcome.directionalCorrect === "correct" || row.outcome.directionalCorrect === "incorrect");
+    const directional = members.filter((row) => scoredDirection(row.outcome.directionalCorrect));
     const successes = directional.filter((row) => row.outcome.directionalCorrect === "correct").length;
     const n = directional.length;
     if (n === 0 && members.length === 0) {
@@ -155,7 +164,7 @@ export async function recomputeCreatorAuthority(db: Database, creatorId: string,
     });
     const recencyAcc =
       recency.length === 0 ? null : recency.reduce((sum, row) => sum + row.w * row.hit, 0) / recency.reduce((sum, row) => sum + row.w, 0);
-    const stated = members.filter((row) => row.call.statedConfidence != null && (row.outcome.directionalCorrect === "correct" || row.outcome.directionalCorrect === "incorrect"));
+    const stated = members.filter((row) => row.call.statedConfidence != null && scoredDirection(row.outcome.directionalCorrect));
     const calibration =
       stated.length === 0
         ? null
@@ -225,6 +234,7 @@ export async function recomputeCreatorAuthority(db: Database, creatorId: string,
         unresolved_excluded: true,
         recency_half_life_days: 180,
         early_call_version: "early_call.v1",
+        flat_counts_as_miss: true,
       },
     };
     await db.insert(creatorAuthoritySlice).values(snapshot);

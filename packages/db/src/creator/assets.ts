@@ -38,6 +38,15 @@ export function matchAssets<T extends { id: string; aliases: string[] }>(text: s
   return matched;
 }
 
+/**
+ * A post that names a sealed product ("Ascended Heroes Booster Box") also
+ * names its set; the call is about the product, so the set is dropped.
+ */
+export function preferProducts<T extends { kind: string; setId: string | null }>(assets: T[]): T[] {
+  const productSets = new Set(assets.filter((asset) => asset.kind === "sealed" && asset.setId).map((asset) => asset.setId));
+  return assets.filter((asset) => asset.kind !== "set" || !productSets.has(asset.setId));
+}
+
 /** The asset a topic is about, when the whole topic is one of its names (for example "Bitcoin" or "BTC"). */
 export async function findAssetForTopic(db: Database, query: string): Promise<MarketAssetRow | null> {
   const needle = query.trim().toLowerCase();
@@ -92,11 +101,13 @@ export async function extractAssetCallsFromContent(
   db: Database,
   contentId: string,
   extractor: CreatorCallExtractor = new DeterministicCreatorCallExtractor(),
+  /** Active assets, when the caller already loaded them for many posts. */
+  activeAssets?: MarketAssetRow[],
 ) {
   const [content] = await db.select().from(sourceContent).where(eq(sourceContent.id, contentId)).limit(1);
   if (!content) throw new Error("source content not found.");
   const text = [content.title, content.summary, content.excerpt].filter(Boolean).join(" ");
-  const assets = matchAssets(text, await listActiveAssets(db)).slice(0, ASSET_MATCHES_PER_CONTENT);
+  const assets = preferProducts(matchAssets(text, activeAssets ?? (await listActiveAssets(db)))).slice(0, ASSET_MATCHES_PER_CONTENT);
   if (assets.length === 0) return [];
   const candidate = await extractor.extract({ text });
   if (!candidate) return assets.map((asset) => ({ assetId: asset.id, status: "not_a_call" as const }));
@@ -145,6 +156,7 @@ export async function extractAssetCallsFromContent(
       evidence: {
         extractor_evidence: candidate.evidence,
         asset_key: asset.assetKey,
+        ...(asset.kind === "set" ? { scored_on: "set_card_median" } : {}),
         matched_by: "alias",
         published_at: content.publishedAt.toISOString(),
       },

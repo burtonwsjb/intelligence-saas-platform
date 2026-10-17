@@ -34,6 +34,7 @@ export function CallOutcomeBadge({
   if (outcomeStatus === "evaluated") {
     if (directionalCorrect === "correct") return <StatusBadge tone="good" label="Came true" />;
     if (directionalCorrect === "incorrect") return <StatusBadge tone="warn" label="Did not come true" />;
+    if (directionalCorrect === "flat") return <StatusBadge tone="warn" label="Price stayed flat" />;
     return <Badge>Evaluated, no clear direction</Badge>;
   }
   if (outcomeStatus === "insufficient_data") return <Badge>Not enough price data</Badge>;

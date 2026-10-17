@@ -120,7 +120,7 @@ export async function getCreatorLeaderboard(
       per_creator AS (
         SELECT creator_id,
           count(*) AS calls_made,
-          count(*) FILTER (WHERE evaluation_status = 'evaluated' AND directional_correct IN ('correct', 'incorrect')) AS calls_evaluated,
+          count(*) FILTER (WHERE evaluation_status = 'evaluated' AND directional_correct IN ('correct', 'incorrect', 'flat')) AS calls_evaluated,
           count(*) FILTER (WHERE evaluation_status = 'evaluated' AND directional_correct = 'correct') AS came_true,
           max(published_at) AS last_call_at
         FROM calls GROUP BY creator_id

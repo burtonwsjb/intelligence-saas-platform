@@ -402,7 +402,7 @@ export function scoreFromInputs(input: ScoreInputs) {
     explanations.push({
       code: "creator_consensus",
       text: `authority-weighted creator consensus ${consensus.raw! >= 0 ? "bullish" : "bearish"} (n=${consensus.n})`,
-      refs: ["authority.v1"],
+      refs: ["authority.v2"],
     });
   }
   explanations.push({

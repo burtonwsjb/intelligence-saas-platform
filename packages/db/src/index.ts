@@ -359,7 +359,14 @@ export {
   type TopicVoice,
   type TopicWindow,
 } from "./topics/topics.js";
-export { DEFAULT_EVALUATION_DAYS, evaluateCreatorCallOutcome, earlyCallScore } from "./creator/outcomes.js";
+export {
+  DEFAULT_EVALUATION_DAYS,
+  FLAT_BAND,
+  SET_BASKET_MIN_PRINTINGS,
+  evaluateCreatorCallOutcome,
+  earlyCallScore,
+  setBasketMove,
+} from "./creator/outcomes.js";
 export { scoreDueCreatorCalls, type DueCallScoringReport } from "./creator/due.js";
 export {
   ASSET_CALL_RESOLUTION,
@@ -381,6 +388,7 @@ export {
   syncSealedProducts,
   type SealedProductType,
 } from "./tcg/sealed.js";
+export { setAliasCandidates, setAssetKey, syncSetAssets } from "./tcg/set-assets.js";
 export {
   AssetPriceInputError,
   ingestAssetPrice,
@@ -440,6 +448,13 @@ export {
   retryUnboundDetectedMentions,
   type MentionRetryReport,
 } from "./source/mention-retry.js";
+export {
+  ASSET_CALL_RESCAN_DEFAULT_LIMIT,
+  ASSET_CALL_RESCAN_KEY,
+  ASSET_CALL_RESCAN_TRIGGER,
+  rescanAssetCalls,
+  type AssetCallRescanReport,
+} from "./creator/asset-call-rescan.js";
 export { traceSourcePost } from "./source/post-trace.js";
 export {
   WEB_FEED_BOT_TOKEN,

@@ -232,6 +232,13 @@
       "when": 32,
       "tag": "0033_chart_sentiment",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 33,
+      "tag": "0034_set_calls",
+      "breakpoints": true
     }
   ]
 }
