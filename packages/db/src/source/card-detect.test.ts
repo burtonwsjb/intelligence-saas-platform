@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCardNameIndex, collectorNumberAfter, detectCardMentions, detectionKey } from "./card-detect.js";
+import { buildCardNameIndex, collectorNumberAfter, detectCardMentions, detectionKey, rarityNear } from "./card-detect.js";
 
 const index = buildCardNameIndex({
   cards: [
@@ -14,11 +14,13 @@ const index = buildCardNameIndex({
     { name: "Fire", gameKey: "pokemon" },
     { name: "Monkey D. Luffy", gameKey: "one_piece" },
     { name: "Boss's Orders", gameKey: "pokemon" },
+    { name: "Mega Charizard X ex", gameKey: "pokemon" },
   ],
   sets: [
     { key: "obf", name: "Obsidian Flames", gameKey: "pokemon" },
     { key: "sv1", name: "Scarlet & Violet", gameKey: "pokemon" },
     { key: "op01", name: "Romance Dawn", gameKey: "one_piece" },
+    { key: "me02", name: "Phantasmal Flames", gameKey: "pokemon" },
   ],
 });
 
@@ -83,5 +85,28 @@ describe("detectCardMentions", () => {
   it("returns nothing for empty text or an empty catalog", () => {
     expect(detectCardMentions("", index)).toEqual([]);
     expect(detectCardMentions("charizard ex", buildCardNameIndex({ cards: [], sets: [] }))).toEqual([]);
+  });
+});
+
+describe("rarityNear", () => {
+  it("reads a rarity written right after or right before the card name", () => {
+    const text = "The Mega Charizard X ex SIR from Phantasmal Flames is the chase";
+    const [mention] = detectCardMentions(text, index);
+    expect(mention).toMatchObject({ name: "Mega Charizard X ex", rarity: "Special Illustration Rare", set: { key: "me02" } });
+    expect(detectCardMentions("Mega Charizard X ex 125/094 Special Illustration Rare", index)[0]).toMatchObject({
+      collectorNumber: "125/094",
+      rarity: "Special Illustration Rare",
+    });
+    expect(detectCardMentions("Mega Charizard X ex (Ultra Rare) 109/094", index)[0]).toMatchObject({
+      collectorNumber: "109/094",
+      rarity: "Ultra Rare",
+    });
+    expect(detectCardMentions("the mega hyper rare Mega Charizard X ex", index)[0]!.rarity).toBe("Mega Hyper Rare");
+  });
+
+  it("ignores lowercase abbreviations and rarities that belong to another card", () => {
+    expect(rarityNear("", " ur going to love it")).toBeNull();
+    expect(detectCardMentions("Pikachu SIR and Mega Charizard X ex are up", index).find((m) => m.name === "Mega Charizard X ex")!.rarity).toBeNull();
+    expect(detectCardMentions("Charizard ex is up", index)[0]!.rarity).toBeNull();
   });
 });

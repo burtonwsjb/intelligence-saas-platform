@@ -409,6 +409,7 @@ export function planWebPostSegments(
             card_name: mention.name,
             matched_text: mention.matchedText,
             collector_number: mention.collectorNumber,
+            rarity: mention.rarity,
             set_key: mention.set?.key ?? null,
             set_name: mention.set?.name ?? null,
             game_key: mention.gameKey,

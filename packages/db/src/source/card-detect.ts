@@ -140,6 +140,8 @@ export type DetectedCardMention = {
   end: number;
   gameKey: string | null;
   collectorNumber: string | null;
+  /** A rarity written right before or after the card name ("SIR", "Ultra Rare"), as the catalog spells it. */
+  rarity: string | null;
   set: SetNameSource | null;
 };
 
@@ -251,10 +253,67 @@ export function collectorNumberAfter(text: string): string | null {
 }
 
 /**
+ * Rarities a writer puts next to a card name, mapped to the catalog's
+ * (TCGplayer's) spelling. Abbreviations count only in capitals so ordinary
+ * words ("ur", "ir") are not read as rarities. Longer phrases come first.
+ */
+const RARITIES: Array<{ phrase: string; abbr?: string; rarity: string }> = [
+  { phrase: "special illustration rare", abbr: "SIR", rarity: "Special Illustration Rare" },
+  { phrase: "mega hyper rare", abbr: "MHR", rarity: "Mega Hyper Rare" },
+  { phrase: "shiny ultra rare", rarity: "Shiny Ultra Rare" },
+  { phrase: "shiny rare", rarity: "Shiny Rare" },
+  { phrase: "ace spec rare", rarity: "ACE SPEC Rare" },
+  { phrase: "illustration rare", abbr: "IR", rarity: "Illustration Rare" },
+  { phrase: "hyper rare", abbr: "HR", rarity: "Hyper Rare" },
+  { phrase: "ultra rare", abbr: "UR", rarity: "Ultra Rare" },
+  { phrase: "double rare", rarity: "Double Rare" },
+  { phrase: "secret rare", rarity: "Secret Rare" },
+];
+const RARITY_LEAD = /^[\s,:(–-]*(?:(?:the|an?)\s+)?/i;
+const RARITY_TAIL = /[\s,:)–-]*$/;
+
+/** The rarity at the very start (or end) of `text`, and how many characters it took. */
+function rarityAt(text: string, anchor: "start" | "end"): { rarity: string; length: number } | null {
+  for (const entry of RARITIES) {
+    const phrase = entry.phrase.replace(/ /g, "[\\s-]+");
+    const forms = [new RegExp(`\\b${phrase}\\b`, "i")];
+    if (entry.abbr) forms.push(new RegExp(`\\b${entry.abbr}\\b`));
+    for (const form of forms) {
+      const re =
+        anchor === "start"
+          ? new RegExp(`${RARITY_LEAD.source}${form.source}\\)?`, form.flags)
+          : new RegExp(`${form.source}${RARITY_TAIL.source}`, form.flags);
+      const match = text.match(re);
+      if (match) return { rarity: entry.rarity, length: match[0].length };
+    }
+  }
+  return null;
+}
+
+/**
+ * The rarity written next to a card name: right after it ("Mega Charizard X
+ * ex SIR", "… ex 125/094 Special Illustration Rare") or right before it
+ * ("the SIR Mega Charizard X ex"). Anything further away is not read, so a
+ * rarity named for another card in the same sentence is not taken.
+ */
+export function rarityNear(before: string, after: string): string | null {
+  const head = after.slice(0, 64);
+  const direct = rarityAt(head, "start");
+  if (direct) return direct.rarity;
+  const number = head.match(/^[\s,:(-]*(?:(?:number|num|no\.?|#)\s*)?[a-z]{0,2}\d{1,3}(?:\s*(?:\/|out of|over|of)\s*[a-z]{0,2}\d{1,3})?\b\)?/i);
+  if (number) {
+    const afterNumber = rarityAt(head.slice(number[0].length), "start");
+    if (afterNumber) return afterNumber.rarity;
+  }
+  return rarityAt(before.slice(-40), "end")?.rarity ?? null;
+}
+
+/**
  * Card mentions in `text`. Set names are matched first so a set ("Obsidian
  * Flames") never counts as a card. Each card takes the nearest set name in
- * the same text from the same game, and a collector number written right
- * after it. The same card and number is reported once.
+ * the same text from the same game, a collector number written right after
+ * it and a rarity written right next to it. The same card and number is
+ * reported once.
  */
 export function detectCardMentions(text: string, index: CardNameIndex): DetectedCardMention[] {
   if (!text || index.cards.size === 0) return [];
@@ -281,7 +340,10 @@ export function detectCardMentions(text: string, index: CardNameIndex): Detected
     }
     const gameKey = set?.gameKey ?? (games.size === 1 ? card.entries[0]!.gameKey : null);
     const entry = card.entries.find((row) => row.gameKey === gameKey) ?? card.entries[0]!;
-    const collectorNumber = collectorNumberAfter(text.slice(end));
+    const rarityAfter = rarityAt(text.slice(end, end + 64), "start");
+    const collectorNumber =
+      collectorNumberAfter(text.slice(end)) ?? (rarityAfter ? collectorNumberAfter(text.slice(end + rarityAfter.length)) : null);
+    const rarity = rarityNear(text.slice(0, start), text.slice(end));
     const dedupe = `${card.key}|${collectorNumber ?? ""}`;
     if (seen.has(dedupe)) continue;
     seen.add(dedupe);
@@ -292,6 +354,7 @@ export function detectCardMentions(text: string, index: CardNameIndex): Detected
       end,
       gameKey,
       collectorNumber,
+      rarity,
       set,
     });
   }
