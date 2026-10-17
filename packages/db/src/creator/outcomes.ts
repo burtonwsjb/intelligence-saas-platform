@@ -10,12 +10,12 @@ import { callGradeFromEvidence, type CallGrade } from "./grade.js";
 export const OUTCOME_VERSION = "outcome.v2";
 
 /**
- * A move within this share of the starting price either way is "flat": the
- * price stagnated. Card prices wander a little day to day, so a call that said
- * up or down needs a real move to count as right. A flat result counts
- * against the call (see creator/authority.ts).
+ * A move smaller than this share of the starting price either way is "flat":
+ * the price stagnated. A move of this size or more counts as up or down. A
+ * flat result counts against a call that said up or down (see
+ * creator/authority.ts).
  */
-export const FLAT_BAND = 0.02;
+export const FLAT_BAND = 0.01;
 
 /** A set call is scored only when at least this many of the set's cards have a price at both ends. */
 export const SET_BASKET_MIN_PRINTINGS = 3;
@@ -259,9 +259,9 @@ function grade(input: {
   const mae = path.length ? Math.min(...path, 0) : 0;
   let directional = "not_applicable";
   if (input.direction === "bullish") {
-    directional = ret > FLAT_BAND ? "correct" : ret < -FLAT_BAND ? "incorrect" : "flat";
+    directional = ret >= FLAT_BAND ? "correct" : ret <= -FLAT_BAND ? "incorrect" : "flat";
   } else if (input.direction === "bearish") {
-    directional = ret < -FLAT_BAND ? "correct" : ret > FLAT_BAND ? "incorrect" : "flat";
+    directional = ret <= -FLAT_BAND ? "correct" : ret >= FLAT_BAND ? "incorrect" : "flat";
   }
   let targetHit: string | null = null;
   if (input.targetPrice != null) {
