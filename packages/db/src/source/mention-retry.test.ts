@@ -106,9 +106,10 @@ describe("website mentions of a card printed in several languages", () => {
     expect((await latestAttempt(db, sir.id)).status).toBe("ambiguous");
 
     const first = await retryUnboundDetectedMentions(db);
-    // The SIR binds again; the title mention (no number) stays unbound. Its
-    // call already exists from the first read, so nothing is duplicated.
-    expect(first).toEqual({ scanned: 3, retried: 2, bound: 1, callsCreated: 0 });
+    // The SIR binds again. The title mention ("Mega Charizard X ex SIR") was
+    // already bound by its rarity on the first read, so only the SIR is
+    // retried. Its call already exists, so nothing is duplicated.
+    expect(first).toEqual({ scanned: 3, retried: 1, bound: 1, callsCreated: 0 });
     expect(await db.select().from(creatorCall).where(eq(creatorCall.mentionId, sir.id))).toHaveLength(1);
     expect(await latestAttempt(db, sir.id)).toMatchObject({ status: "exact", chosenPrintingId: printing("125/094", "en") });
     const [run] = await db.select().from(providerSyncRun).where(eq(providerSyncRun.trigger, MENTION_RETRY_TRIGGER));
