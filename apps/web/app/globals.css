@@ -1921,3 +1921,58 @@ textarea {
     font-size: 0.6875rem;
   }
 }
+
+/* ---------- Legal documents ---------- */
+
+.shell-main:has(.legal) {
+  max-width: 46rem;
+}
+
+.legal {
+  line-height: 1.65;
+}
+
+.legal h2 {
+  font-size: var(--text-l);
+  font-weight: 640;
+  letter-spacing: -0.01em;
+  margin: var(--space-6) 0 var(--space-2);
+}
+
+.legal p,
+.legal li {
+  color: var(--ink-2);
+}
+
+.legal ul {
+  padding-left: 1.25rem;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.legal a {
+  color: var(--accent-ink);
+}
+
+.legal-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-5);
+}
+
+.legal .legal-nav a {
+  font-size: var(--text-s);
+  color: var(--ink-2);
+  text-decoration: none;
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  border-radius: 999px;
+  padding: var(--space-1) var(--space-3);
+}
+
+.legal .legal-nav a[aria-current="page"] {
+  color: var(--ink-inverse);
+  background: var(--ink-1);
+  border-color: var(--ink-1);
+}
