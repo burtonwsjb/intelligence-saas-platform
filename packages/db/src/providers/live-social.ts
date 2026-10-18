@@ -358,7 +358,7 @@ export class LiveYoutubeSourceProvider implements YoutubeSourceProvider {
   async resolveChannel(input: string): Promise<{ external_account_id: string; display_name: string; handle: string | null } | null> {
     const params = new URLSearchParams({ part: "snippet" });
     if (/^UC[A-Za-z0-9_-]{22}$/.test(input)) params.set("id", input);
-    else if (/^@[A-Za-z0-9._-]{3,30}$/.test(input)) params.set("forHandle", input);
+    else if (/^@[\p{L}\p{N}._-]{3,30}$/u.test(input)) params.set("forHandle", input);
     else throw new ProviderHttpError({ status: 0, errorClass: "invalid_account" });
     const response = await this.transport.fetch(`https://www.googleapis.com/youtube/v3/channels?${params.toString()}`, {
       headers: { accept: "application/json", "x-goog-api-key": this.auth.apiKey },
