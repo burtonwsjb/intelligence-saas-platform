@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import {
+  classifyScheduledWorkerHeartbeat,
   classifyWorkerHeartbeat,
   collectSystemHealth,
   readMigrationSql,
@@ -24,6 +25,16 @@ describe("worker heartbeat health", () => {
     expect(classifyWorkerHeartbeat(undefined, now)).toBe("missing");
     expect(classifyWorkerHeartbeat(new Date("2026-08-29T00:00:50.000Z"), now)).toBe("stale");
     expect(classifyWorkerHeartbeat(new Date("2026-08-29T00:01:30.000Z"), now)).toBe("healthy");
+  });
+
+  it("judges a scheduled worker by the batch it announced, not a 60s pulse", () => {
+    const seen = new Date("2026-08-29T13:00:30.000Z");
+    const next = "2026-08-29T14:00:00.000Z";
+    expect(classifyScheduledWorkerHeartbeat(null, next)).toBe("missing");
+    expect(classifyScheduledWorkerHeartbeat(seen, next, new Date("2026-08-29T13:59:00.000Z"))).toBe("healthy");
+    expect(classifyScheduledWorkerHeartbeat(seen, next, new Date("2026-08-29T14:14:00.000Z"))).toBe("healthy");
+    expect(classifyScheduledWorkerHeartbeat(seen, next, new Date("2026-08-29T14:16:00.000Z"))).toBe("stale");
+    expect(classifyScheduledWorkerHeartbeat(seen, "not-a-date", new Date("2026-08-29T13:59:00.000Z"))).toBe("stale");
   });
 
   it("rolls worker, queue, and provider states into an operator-safe overall status", async () => {

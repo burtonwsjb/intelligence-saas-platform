@@ -101,6 +101,25 @@ export function classifyWorkerHeartbeat(
   return now.getTime() - seen.getTime() > staleAfterMs ? "stale" : "healthy";
 }
 
+/** A scheduled worker reports hourly (or less often), so it is stale only once
+ * it misses the batch it announced, plus a grace period. */
+export const SCHEDULED_HEARTBEAT_GRACE_MS = 15 * 60_000;
+
+export function classifyScheduledWorkerHeartbeat(
+  lastSeenAt: Date | string | null | undefined,
+  nextScheduledAt: string,
+  now = new Date(),
+): WorkerHeartbeatStatus {
+  if (classifyWorkerHeartbeat(lastSeenAt, now, Number.POSITIVE_INFINITY) === "missing") {
+    return "missing";
+  }
+  const next = Date.parse(nextScheduledAt);
+  if (!Number.isFinite(next)) {
+    return classifyWorkerHeartbeat(lastSeenAt, now);
+  }
+  return now.getTime() > next + SCHEDULED_HEARTBEAT_GRACE_MS ? "stale" : "healthy";
+}
+
 export async function collectSystemHealth(db: Database) {
   const [
     games,
@@ -178,7 +197,11 @@ export async function collectSystemHealth(db: Database) {
   const platforms = await db.select().from(sourcePlatform);
   const sources = await db.select().from(sourceDefinition);
   const worker = heartbeat.find((row) => row.workerKey === "ingest") ?? heartbeat[0] ?? null;
-  const workerHeartbeatStatus = classifyWorkerHeartbeat(worker?.lastSeenAt);
+  const workerMetadata = (worker?.metadata ?? {}) as Record<string, unknown>;
+  const workerHeartbeatStatus =
+    workerMetadata.execution_mode === "scheduled" && typeof workerMetadata.next_scheduled_at === "string"
+      ? classifyScheduledWorkerHeartbeat(worker?.lastSeenAt, workerMetadata.next_scheduled_at)
+      : classifyWorkerHeartbeat(worker?.lastSeenAt);
   const queueMetricsErrorClass = readQueueMetricsErrorClass(worker?.metadata);
   const queueHealth = classifyQueueHealth({
     queueDepth: worker?.queueDepth ?? null,

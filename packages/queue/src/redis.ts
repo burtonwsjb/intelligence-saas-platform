@@ -3,6 +3,7 @@ import { QueueUnavailableError } from "./errors.js";
 import { requireRedisUrl } from "./env.js";
 import { REDIS_COMMAND_TIMEOUT_MS } from "./names.js";
 import { withDeadline } from "./recovery.js";
+import { assertRedisPermission, trackPermittedRedisConnection } from "./redis-permission.js";
 
 export type RedisClientRole = "worker" | "queue" | "failFast";
 
@@ -72,11 +73,14 @@ export function createRedisConnection(
   options?: { failFast?: boolean; role?: RedisClientRole },
 ): Redis {
   const { url, ...redisOptions } = createRedisConnectionOptions(env, options);
+  // Hosted Redis is metered: refuse before any socket opens unless the owner's
+  // setting issued a bounded window for this exact environment object.
+  assertRedisPermission(env);
   const redis = new Redis(url, redisOptions);
   redis.on("error", () => {
     // Callers map connection failures to QueueUnavailableError. Do not crash.
   });
-  return redis;
+  return trackPermittedRedisConnection(env, redis);
 }
 
 export async function waitForRedisReady(redis: Redis, timeoutMs = 5_000): Promise<void> {

@@ -73,3 +73,10 @@ export { dispatchPendingOutbox, dispatchPendingPlatformOutbox } from "./dispatch
 export { markJobPermanentlyFailed, processNormalizeJob } from "./process.js";
 export { getIngestJobStatus } from "./status.js";
 export { logQueueEvent, safeLoopErrorFields } from "./logger.js";
+export {
+  assertRedisPermission,
+  redisIsPermitted,
+  redisNeedsPermission,
+  trackPermittedRedisConnection,
+  withMeteredRedisPermission,
+} from "./redis-permission.js";

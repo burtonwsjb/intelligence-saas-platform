@@ -581,6 +581,15 @@ export async function bootstrapRoles(
           REVOKE INSERT, UPDATE, DELETE ON discovery_topic, discovery_run, discovered_creator FROM app_user;
           REVOKE DELETE ON discovery_topic, discovery_run, discovered_creator FROM app_worker;
         END IF;
+        IF to_regclass('public.worker_resource_settings') IS NOT NULL THEN
+          GRANT SELECT ON worker_resource_settings, scheduled_worker_run, scheduled_job_claim TO app_worker;
+          REVOKE INSERT, UPDATE, DELETE ON worker_resource_settings, scheduled_worker_run, scheduled_job_claim FROM app_worker;
+          REVOKE ALL ON worker_resource_settings, scheduled_worker_run, scheduled_job_claim FROM app_user;
+          GRANT EXECUTE ON FUNCTION app.claim_scheduled_run(), app.claim_scheduled_job(text),
+            app.finish_scheduled_job(text, text, text, text, text), app.finish_scheduled_run(text, text, text) TO app_worker;
+          REVOKE EXECUTE ON FUNCTION app.claim_scheduled_run(), app.claim_scheduled_job(text),
+            app.finish_scheduled_job(text, text, text, text, text), app.finish_scheduled_run(text, text, text) FROM app_user;
+        END IF;
         IF to_regclass('public.tenant_creator_list') IS NOT NULL THEN
           GRANT SELECT, INSERT, UPDATE, DELETE ON tenant_creator_list TO app_user;
           GRANT SELECT ON tenant_creator_list TO app_worker;

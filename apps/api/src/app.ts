@@ -18,7 +18,7 @@ import {
   assertQuota,
   processStripeWebhook,
 } from "@isp/billing";
-import { assertRedisAvailable, publishOutboxJob, QueueUnavailableError, type IngestQueue } from "@isp/queue";
+import { assertRedisAvailable, publishOutboxJob, QueueUnavailableError, redisIsPermitted, type IngestQueue } from "@isp/queue";
 import { createMachineAuth, requireScope, type MachinePrincipal } from "./machine-auth.js";
 import { jsonError } from "./errors.js";
 import {
@@ -107,7 +107,10 @@ export function createApiApp(options?: {
       database = "error";
     }
     let redis = "skipped";
-    if (env.REDIS_URL?.trim()) {
+    if (env.REDIS_URL?.trim() && !redisIsPermitted(env)) {
+      // Readiness probes run constantly; never spend metered Redis commands on them.
+      redis = "paused_free_only";
+    } else if (env.REDIS_URL?.trim()) {
       try {
         await assertRedisAvailable(options?.env);
         redis = "ok";
@@ -181,7 +184,8 @@ export function createApiApp(options?: {
             body,
           }),
       );
-      if (accepted.outbox_id) {
+      // Free-only mode leaves the durable outbox row for the scheduled worker batch.
+      if (accepted.outbox_id && redisIsPermitted(env)) {
         try {
           await publishOutboxJob(db, {
             organizationId: machine.organizationId,

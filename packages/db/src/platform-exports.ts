@@ -59,6 +59,7 @@ export {
   classifyPlatformHealth,
   classifyQueueHealth,
   classifyWorkerHeartbeat,
+  classifyScheduledWorkerHeartbeat,
   collectSystemHealth,
   describePlatformConfig,
   operatorGuidanceForHealth,
