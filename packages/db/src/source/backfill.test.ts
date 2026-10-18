@@ -102,9 +102,18 @@ describe("influencer seed plan", () => {
     const plan = planInfluencerSeed(POKEMON_INFLUENCER_SEEDS);
     expect(plan.channels).toHaveLength(POKEMON_INFLUENCER_SEEDS.length);
     const lookups = plan.channels.filter((channel) => channel.input);
-    expect(lookups.map((channel) => [channel.rank, channel.input])).toEqual([
+    expect(lookups.filter((channel) => channel.rank < 100).map((channel) => [channel.rank, channel.input])).toEqual([
       [2, "@dannyphantump"],
       [3, "UCUHYM7gs-GZpRGEsskTEqzQ"],
+    ]);
+    // Every hand-added YouTube creator has a handle to look up, accented ones included.
+    const added = plan.channels.filter((channel) => channel.rank > 101);
+    expect(added).toHaveLength(22);
+    expect(added.every((channel) => channel.input && !channel.skip)).toBe(true);
+    expect(added.find((channel) => channel.name === "Poké Pulls TCG")?.input).toBe("@poképullscollects");
+    expect(added.find((channel) => channel.name === "PokeBeard")?.input).toBe("@pokebeardtcg");
+    expect(plan.sites.filter((site) => site.rank === 101)).toEqual([
+      expect.objectContaining({ domain: "pokeinsider.com", feedUrl: "https://pokeinsider.com/feed/", skip: null }),
     ]);
     expect(plan.channels.find((channel) => channel.rank === 39)?.skip).toBe("custom_url");
     expect(plan.channels.find((channel) => channel.rank === 1)?.skip).toBe("no_handle");

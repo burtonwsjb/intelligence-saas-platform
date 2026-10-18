@@ -35,9 +35,12 @@ import { stableSourceId } from "../source/identity.js";
 import { registerWebFeedSite, webFeedAccountId, WebFeedSiteError } from "../source/web-feed-ingest.js";
 import { ensureCreatorForSourceAccount } from "./ingest.js";
 import { ensureRequestedCreatorMonitored } from "./list.js";
-import { POKEMON_INFLUENCER_SEED_VERSION, POKEMON_INFLUENCER_SEEDS } from "./seed/pokemon-influencers.js";
+import { ADDED_INFLUENCER_SEED_VERSION, ADDED_INFLUENCER_SEEDS } from "./seed/added-influencers.js";
+import { POKEMON_INFLUENCER_SEED_VERSION as CSV_SEED_VERSION, POKEMON_INFLUENCER_SEEDS as CSV_SEEDS } from "./seed/pokemon-influencers.js";
 
-export { POKEMON_INFLUENCER_SEED_VERSION, POKEMON_INFLUENCER_SEEDS } from "./seed/pokemon-influencers.js";
+/** The researched CSV list followed by the hand-added creators. */
+export const POKEMON_INFLUENCER_SEEDS: readonly InfluencerSeedEntry[] = [...CSV_SEEDS, ...ADDED_INFLUENCER_SEEDS];
+export const POKEMON_INFLUENCER_SEED_VERSION = `${CSV_SEED_VERSION}+${ADDED_INFLUENCER_SEED_VERSION}`;
 
 export const INFLUENCER_SEED_TRIGGER = "influencer_seed";
 export const INFLUENCER_SEED_ID_PREFIX = "pis_";
@@ -65,7 +68,8 @@ export type InfluencerSeedEntry = {
 };
 
 const YOUTUBE_CHANNEL_ID = /^UC[A-Za-z0-9_-]{22}$/;
-const YOUTUBE_HANDLE = /^@[A-Za-z0-9._-]{3,30}$/;
+/** YouTube handles may use letters from any script ("@PokéPullsCollects"). */
+const YOUTUBE_HANDLE = /^@[\p{L}\p{N}._-]{3,30}$/u;
 
 export type PlannedSeedChannel = {
   kind: "youtube";
