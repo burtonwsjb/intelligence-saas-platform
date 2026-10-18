@@ -15,7 +15,10 @@ import {
   TCC_NAMESPACE,
   type Database,
 } from "../index.js";
-import { nameSimilarity, primaryScript } from "./identity.js";
+import { FUZZY_PROBABLE_THRESHOLD, nameSimilarity, normalizeMatchText, primaryScript } from "./identity.js";
+import { findNameConcepts, withoutNonCollectorNumbers } from "./resolve.js";
+import { inferSetFromText } from "./signals.js";
+import { insertTcgCardConcept, insertTcgCardNameAlias, insertTcgPrinting, insertTcgSet } from "../tcg/catalog.js";
 
 describe("entity resolution", () => {
   async function setup() {
@@ -305,5 +308,131 @@ describe("entity resolution", () => {
     const again = await listSourceMentions(db, ingested.contentId!);
     expect(again[0]?.metadata).toMatchObject({ resolution_status: "unresolved" });
     expect(again[0]?.id).toBe(mentions[0]!.id);
+  });
+
+  it("infers the longest set name, and set keys only as whole words", () => {
+    const sets = [
+      { canonicalSetKey: "sv1", name: "Scarlet & Violet" },
+      { canonicalSetKey: "svp", name: "Scarlet & Violet Promos" },
+      { canonicalSetKey: "core", name: "Core Set" },
+      { canonicalSetKey: "op01", name: "Romance Dawn" },
+      { canonicalSetKey: "e", name: "" },
+      { canonicalSetKey: "e2", name: "E" },
+      { canonicalSetKey: "ex", name: "Ex" },
+    ];
+    // A one- or two-character key is a letter in prose, never a set mention.
+    expect(inferSetFromText("the price is E and I wait for $600", sets)).toBeUndefined();
+    // Nor is a one- or two-character set name, which would match almost any text.
+    expect(inferSetFromText("Mega Charizard X ex 130/094 is the gold card", sets)).toBeUndefined();
+    // Names match whole words only.
+    expect(inferSetFromText("the score set a record", sets)).toBeUndefined();
+    expect(inferSetFromText("Scarlet & Violet Promos Pikachu", sets)).toBe("svp");
+    expect(inferSetFromText("Scarlet & Violet Pikachu", sets)).toBe("sv1");
+    expect(inferSetFromText("the core of my collection", sets)).toBeUndefined();
+    expect(inferSetFromText("CORE Charizard", sets)).toBe("core");
+    expect(inferSetFromText("op01 Luffy", sets)).toBe("op01");
+    expect(inferSetFromText("top012 Luffy", sets)).toBeUndefined();
+  });
+
+  it("finds name candidates in SQL exactly as scoring every catalog name would", async () => {
+    const client = new PGlite();
+    await client.exec(await readMigrationSql());
+    const db = drizzle(client) as unknown as Database;
+    const names = [
+      "Greninja ex", "Greninja", "Pikachu", "Pikachu V", "Pikachu VMAX", "Charizard ex", "Charizard",
+      "Blue-Eyes White Dragon", "Blue-Eyes Ultimate Dragon", "Dark Magician", "Monkey.D.Luffy",
+      "Roronoa Zoro", "Son Goku", "Mew ex", "Mewtwo", "Nidoran ♀", "Nidoran ♂", "Flabébé", "Professor's Research",
+      "Elemental HERO Shining Phoenix Enforcer", "N's Zoroark ex", "Iono", "Boss's Orders",
+    ];
+    const ids = new Map<string, string>();
+    for (const [index, name] of names.entries()) {
+      const concept = await insertTcgCardConcept(db, { gameKey: "pokemon", conceptKey: `c${index}`, canonicalName: name });
+      ids.set(concept.id, name);
+    }
+    const aliased = await insertTcgCardConcept(db, { gameKey: "pokemon", conceptKey: "alias", canonicalName: "Greninja ex JP" });
+    await insertTcgCardNameAlias(db, { cardId: aliased.id, language: "ja", name: "ゲッコウガex" });
+    const queries = [
+      "Grennja", "greninja", "GRENINJA EX", "pikachu", "Pikachu VMAX!!", "Charzard", "charizard ex 214",
+      "Blue Eyes White Dragon", "blue-eyes", "Dark Magican", "Luffy", "monkey d luffy", "Zoro", "goku", "mew",
+      "Nidoran", "Flabebe", "Professors Research", "ゲッコウガex", "ゲッコウガ", "🔥 Iono 🔥", "Iono🔥",
+      "i would buy english twilight masquerade greninja 214 normal", "Boss Orders", "N Zoroark", "x",
+    ];
+    for (const query of queries) {
+      const expected = new Set<string>();
+      for (const [id, name] of ids) {
+        if (normalizeMatchText(query) === normalizeMatchText(name) || nameSimilarity(query, name) >= FUZZY_PROBABLE_THRESHOLD) {
+          expected.add(id);
+        }
+      }
+      if (nameSimilarity(query, "Greninja ex JP") >= FUZZY_PROBABLE_THRESHOLD || nameSimilarity(query, "ゲッコウガex") >= FUZZY_PROBABLE_THRESHOLD) {
+        expected.add(aliased.id);
+      }
+      expect(new Set(await findNameConcepts(db, query, "pokemon")), query).toEqual(expected);
+    }
+  });
+
+  it("reads the set from the segment a mention was found in, ignoring prices and years there", async () => {
+    const { db, seeded } = await setup();
+    const ingested = await ingestSourceContentRecord(db, {
+      provider: "youtube",
+      provider_record_id: "seg_ctx_video",
+      event_type: "source.content.ingested",
+      account: { external_account_id: "seg_ctx_channel" },
+      content: {
+        external_content_id: "seg_ctx_video",
+        content_type: "video",
+        published_at: "2026-09-01T00:00:00Z",
+        title: "Pikachu pickup",
+        canonical_url: "https://www.youtube.com/watch?v=seg_ctx_video",
+        license_status: "bounded_excerpt",
+        retention_policy: "bounded_excerpt",
+      },
+      segments: [
+        { kind: "timestamp_range", start_ref: "t=60", end_ref: "t=120", excerpt: "it was $40 in 2024, Pikachu 025 from Paldea Evolved" },
+      ],
+      mentions: [{ raw_entity_text: "Pikachu 025", segment_index: 0 }],
+    });
+    const [mention] = await listSourceMentions(db, ingested.contentId!);
+    const resolved = await resolveSourceMention(db, mention!.id);
+    expect(resolved.attempt.inputSignals).toMatchObject({ set: "sv2", collector_number: "025", card_name: "Pikachu 025" });
+    expect(resolved.attempt.status).toBe("exact");
+    expect(resolved.attempt.chosenPrintingId).toBe(seeded.printings.pikachuSv2.id);
+  });
+
+  it("narrows a name-and-set mention to one printing by the rarity written next to it", async () => {
+    const { db } = await setup();
+    const set = await insertTcgSet(db, { gameKey: "pokemon", canonicalSetKey: "me02", name: "Phantasmal Flames", languageScope: "en" });
+    const concept = await insertTcgCardConcept(db, { gameKey: "pokemon", conceptKey: "mega-charizard-x-ex", canonicalName: "Mega Charizard X ex" });
+    const printings = new Map<string, string>();
+    for (const [number, rarity] of [["013/094", "Double Rare"], ["109/094", "Ultra Rare"], ["125/094", "Special Illustration Rare"], ["130/094", "Mega Hyper Rare"]] as const) {
+      const printing = await insertTcgPrinting(db, {
+        cardId: concept.id, setId: set.id, gameKey: "pokemon", conceptKey: concept.conceptKey, setKey: "me02",
+        collectorNumber: number, language: "en", variantKey: "holofoil", rarity,
+      });
+      printings.set(rarity, printing!.id);
+    }
+    const context = "Mega Charizard X ex SIR from Phantasmal Flames keeps climbing";
+
+    const nameOnly = await resolveEntity(db, { subjectType: "provider_reference", subjectId: "m_rarity_none", signals: { card_name: "Mega Charizard X ex", set: "me02", context_text: context } });
+    expect(nameOnly.attempt.status).toBe("ambiguous");
+    expect(nameOnly.attempt.chosenPrintingId).toBeNull();
+
+    const withRarity = await resolveEntity(db, {
+      subjectType: "provider_reference", subjectId: "m_rarity_sir",
+      signals: { card_name: "Mega Charizard X ex", set: "me02", rarity: "special illustration rare", context_text: context },
+    });
+    expect(withRarity.attempt.status).toBe("exact");
+    expect(withRarity.attempt.chosenPrintingId).toBe(printings.get("Special Illustration Rare"));
+
+    // A rarity no printing carries is ignored rather than ruling every printing out.
+    const unknown = await resolveEntity(db, {
+      subjectType: "provider_reference", subjectId: "m_rarity_unknown",
+      signals: { card_name: "Mega Charizard X ex", set: "me02", rarity: "Secret Rare", context_text: context },
+    });
+    expect(unknown.attempt.status).toBe("ambiguous");
+  });
+
+  it("blanks prices, percentages and years in segment context", () => {
+    expect(withoutNonCollectorNumbers("worth $1,200 or 20% more in 2024, 15 dollars, #199")).toBe("worth or more in , , #199");
   });
 });

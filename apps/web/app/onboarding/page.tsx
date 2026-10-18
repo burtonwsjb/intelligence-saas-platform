@@ -29,14 +29,14 @@ export default async function OnboardingPage({
   return (
     <>
       <h1>Create your workspace</h1>
-      <p>This becomes your tenant. You will be the owner.</p>
+      <p className="muted">Name the space where you track topics, cards and creators. You can invite your team later.</p>
       {params.error ? (
         <p className="form-error">Could not create that workspace. Try another name.</p>
       ) : null}
       <form className="auth-form" action={createInitialOrganization}>
         <label>
           Workspace name
-          <input name="name" type="text" required minLength={2} maxLength={80} />
+          <input name="name" type="text" required minLength={2} maxLength={80} placeholder="e.g. Brian’s Collection" autoComplete="organization" />
         </label>
         <button type="submit">Create workspace</button>
       </form>

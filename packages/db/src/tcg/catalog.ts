@@ -21,7 +21,7 @@ import {
   TcgValidationError,
 } from "./identity.js";
 
-function stableId(prefix: string, parts: string[]): string {
+export function stableId(prefix: string, parts: string[]): string {
   return `${prefix}_${createHash("sha256").update(parts.join("|")).digest("hex").slice(0, 32)}`;
 }
 

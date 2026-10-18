@@ -5,7 +5,7 @@ import {
   entityResolutionCandidate,
   entityResolutionCorrection,
 } from "../schema/resolution.js";
-import { sourceContent, sourceMention } from "../schema/source.js";
+import { sourceContent, sourceContentSegment, sourceMention } from "../schema/source.js";
 import {
   EntityResolutionError,
   mayBindPrinting,
@@ -145,7 +145,14 @@ export async function getSourceMentionRecord(db: Database, mentionId: string) {
     .from(sourceContent)
     .where(eq(sourceContent.id, mention.contentId))
     .limit(1);
-  return { mention, content: content ?? null };
+  const [segment] = mention.segmentId
+    ? await db
+        .select()
+        .from(sourceContentSegment)
+        .where(eq(sourceContentSegment.id, mention.segmentId))
+        .limit(1)
+    : [];
+  return { mention, content: content ?? null, segment: segment ?? null };
 }
 
 export async function applyResolutionReview(

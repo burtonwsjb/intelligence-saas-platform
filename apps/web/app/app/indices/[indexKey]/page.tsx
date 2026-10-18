@@ -1,6 +1,6 @@
-import { EmptyState } from "@/components/EmptyState";
-import { Sparkline } from "@/components/Sparkline";
-import { loadAppAccess } from "@/lib/app-access";
+import { EmptyState, LockedFeature } from "@/components/EmptyState";
+import { PriceTrendChart } from "@/components/PriceTrendChart";
+import { ANALYTICS_LOCKED_BODY, loadAppAccess } from "@/lib/app-access";
 import { getDb } from "@/lib/auth";
 import { getIndexWorkspace, getPrintingIdentity } from "@isp/db";
 import Link from "next/link";
@@ -13,13 +13,16 @@ export default async function IndexDetailPage({
 }: {
   params: Promise<{ indexKey: string }>;
 }) {
-  await loadAppAccess();
+  const { access } = await loadAppAccess();
+  if (!access.canViewAnalytics) {
+    return <LockedFeature title="Index" body={ANALYTICS_LOCKED_BODY} />;
+  }
   const { indexKey } = await params;
   const workspace = await getIndexWorkspace(getDb(), decodeURIComponent(indexKey));
   if (!workspace) {
     notFound();
   }
-  const values = workspace.levels.map((level) => Number(level.indexValue));
+  const points = workspace.levels.map((level) => ({ observedAt: level.observedAt, amount: Number(level.indexValue) }));
   const members = await Promise.all(
     workspace.members.slice(0, 40).map(async (member) => ({
       member,
@@ -29,6 +32,11 @@ export default async function IndexDetailPage({
 
   return (
     <>
+      <p style={{ margin: "0 0 var(--space-3)" }}>
+        <Link className="text-link" href="/app/markets">
+          ← Back to markets
+        </Link>
+      </p>
       <h1>{workspace.definition.name}</h1>
       <p>
         {workspace.definition.gameKey}
@@ -40,7 +48,9 @@ export default async function IndexDetailPage({
         {workspace.latest?.coverage ?? "—"} · quality {workspace.latest?.dataQuality ?? "—"} · return{" "}
         {workspace.returnPct == null ? "—" : `${(workspace.returnPct * 100).toFixed(2)}%`}
       </p>
-      <Sparkline values={values} label="index level" />
+      <section className="panel">
+        <PriceTrendChart points={points} title={`${workspace.definition.name} level`} caption="Index level over time, positioned by observation date." />
+      </section>
       <h2>Membership</h2>
       {members.length === 0 ? (
         <EmptyState title="No members as of latest level" body="Rebalance jobs populate membership." />

@@ -46,6 +46,18 @@ test('expected fingerprint must be exactly sixteen lowercase hex digits', () => 
 test('only Neon hostnames have the pooler marker normalized', () => {
   assert.notEqual(databaseTargetFingerprint('postgresql://user:pass@host-pooler.example/db'), databaseTargetFingerprint('postgresql://user:pass@host.example/db'));
 });
+test('a Supabase project is one target across direct, session and transaction URLs', () => {
+  const ref = 'abcdefghijklmnopqrst';
+  const supaDirect = `postgresql://postgres:DO_NOT_LOG_PASSWORD@db.${ref}.supabase.co:5432/postgres?sslmode=require`;
+  const session = `postgresql://postgres.${ref}:DO_NOT_LOG_PASSWORD@aws-0-us-east-1.pooler.supabase.com:5432/postgres`;
+  const transaction = `postgresql://app_admin.${ref}:OTHER@aws-0-us-east-1.pooler.supabase.com:6543/postgres`;
+  const target = databaseTargetFingerprint(supaDirect);
+  assert.equal(databaseTargetFingerprint(session), target);
+  assert.equal(databaseTargetFingerprint(transaction), target);
+  assert.notEqual(databaseTargetFingerprint(transaction.replace(ref, 'zyxwvutsrqponmlkjihg')), target);
+  assert.notEqual(databaseTargetFingerprint(transaction.replace('/postgres', '/other')), target);
+  assert.equal(inspectMaintenanceTarget(session, target).matchesDeployedTarget, true);
+});
 test('database path escaping follows the runtime contract', () => {
   assert.equal(databaseTargetFingerprint(direct.replace('/neondb?', '/neon%64b?')), fingerprint);
 });

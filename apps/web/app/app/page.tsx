@@ -1,170 +1,158 @@
+import { CardTile } from "@/components/CardTile";
+import { CompactStat } from "@/components/CompactStat";
 import { EmptyState } from "@/components/EmptyState";
-import { IdentityLine } from "@/components/IdentityLine";
-import { explanationText } from "@/components/TechnicalDetails";
 import { loadAppAccess } from "@/lib/app-access";
 import { getDb } from "@/lib/auth";
+import { formatAge } from "@/lib/display";
 import { markAllReadAction } from "@/app/notification-actions";
 import {
   countCatalog,
   listAlertRules,
+  listCardExplorerPage,
   listInAppNotifications,
-  listIndexOverview,
-  listLatestOpportunities,
   listRecentCreatorCalls,
+  parseExplorerQuery,
   withOrganizationContext,
 } from "@isp/db";
-import { evaluateQuota } from "@isp/billing";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
+const FEATURED_LIMIT = 8;
+const UPDATES_LIMIT = 5;
+
+type Update = { id: string; at: Date; title: string; body: string; href?: string };
+
+/**
+ * A short daily briefing with a fixed number of regions and items, so the page
+ * stays the same height however large the catalog grows. Each region links to
+ * the destination that holds the full list.
+ */
 export default async function OverviewPage() {
-  const { organizationId, userId, access } = await loadAppAccess();
-  const data = await withOrganizationContext(getDb(), { organizationId, userId }, async (scoped) => {
-    const [catalog, opportunities, calls, indices, notices, usage, watches] = await Promise.all([
-      countCatalog(getDb()),
-      listLatestOpportunities(getDb(), { limit: 5 }),
-      listRecentCreatorCalls(getDb(), 5),
-      listIndexOverview(getDb()),
-      listInAppNotifications(scoped, { organizationId, userId, limit: 5 }),
-      evaluateQuota(scoped, { organizationId, meterKey: "api.reads" }),
-      listAlertRules(scoped, organizationId),
+  const { organizationId, userId, access, unread } = await loadAppAccess();
+  const scoped = await withOrganizationContext(getDb(), { organizationId, userId }, async (db) => {
+    const [notices, watches] = await Promise.all([
+      listInAppNotifications(db, { organizationId, userId, limit: UPDATES_LIMIT }),
+      access.hasAlerts ? listAlertRules(db, organizationId) : Promise.resolve([]),
     ]);
-    return { catalog, opportunities, calls, indices, notices, usage, watches };
+    return { notices, watches };
   });
-  const riskAlerts = data.opportunities.filter((row) => Number(row.score.riskScore) >= 60);
-  const movers = data.opportunities.slice(0, 3);
+  const [catalog, featured, calls] = access.canViewAnalytics
+    ? await Promise.all([
+        countCatalog(getDb()),
+        listCardExplorerPage(getDb(), { ...parseExplorerQuery({ view: "opportunities" }), pageSize: FEATURED_LIMIT }),
+        access.hasCreatorAnalytics ? listRecentCreatorCalls(getDb(), UPDATES_LIMIT) : Promise.resolve([]),
+      ])
+    : [null, null, []];
+
+  const updates: Update[] = [
+    ...scoped.notices.map((notice) => ({
+      id: `n-${notice.id}`,
+      at: notice.createdAt,
+      title: notice.title,
+      body: notice.body,
+    })),
+    ...calls.map((call) => ({
+      id: `c-${call.id}`,
+      at: call.publishedAt,
+      title: `${call.creatorName ?? "A creator"} made a ${call.direction.replaceAll("_", " ")} call`,
+      body: `Horizon ${call.horizonCode.replaceAll("_", " ")}`,
+      href: call.printingId ? `/app/cards/${encodeURIComponent(call.printingId)}?tab=creators` : `/app/creators/${encodeURIComponent(call.creatorId)}`,
+    })),
+  ]
+    .sort((a, b) => b.at.getTime() - a.at.getTime())
+    .slice(0, UPDATES_LIMIT);
+  const activeWatches = scoped.watches.filter((rule) => rule.enabled).length;
 
   return (
     <>
-      <h1>What is moving</h1>
-      <p className="muted">
-        Opportunity, risk, and creator calls for exact printings. Language and variant stay visible. Catalog size{" "}
-        {data.catalog.printings} printings · {data.catalog.scores} scored snapshots.
-      </p>
-      <section>
-        <h2>Top opportunities</h2>
-        {data.opportunities.length === 0 ? (
-          <EmptyState
-            title="No scored printings yet"
-            body="Local fixtures or ingest jobs populate opportunities. Identity is never collapsed to name-only."
-          />
-        ) : (
-          <ul>
-            {data.opportunities.map((row) => (
-              <li key={row.score.id}>
-                <Link href={`/app/opportunities/${row.identity.printingId}`}>
-                  <IdentityLine identity={row.identity} />
+      <header className="page-header">
+        <div>
+          <p className="eyebrow">Overview</p>
+          <h1>Today’s briefing</h1>
+          <p className="muted">What scored highest, what changed, and what needs your attention.</p>
+        </div>
+      </header>
+
+      <div className="stat-row">
+        {catalog ? (
+          <>
+            <CompactStat label="Printings tracked" value={catalog.printings.toLocaleString("en-US")} href="/app/cards" />
+            <CompactStat
+              label="Meeting the opportunity view"
+              value={featured!.total.toLocaleString("en-US")}
+              note="Opportunity 60+ with enough evidence"
+              href="/app/cards?view=opportunities"
+            />
+          </>
+        ) : null}
+        <CompactStat label="Unread updates" value={unread} />
+        {access.hasAlerts ? (
+          <CompactStat label="Active watch rules" value={activeWatches} href="/app/alerts" />
+        ) : null}
+      </div>
+
+      {featured ? (
+        <section aria-labelledby="featured-heading">
+          <div className="section-head">
+            <h2 id="featured-heading">Highest opportunity scores</h2>
+            <Link className="text-link" href="/app/cards?view=opportunities">
+              View all
+            </Link>
+          </div>
+          {featured.rows.length === 0 ? (
+            <EmptyState
+              title="Nothing meets the opportunity view yet"
+              body="No scored printing currently has an opportunity score of 60 or more with enough evidence. Browse the full catalog instead."
+              action={
+                <Link className="text-link" href="/app/cards">
+                  Browse all cards
                 </Link>
-                {" — "}
-                opportunity {Number(row.score.opportunityScore).toFixed(1)} · risk{" "}
-                {Number(row.score.riskScore).toFixed(1)} · confidence {Number(row.score.confidenceScore).toFixed(1)} ·
-                liquidity {Number(row.score.liquidityScore).toFixed(1)} · {row.score.recommendation}
-                {Array.isArray(row.score.explanations) && row.score.explanations[0]
-                  ? ` · why ${explanationText(row.score.explanations[0])}`
-                  : ""}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-      <section>
-        <h2>Risk alerts</h2>
-        {riskAlerts.length === 0 ? (
-          <p className="muted">No high-risk scored printings in the current snapshot.</p>
-        ) : (
-          <ul>
-            {riskAlerts.map((row) => (
-              <li key={row.score.id}>
-                <IdentityLine identity={row.identity} /> — risk {Number(row.score.riskScore).toFixed(1)}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-      {access.hasCreatorAnalytics ? (
-        <section>
-          <h2>Recent creator calls</h2>
-          {data.calls.length === 0 ? (
-            <p className="muted">No creator calls in the local catalog.</p>
+              }
+            />
           ) : (
-            <ul>
-              {data.calls.map((call) => (
-                <li key={call.id}>
-                  {call.creatorName ?? "Creator"} · {call.direction} · {call.horizonCode} ·{" "}
-                  {call.publishedAt.toISOString()}
+            <ul className="card-grid">
+              {featured.rows.map((row) => (
+                <li key={row.printingId}>
+                  <CardTile row={row} href={`/app/cards/${encodeURIComponent(row.printingId)}`} windowLabel="30d" />
                 </li>
               ))}
             </ul>
           )}
         </section>
       ) : null}
-      <section>
-        <h2>Market movers / indices</h2>
-        {movers.length === 0 && data.indices.length === 0 ? (
-          <p className="muted">No index levels or scored movers yet.</p>
-        ) : (
-          <ul>
-            {data.indices.map((row) => (
-              <li key={row.definition.indexKey}>
-                <Link href={`/app/indices/${encodeURIComponent(row.definition.indexKey)}`}>
-                  {row.definition.name}
-                </Link>
-                {row.latest ? ` · ${Number(row.latest.indexValue).toFixed(2)}` : " · no level"}
-                {row.definition.languageCode ? ` · ${row.definition.languageCode}` : ""}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-      <section>
-        <h2>Watch items</h2>
-        {data.watches.length === 0 ? (
-          <p className="muted">Alert rules become watch items. Create them under Alerts when entitled.</p>
-        ) : (
-          <ul>
-            {data.watches.map((rule) => (
-              <li key={rule.id}>
-                {rule.ruleType} · {rule.enabled ? "on" : "off"} · {rule.channelPreference}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-      <section>
-        <h2>Usage</h2>
-        <p>
-          API reads this period: {data.usage.current} /{" "}
-          {Number.isFinite(data.usage.limit) ? data.usage.limit : "unlimited"} remaining {data.usage.remaining}
-        </p>
-      </section>
-      <section>
-        <h2>Account notices</h2>
-        {data.notices.length === 0 ? (
-          <p className="muted">No in-app notifications.</p>
-        ) : (
-          <>
-            <ul>
-              {data.notices.map((notice) => (
-                <li key={notice.id}>
-                  {notice.title} — {notice.body}
+
+      <section aria-labelledby="updates-heading">
+        <div className="section-head">
+          <h2 id="updates-heading">Latest updates</h2>
+          {scoped.notices.some((notice) => !notice.readAt) ? (
+            <form action={markAllReadAction}>
+              <button className="link-button text-link" type="submit">
+                Mark all read
+              </button>
+            </form>
+          ) : null}
+        </div>
+        <div className="panel">
+          {updates.length === 0 ? (
+            <p className="muted" style={{ margin: 0 }}>
+              No new notifications or creator calls.
+            </p>
+          ) : (
+            <ul className="item-list">
+              {updates.map((update) => (
+                <li key={update.id}>
+                  <span className="item-main">
+                    {update.href ? <Link href={update.href}>{update.title}</Link> : <strong>{update.title}</strong>}
+                    <span className="subtle">{update.body}</span>
+                  </span>
+                  <span className="subtle">{formatAge(update.at)}</span>
                 </li>
               ))}
             </ul>
-            <form action={markAllReadAction}>
-              <button type="submit">Mark all read</button>
-            </form>
-          </>
-        )}
+          )}
+        </div>
       </section>
-      {access.hasPredictionsEntitlement && access.predictionsCustomerVisible ? (
-        <p className="muted">Customer prediction views are enabled for this tenant.</p>
-      ) : (
-        <p className="muted">
-          Predictions stay in shadow mode. Customer forecast UI is disabled unless entitled and
-          PREDICTIONS_CUSTOMER_VISIBLE=true.
-        </p>
-      )}
     </>
   );
 }

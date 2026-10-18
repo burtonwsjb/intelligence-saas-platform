@@ -7,6 +7,11 @@ import {
   collectQueueCounts,
   reconcileProviderRuntimeFromEnv,
   runProviderSchedule,
+  runCallScoring,
+  runChartSentiment,
+  runTccCatalogImport,
+  runTranscriptBackfill,
+  runWebFeedSync,
   runWorkerHeartbeat,
   startProviderScheduleLoop,
   startWorker,
@@ -120,6 +125,62 @@ describe("worker operational loops", () => {
     expect(blob).not.toContain("hunter2");
     expect(blob).not.toContain("postgresql://");
     spy.mockRestore();
+  });
+
+  it("runs chart sentiment in one transaction, skips it before migration 0033 or at batch size 0, and never throws", async () => {
+    const lines: string[] = [];
+    const info = vi.spyOn(console, "log").mockImplementation((line) => lines.push(String(line)));
+    const warn = vi.spyOn(console, "warn").mockImplementation((line) => lines.push(String(line)));
+    const error = vi.spyOn(console, "error").mockImplementation((line) => lines.push(String(line)));
+    const missingDb = {
+      transaction: async (run: (tx: { execute: () => Promise<unknown> }) => Promise<unknown>) =>
+        run({ execute: async () => [{ ok: false, locked: true }] }),
+    };
+    expect(await runChartSentiment(missingDb as never, {})).toMatchObject({ status: "skipped", reason: "tables_missing" });
+    expect(await runChartSentiment(missingDb as never, { CHART_SENTIMENT_BATCH_SIZE: "0" })).toBeNull();
+    expect(await runChartSentiment(missingDb as never, { CHART_SENTIMENT_BATCH_SIZE: "nope" })).toBeNull();
+    const lockedDb = {
+      transaction: async (run: (tx: { execute: () => Promise<unknown> }) => Promise<unknown>) =>
+        run({ execute: async () => [{ ok: true, locked: false }] }),
+    };
+    expect(await runChartSentiment(lockedDb as never, {})).toMatchObject({ status: "skipped", reason: "overlap" });
+    const failingDb = {
+      transaction: async () => {
+        throw new Error("Failed query postgresql://app_worker:hunter2@db.example/isp");
+      },
+    };
+    expect(await runChartSentiment(failingDb as never, {})).toBeNull();
+    const blob = lines.join("\n");
+    expect(blob).toContain("worker.chart_sentiment");
+    expect(blob).toContain("tables_missing");
+    expect(blob).toContain("worker.chart_sentiment_failed");
+    expect(blob).not.toContain("hunter2");
+    info.mockRestore();
+    warn.mockRestore();
+    error.mockRestore();
+  });
+
+  it("skips call scoring while another replica holds the lock and never throws", async () => {
+    const lines: string[] = [];
+    const info = vi.spyOn(console, "log").mockImplementation((line) => lines.push(String(line)));
+    const error = vi.spyOn(console, "error").mockImplementation((line) => lines.push(String(line)));
+    const lockedDb = {
+      transaction: async (run: (tx: { execute: () => Promise<unknown> }) => Promise<unknown>) =>
+        run({ execute: async () => [{ locked: false }] }),
+    };
+    expect(await runCallScoring(lockedDb as never)).toBeNull();
+    const failingDb = {
+      transaction: async () => {
+        throw new Error("Failed query postgresql://app_worker:hunter2@db.example/isp");
+      },
+    };
+    expect(await runCallScoring(failingDb as never)).toBeNull();
+    const blob = lines.join("\n");
+    expect(blob).toContain("overlap");
+    expect(blob).toContain("worker.call_scoring_failed");
+    expect(blob).not.toContain("hunter2");
+    info.mockRestore();
+    error.mockRestore();
   });
 
   it("logs a sanitized startup heartbeat success once", async () => {
@@ -324,5 +385,178 @@ describe("provider runtime startup sync", () => {
     });
     expect(result.ok).toBe(false);
     expect(armed).toBe(true);
+  });
+});
+
+describe("TCG Card Central catalog import", () => {
+  const live = {
+    ISP_ENV: "staging",
+    PROVIDER_TCG_CARD_CENTRAL_MODE: "live",
+    TCC_API_BASE_URL: "https://tcc.example.test",
+    TCC_API_TOKEN: "tcc-secret-do-not-log",
+  };
+
+  it("does nothing unless TCG Card Central is live with its URL and token", async () => {
+    let transactions = 0;
+    const db = {
+      transaction: async () => {
+        transactions += 1;
+        throw new Error("unexpected");
+      },
+    };
+    expect(await runTccCatalogImport(db as never, { ISP_ENV: "staging" })).toBeNull();
+    expect(await runTccCatalogImport(db as never, { ...live, PROVIDER_TCG_CARD_CENTRAL_MODE: "fixture" })).toBeNull();
+    expect(await runTccCatalogImport(db as never, { ...live, TCC_API_TOKEN: " " })).toBeNull();
+    expect(await runTccCatalogImport(db as never, { ...live, TCC_API_BASE_URL: undefined })).toBeNull();
+    expect(transactions).toBe(0);
+  });
+
+  it("imports before the provider scheduler (and its price collection) is armed", async () => {
+    const lines: string[] = [];
+    const info = vi.spyOn(console, "log").mockImplementation((line) => lines.push(String(line)));
+    const error = vi.spyOn(console, "error").mockImplementation((line) => lines.push(String(line)));
+    const order: string[] = [];
+    let requests = 0;
+    const db = {
+      transaction: async (run: (tx: { execute: () => Promise<unknown> }) => Promise<unknown>) => {
+        order.push(order.includes("reconcile") ? "catalog" : "reconcile");
+        if (order.length === 1) throw new Error("provider_runtime unavailable");
+        // Another replica holds the catalog lock.
+        return run({ execute: async () => [{ locked: false }] });
+      },
+    };
+    await startProviderScheduleLoop({
+      db: db as never,
+      env: live,
+      onScheduleArm: () => order.push("scheduler"),
+      tccTransport: {
+        fetch: async () => {
+          requests += 1;
+          return { status: 200, headers: {}, bodyText: "{}" };
+        },
+      },
+    });
+    expect(order).toEqual(["reconcile", "catalog", "scheduler"]);
+    expect(requests).toBe(0);
+    const blob = lines.join("\n");
+    expect(blob).toContain("worker.tcc_catalog");
+    expect(blob).toContain("overlap");
+    expect(blob).not.toContain("tcc-secret-do-not-log");
+    info.mockRestore();
+    error.mockRestore();
+  });
+
+  it("logs a sanitized failure and keeps going", async () => {
+    const lines: string[] = [];
+    const error = vi.spyOn(console, "error").mockImplementation((line) => lines.push(String(line)));
+    const report = await runTccCatalogImport(
+      {
+        transaction: async () => {
+          throw new Error("Failed query postgresql://app_worker:hunter2@db.example/isp");
+        },
+      } as never,
+      live,
+    );
+    expect(report).toBeNull();
+    const blob = lines.join("\n");
+    expect(blob).toContain("worker.tcc_catalog_failed");
+    expect(blob).not.toContain("hunter2");
+    error.mockRestore();
+  });
+});
+
+describe("transcript backfill", () => {
+  const db = {
+    transaction: async () => {
+      throw new Error("Failed query postgresql://app_worker:hunter2@db.example/isp");
+    },
+  };
+
+  it("does nothing unless a transcript provider is configured", async () => {
+    let transactions = 0;
+    const untouched = {
+      transaction: async () => {
+        transactions += 1;
+        throw new Error("unexpected");
+      },
+    };
+    const lines: string[] = [];
+    const warn = vi.spyOn(console, "warn").mockImplementation((line) => lines.push(String(line)));
+    const info = vi.spyOn(console, "log").mockImplementation((line) => lines.push(String(line)));
+    expect(await runTranscriptBackfill(untouched as never, {})).toBeNull();
+    expect(await runTranscriptBackfill(untouched as never, { TRANSCRIPT_PROVIDER: "none" })).toBeNull();
+    expect(await runTranscriptBackfill(untouched as never, { TRANSCRIPT_PROVIDER: "supadata" })).toBeNull();
+    expect(transactions).toBe(0);
+    expect(lines.join("\n")).toContain("missing_key");
+    warn.mockRestore();
+    info.mockRestore();
+  });
+
+  it("logs a sanitized failure without the provider key and keeps going", async () => {
+    const lines: string[] = [];
+    const error = vi.spyOn(console, "error").mockImplementation((line) => lines.push(String(line)));
+    const report = await runTranscriptBackfill(db as never, {
+      TRANSCRIPT_PROVIDER: "supadata",
+      SUPADATA_API_KEY: "supadata-secret-do-not-log",
+    });
+    expect(report).toBeNull();
+    const blob = lines.join("\n");
+    expect(blob).toContain("worker.transcript_backfill_failed");
+    expect(blob).not.toContain("supadata-secret-do-not-log");
+    expect(blob).not.toContain("hunter2");
+    error.mockRestore();
+  });
+
+  it("rejects an invalid daily budget without fetching", async () => {
+    const lines: string[] = [];
+    const error = vi.spyOn(console, "error").mockImplementation((line) => lines.push(String(line)));
+    let fetches = 0;
+    const report = await runTranscriptBackfill(
+      db as never,
+      { TRANSCRIPT_PROVIDER: "youtube_captions", YOUTUBE_TRANSCRIPT_REQUESTS_PER_DAY: "-5" },
+      {
+        provider: "youtube_captions",
+        maxRequestsPerVideo: 2,
+        fetch: async () => {
+          fetches += 1;
+          return { status: "unavailable" };
+        },
+      },
+    );
+    expect(report).toBeNull();
+    expect(fetches).toBe(0);
+    expect(lines.join("\n")).toContain("worker.transcript_backfill_failed");
+    error.mockRestore();
+  });
+});
+
+describe("website feed sync", () => {
+  it("does nothing unless PROVIDER_WEB_FEED_MODE is live", async () => {
+    let transactions = 0;
+    const untouched = {
+      transaction: async () => {
+        transactions += 1;
+        throw new Error("unexpected");
+      },
+    };
+    expect(await runWebFeedSync(untouched as never, {})).toBeNull();
+    expect(await runWebFeedSync(untouched as never, { PROVIDER_WEB_FEED_MODE: "fixture" })).toBeNull();
+    expect(await runWebFeedSync(untouched as never, { PROVIDER_WEB_FEED_MODE: "disabled" })).toBeNull();
+    expect(transactions).toBe(0);
+  });
+
+  it("logs a sanitized failure and keeps going", async () => {
+    const lines: string[] = [];
+    const error = vi.spyOn(console, "error").mockImplementation((line) => lines.push(String(line)));
+    const failing = {
+      transaction: async () => {
+        throw new Error("Failed query postgresql://app_worker:hunter2@db.example/isp");
+      },
+    };
+    expect(await runWebFeedSync(failing as never, { PROVIDER_WEB_FEED_MODE: "live" })).toBeNull();
+    const blob = lines.join("\n");
+    expect(blob).toContain("worker.web_feed_sync_failed");
+    expect(blob).not.toContain("hunter2");
+    error.mockRestore();
   });
 });

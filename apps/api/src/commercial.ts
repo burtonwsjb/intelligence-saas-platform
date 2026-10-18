@@ -1,8 +1,16 @@
-import { and, asc, eq, gt } from "drizzle-orm";
+import { and, asc, eq, gt, inArray } from "drizzle-orm";
 import type { Hono } from "hono";
 import {
   disableWebhookEndpoint,
+  getCardSentimentWithHistory,
+  getChartSentiment,
   getCreatorAuthorityProfile,
+  getCreatorLeaderboard,
+  getMarketAssetByKey,
+  getPrintingCalls,
+  getTopicCalls,
+  getTopicSentiment,
+  listMarketAssets,
   getIndexDefinition,
   getIndexLevelAsOf,
   getLatestScoreSnapshot,
@@ -11,6 +19,7 @@ import {
   insertWebhookEndpoint,
   listCallsByCreator,
   listCreators,
+  listTenantCreatorList,
   listIndexDefinitions,
   listIndexLevels,
   listMembershipAsOf,
@@ -18,19 +27,32 @@ import {
   listTcgLanguages,
   listTcgListingHistory,
   listTcgSoldHistory,
+  listSentimentEvidence,
   listWebhookEndpoints,
   processDueWebhookDeliveries,
   recordUsage,
   recordCustomerEvent,
   evaluateUsageWarnings,
   safeWebhookFetch,
+  summarizeSentiment,
+  EXPLORER_WINDOW_DAYS,
+  TCC_ID_TYPE,
+  TCC_NAMESPACE,
   tcgCardConcept,
   tcgPrinting,
+  tcgPrintingIdentifier,
   tcgSet,
   withMachineContext,
   WebhookUrlRejectedError,
+  CHART_METHOD_VERSION,
+  confidenceLabel,
+  type ChartSentimentSegmentView,
   type Database,
+  type PrintingChartSentiment,
   type DnsLookup,
+  type SentimentHistoryPoint,
+  type SentimentSummary,
+  type TopicCalls,
   type WebhookFetch,
 } from "@isp/db";
 import {
@@ -47,6 +69,7 @@ import { CommercialFilterError, decodeCursor, encodeCursor, pageEnvelope, parseC
 import { resolveRequestId } from "./request-id.js";
 import { requireApiKeyPepper } from "@isp/auth";
 import { majorMoneyFields, moneyToFiniteNumber } from "@isp/shared";
+import { TCG_LANGUAGE_CODES } from "@isp/contracts";
 
 type App = Hono<{ Variables: { db: Database; machine: MachinePrincipal } }>;
 
@@ -144,6 +167,192 @@ function commercialError(error: unknown, requestId: string) {
     return jsonError("entitlement_denied", "Plan entitlement denied.", 402, requestId);
   }
   throw error;
+}
+
+const SENTIMENT_WINDOWS = ["7d", "30d", "90d"] as const;
+type SentimentWindow = (typeof SENTIMENT_WINDOWS)[number];
+
+function sentimentWindow(raw: string | undefined): SentimentWindow {
+  if (raw == null || raw === "") return "30d";
+  if ((SENTIMENT_WINDOWS as readonly string[]).includes(raw)) return raw as SentimentWindow;
+  throw new CommercialFilterError("window must be one of 7d, 30d, 90d.");
+}
+
+function round4(value: number) {
+  return Math.round(value * 10_000) / 10_000;
+}
+
+/** Creators this workspace hid; their posts and calls are left out of its sentiment. */
+async function hiddenCreatorIds(db: Database, machine: MachinePrincipal) {
+  const list = await withMachineContext(
+    db,
+    { organizationId: machine.organizationId, apiKeyId: machine.apiKeyId },
+    listTenantCreatorList,
+  );
+  return list.filter((row) => row.preference === "hide" && row.creatorId).map((row) => row.creatorId!);
+}
+
+const TCC_CARD_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** Most TCG Card Central card ids one batch sentiment request may ask for. */
+export const TCC_SENTIMENT_BATCH_MAX = 100;
+
+function tccCardIds(raw: string | undefined): string[] {
+  const ids = [...new Set((raw ?? "").split(",").map((id) => id.trim().toLowerCase()).filter(Boolean))];
+  if (ids.length === 0) throw new CommercialFilterError("ids must list at least one TCG Card Central card id.");
+  if (ids.length > TCC_SENTIMENT_BATCH_MAX) {
+    throw new CommercialFilterError(`ids may list at most ${TCC_SENTIMENT_BATCH_MAX} card ids.`);
+  }
+  if (!ids.every((id) => TCC_CARD_ID.test(id))) throw new CommercialFilterError("ids must be TCG Card Central card ids (uuid).");
+  return ids;
+}
+
+function tccLanguage(raw: string | undefined): string {
+  if (raw == null || raw === "") return "en";
+  if ((TCG_LANGUAGE_CODES as readonly string[]).includes(raw)) return raw;
+  throw new CommercialFilterError("language is not recognized.");
+}
+
+/**
+ * Our printing for each imported TCG Card Central card in one language. The
+ * catalog import records "<TCC card id>:<language>" on every printing it creates.
+ */
+async function printingIdsForTccCards(db: Database, ids: string[], language: string) {
+  const wanted = new Map(ids.map((id) => [`${id}:${language}`.normalize("NFKC").toLowerCase(), id]));
+  const rows = await db
+    .select({ printingId: tcgPrintingIdentifier.printingId, value: tcgPrintingIdentifier.normalizedValue })
+    .from(tcgPrintingIdentifier)
+    .where(
+      and(
+        eq(tcgPrintingIdentifier.sourceNamespace, TCC_NAMESPACE),
+        eq(tcgPrintingIdentifier.identifierType, TCC_ID_TYPE),
+        inArray(tcgPrintingIdentifier.normalizedValue, [...wanted.keys()]),
+      ),
+    );
+  const found = new Map<string, string>();
+  for (const row of rows) {
+    const id = wanted.get(row.value);
+    if (id) found.set(id, row.printingId);
+  }
+  return found;
+}
+
+function sentimentShares(summary: SentimentSummary) {
+  const share = (key: "positive" | "neutral" | "negative" | "mixed") =>
+    summary.weightTotal > 0 ? round4(summary.weighted[key] / summary.weightTotal) : 0;
+  return { positive: share("positive"), neutral: share("neutral"), negative: share("negative"), mixed: share("mixed") };
+}
+
+function chartSegmentBody(view: ChartSentimentSegmentView, options: { maxSignals?: number; insufficient?: boolean }) {
+  return {
+    segment: view.segment,
+    grading_company: view.gradingCompany,
+    grade: view.grade,
+    score: view.score,
+    label: view.label,
+    confidence: round4(view.confidence),
+    confidence_label: confidenceLabel(view.confidence),
+    points: view.points,
+    data_from: view.dataFrom,
+    data_through: view.dataThrough,
+    last_price: view.lastPrice,
+    currency: view.currency,
+    price_type: view.priceType,
+    change_30d_pct: view.change30dPct,
+    computed_at: view.computedAt.toISOString(),
+    signals: view.signals.slice(0, options.maxSignals ?? view.signals.length).map((signal) => ({
+      key: signal.key,
+      name: signal.name,
+      direction: signal.direction,
+      strength: signal.strength,
+      contribution: signal.contribution,
+      hit_rate: signal.hitRate,
+      samples: signal.samples,
+      horizon_days: signal.horizonDays,
+      detail: signal.detail,
+      explanation: signal.explanation,
+    })),
+    ...(options.insufficient === false
+      ? {}
+      : {
+          insufficient_history: view.insufficient.map((item) => ({
+            key: item.key,
+            reason: item.reason,
+            ...(item.needs != null ? { needs_points: item.needs } : {}),
+          })),
+        }),
+  };
+}
+
+/**
+ * Chart Sentiment (what the price, demand and population charts say), kept
+ * apart from social sentiment, with raw and each grade listed separately.
+ */
+function chartSentimentBody(chart: PrintingChartSentiment | undefined, options: { maxSignals?: number; insufficient?: boolean } = {}) {
+  return {
+    method: CHART_METHOD_VERSION,
+    status: chart ? "computed" : "not_computed",
+    raw: chart?.raw ? chartSegmentBody(chart.raw, options) : null,
+    graded: (chart?.graded ?? []).map((view) => chartSegmentBody(view, options)),
+  };
+}
+
+function sentimentBody(input: {
+  window: SentimentWindow;
+  summary: SentimentSummary;
+  history: SentimentHistoryPoint[];
+  bucketDays: number;
+  calls: TopicCalls;
+}) {
+  const { summary, calls } = input;
+  return {
+    window: input.window,
+    as_of: summary.to.toISOString(),
+    sentiment: {
+      label: summary.label,
+      basis: summary.basis,
+      shares: sentimentShares(summary),
+      counts: summary.counts,
+      posts: summary.contentItems,
+      classified_posts: summary.classified,
+      posts_from_rated_creators: summary.ratedPosts,
+      accounts: summary.uniqueAccounts,
+    },
+    history: {
+      period_days: input.bucketDays,
+      points: input.history.map((point) => ({
+        start: point.start.toISOString(),
+        end: point.end.toISOString(),
+        label: point.label,
+        posts: point.posts,
+        shares: {
+          positive: round4(point.shares.positive),
+          neutral: round4(point.shares.neutral),
+          negative: round4(point.shares.negative),
+          mixed: round4(point.shares.mixed),
+        },
+      })),
+    },
+    calls: {
+      total: calls.total,
+      evaluated: calls.evaluated,
+      came_true: calls.correct,
+      waiting_for_market: calls.pending,
+      accuracy: calls.evaluated > 0 ? round4(calls.correct / calls.evaluated) : null,
+    },
+  };
+}
+
+function productBody(row: { asset: { assetKey: string; kind: string; displayName: string; productType: string | null; gameKey: string | null; languageCode: string | null; quoteCurrency: string }; setKey: string | null; setName: string | null }) {
+  return {
+    key: row.asset.assetKey,
+    kind: row.asset.kind,
+    name: row.asset.displayName,
+    product_type: row.asset.productType,
+    game: row.asset.gameKey,
+    set: row.setKey ? { key: row.setKey, name: row.setName } : null,
+    language: row.asset.languageCode,
+    quote_currency: row.asset.quoteCurrency,
+  };
 }
 
 export function registerCommercialRoutes(
@@ -418,6 +627,157 @@ export function registerCommercialRoutes(
     }
   });
 
+  app.get("/v1/printings/:id/sentiment", requireScope("signals:read"), async (c) => {
+    const requestId = resolveRequestId(c.req.header("x-request-id"));
+    try {
+      const window = sentimentWindow(c.req.query("window"));
+      await meter(c.get("db"), c.get("machine"), requestId);
+      const row = await loadPrinting(c.get("db"), c.req.param("id"));
+      if (!row) {
+        return jsonError("not_found", "Printing not found.", 404, requestId);
+      }
+      const hidden = await hiddenCreatorIds(c.get("db"), c.get("machine"));
+      const [sentiment, calls, chart] = await Promise.all([
+        getCardSentimentWithHistory(c.get("db"), row.printing.id, window, { hiddenCreatorIds: hidden }),
+        getPrintingCalls(c.get("db"), row.printing.id, { hiddenCreatorIds: hidden }),
+        getChartSentiment(c.get("db"), [row.printing.id]),
+      ]);
+      return c.json({
+        printing: exactPrinting(row),
+        ...sentimentBody({ window, ...sentiment, calls }),
+        chart_sentiment: chartSentimentBody(chart.get(row.printing.id)),
+      });
+    } catch (error) {
+      return commercialError(error, requestId);
+    }
+  });
+
+  app.get("/v1/tcc/cards/:tccCardId/sentiment", requireScope("signals:read"), async (c) => {
+    const requestId = resolveRequestId(c.req.header("x-request-id"));
+    try {
+      const window = sentimentWindow(c.req.query("window"));
+      const language = tccLanguage(c.req.query("language"));
+      const [tccCardId] = tccCardIds(c.req.param("tccCardId"));
+      await meter(c.get("db"), c.get("machine"), requestId);
+      const printingId = (await printingIdsForTccCards(c.get("db"), [tccCardId!], language)).get(tccCardId!);
+      const row = printingId ? await loadPrinting(c.get("db"), printingId) : null;
+      if (!row) {
+        return jsonError("not_found", "No printing for this TCG Card Central card in this language.", 404, requestId);
+      }
+      const hidden = await hiddenCreatorIds(c.get("db"), c.get("machine"));
+      const [sentiment, calls, chart] = await Promise.all([
+        getCardSentimentWithHistory(c.get("db"), row.printing.id, window, { hiddenCreatorIds: hidden }),
+        getPrintingCalls(c.get("db"), row.printing.id, { hiddenCreatorIds: hidden }),
+        getChartSentiment(c.get("db"), [row.printing.id]),
+      ]);
+      return c.json({
+        tcc_card_id: tccCardId,
+        printing: exactPrinting(row),
+        ...sentimentBody({ window, ...sentiment, calls }),
+        chart_sentiment: chartSentimentBody(chart.get(row.printing.id)),
+      });
+    } catch (error) {
+      return commercialError(error, requestId);
+    }
+  });
+
+  // Current sentiment for a page of TCG Card Central cards in one request, without history or calls.
+  app.get("/v1/tcc/sentiment", requireScope("signals:read"), async (c) => {
+    const requestId = resolveRequestId(c.req.header("x-request-id"));
+    try {
+      const window = sentimentWindow(c.req.query("window"));
+      const language = tccLanguage(c.req.query("language"));
+      const ids = tccCardIds(c.req.query("ids"));
+      await meter(c.get("db"), c.get("machine"), requestId);
+      const printings = await printingIdsForTccCards(c.get("db"), ids, language);
+      const hidden = await hiddenCreatorIds(c.get("db"), c.get("machine"));
+      const to = new Date();
+      const range = { from: new Date(to.getTime() - EXPLORER_WINDOW_DAYS[window] * 86_400_000), to };
+      const printingIds = [...new Set(printings.values())];
+      const [evidence, charts] = await Promise.all([
+        listSentimentEvidence(c.get("db"), printingIds, range, { hiddenCreatorIds: hidden }),
+        getChartSentiment(c.get("db"), printingIds),
+      ]);
+      const byPrinting = new Map<string, typeof evidence>();
+      for (const row of evidence) byPrinting.set(row.printingId, [...(byPrinting.get(row.printingId) ?? []), row]);
+      return c.json({
+        window,
+        language,
+        as_of: to.toISOString(),
+        data: ids
+          .filter((id) => printings.has(id))
+          .map((id) => {
+            const printingId = printings.get(id)!;
+            const summary = summarizeSentiment(byPrinting.get(printingId) ?? [], range);
+            return {
+              tcc_card_id: id,
+              printing_id: printingId,
+              label: summary.label,
+              basis: summary.basis,
+              shares: sentimentShares(summary),
+              posts: summary.contentItems,
+              classified_posts: summary.classified,
+              accounts: summary.uniqueAccounts,
+              chart_sentiment: chartSentimentBody(charts.get(printingId), { maxSignals: 3, insufficient: false }),
+            };
+          }),
+        not_found: ids.filter((id) => !printings.has(id)),
+      });
+    } catch (error) {
+      return commercialError(error, requestId);
+    }
+  });
+
+  app.get("/v1/products", requireScope("cards:read"), async (c) => {
+    const requestId = resolveRequestId(c.req.header("x-request-id"));
+    try {
+      const kind = c.req.query("kind") || undefined;
+      if (kind && !["sealed", "other"].includes(kind)) {
+        throw new CommercialFilterError("kind is not recognized.");
+      }
+      await meter(c.get("db"), c.get("machine"), requestId);
+      const rows = await listMarketAssets(c.get("db"), {
+        kind,
+        gameKey: c.req.query("game") || undefined,
+        setKey: c.req.query("set") || undefined,
+      });
+      return c.json({ data: rows.map(productBody) });
+    } catch (error) {
+      return commercialError(error, requestId);
+    }
+  });
+
+  app.get("/v1/products/:key/sentiment", requireScope("signals:read"), async (c) => {
+    const requestId = resolveRequestId(c.req.header("x-request-id"));
+    try {
+      const window = sentimentWindow(c.req.query("window"));
+      await meter(c.get("db"), c.get("machine"), requestId);
+      const row = await getMarketAssetByKey(c.get("db"), c.req.param("key"));
+      if (!row || row.asset.status !== "active") {
+        return jsonError("not_found", "Product not found.", 404, requestId);
+      }
+      const hidden = await hiddenCreatorIds(c.get("db"), c.get("machine"));
+      const [topic, calls] = await Promise.all([
+        getTopicSentiment(c.get("db"), row.asset.displayName, window, { hiddenCreatorIds: hidden }),
+        getTopicCalls(c.get("db"), row.asset.id, { hiddenCreatorIds: hidden }),
+      ]);
+      return c.json({
+        product: productBody(row),
+        ...sentimentBody({ window, summary: topic.summary, history: topic.history, bucketDays: topic.bucketDays, calls }),
+        latest_price: calls.latestPrice
+          ? {
+              price: moneyToFiniteNumber(calls.latestPrice.price),
+              currency: calls.latestPrice.currency,
+              observed_at: calls.latestPrice.observedAt.toISOString(),
+              source: calls.latestPrice.sourceKey,
+            }
+          : null,
+      });
+    } catch (error) {
+      return commercialError(error, requestId);
+    }
+  });
+
   app.get("/v1/printings/:id/opportunity", requireScope("opportunities:read"), async (c) => {
     const requestId = resolveRequestId(c.req.header("x-request-id"));
     try {
@@ -571,9 +931,70 @@ export function registerCommercialRoutes(
         (scoped) => assertTenantFeature(scoped, machine.organizationId, "creator_analytics"),
       );
       await meter(c.get("db"), machine, requestId, "creator.read");
-      const rows = await listCreators(c.get("db"));
+      // The workspace's private list: hidden creators are left out, follows are flagged.
+      const list = await withMachineContext(
+        c.get("db"),
+        { organizationId: machine.organizationId, apiKeyId: machine.apiKeyId },
+        listTenantCreatorList,
+      );
+      const preference = new Map(list.filter((row) => row.creatorId).map((row) => [row.creatorId!, row.preference]));
+      const followingOnly = c.req.query("list") === "following";
+      const rows = (await listCreators(c.get("db"))).filter((row) =>
+        followingOnly ? preference.get(row.id) === "follow" : preference.get(row.id) !== "hide",
+      );
       return c.json({
-        data: rows.map((row) => ({ id: row.id, display_name: row.displayName, status: row.status })),
+        data: rows.map((row) => ({
+          id: row.id,
+          display_name: row.displayName,
+          status: row.status,
+          following: preference.get(row.id) === "follow",
+        })),
+      });
+    } catch (error) {
+      return commercialError(error, requestId);
+    }
+  });
+
+  // Registered before /v1/creators/:id so "leaderboard" is never read as an id.
+  app.get("/v1/creators/leaderboard", requireScope("creators:read"), async (c) => {
+    const requestId = resolveRequestId(c.req.header("x-request-id"));
+    const machine = c.get("machine");
+    const game = c.req.query("game")?.trim().toLowerCase() || null;
+    if (game && !/^[a-z][a-z0-9_]{0,39}$/.test(game)) {
+      return jsonError("validation_error", "game must be a game key such as pokemon.", 400, requestId);
+    }
+    try {
+      await withMachineContext(
+        c.get("db"),
+        { organizationId: machine.organizationId, apiKeyId: machine.apiKeyId },
+        (scoped) => assertTenantFeature(scoped, machine.organizationId, "creator_analytics"),
+      );
+      await meter(c.get("db"), machine, requestId, "creator.read");
+      // Creators this workspace hid stay off its leaderboard, as they stay out of its sentiment.
+      const hidden = await hiddenCreatorIds(c.get("db"), machine);
+      const board = await getCreatorLeaderboard(c.get("db"), { game, hiddenCreatorIds: hidden });
+      const row = (entry: (typeof board.ranked)[number]) => ({
+        rank: entry.rank,
+        creator_id: entry.creatorId,
+        display_name: entry.name,
+        platforms: entry.platforms,
+        calls_made: entry.callsMade,
+        calls_evaluated: entry.callsEvaluated,
+        came_true: entry.cameTrue,
+        accuracy: entry.accuracy,
+        accuracy_lower_bound: entry.wilsonLow,
+        authority_weight: entry.authorityWeight,
+        trust_state: entry.trustState,
+        last_call_at: entry.lastCallAt,
+      });
+      return c.json({
+        game: board.game,
+        window_days: board.windowDays,
+        min_evaluated_calls: board.minEvaluated,
+        from: board.from,
+        to: board.to,
+        data: board.ranked.map(row),
+        not_enough_calls: board.notEnoughCalls.map(row),
       });
     } catch (error) {
       return commercialError(error, requestId);

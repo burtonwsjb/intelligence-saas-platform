@@ -6,6 +6,7 @@ import {
   countUnreadNotifications,
   customerPredictionsEnabled,
   featureFlagEnabled,
+  listHiddenCreatorIds,
   member,
   withOrganizationContext,
   type AppNavAccess,
@@ -81,4 +82,12 @@ export async function loadAppAccess(): Promise<{
       predictionsCustomerVisible: customerPredictionsEnabled(process.env, { platformFlag }),
     },
   };
+}
+
+export const ANALYTICS_LOCKED_BODY =
+  "Your role in this workspace does not include market and card analytics. Ask a workspace owner or admin for access.";
+
+/** Creators this workspace hid; their posts and calls are left out of its views. */
+export async function loadHiddenCreatorIds(organizationId: string, userId: string): Promise<string[]> {
+  return withOrganizationContext(getDb(), { organizationId, userId }, listHiddenCreatorIds);
 }

@@ -40,3 +40,11 @@ export {
   phoenixClock,
   scheduledSlot,
 } from "./worker-schedule.js";
+export {
+  describeDatabaseTarget,
+  isHostedDatabaseHostname,
+  isNeonHostname,
+  isSupabaseHostname,
+  type DatabaseTarget,
+  type HostedDbProvider,
+} from "./db-host.js";

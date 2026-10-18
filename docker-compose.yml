@@ -1,5 +1,5 @@
 # Disposable local Postgres and Redis for Phase 02–05 development.
-# Cloud database provider remains Neon. Do not provision cloud Redis from this file.
+# Cloud database provider is Supabase Postgres (see docs/supabase-migration.md). Do not provision cloud Redis from this file.
 # Do not use this compose file in production.
 
 services:

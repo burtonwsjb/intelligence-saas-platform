@@ -1,4 +1,4 @@
-import { and, desc, eq, isNotNull, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import {
   tcgMarketIngest,
   tcgMarketQuarantine,
@@ -116,6 +116,144 @@ export async function listRecentSoldPrices(
   return rows
     .map((row) => (row.price == null ? null : Number(row.price)))
     .filter((value): value is number => value != null && Number.isFinite(value));
+}
+
+type SnapshotContext = {
+  prior: number[];
+  otherSource: Array<{ price: string | null; sourceKey: string }>;
+};
+
+/** The recent sold prices a new snapshot of this printing is checked against. */
+async function loadSnapshotContext(
+  db: Database,
+  printingId: string,
+  input: TcgMarketRecordInput,
+): Promise<SnapshotContext> {
+  const gradeClauses =
+    input.grading_company == null
+      ? [isNull(tcgMarketSnapshot.gradingCompany)]
+      : [
+          eq(tcgMarketSnapshot.gradingCompany, input.grading_company),
+          ...(input.grade_label ? [eq(tcgMarketSnapshot.gradeLabel, input.grade_label)] : []),
+        ];
+  const prior = await listRecentSoldPrices(db, {
+    printingId,
+    condition: input.condition,
+    currency: input.currency,
+    gradingCompany: input.grading_company ?? null,
+    gradeLabel: input.grade_label ?? null,
+  });
+  const otherSource = await db
+    .select({ price: tcgMarketSnapshot.price, sourceKey: tcgMarketSnapshot.sourceKey })
+    .from(tcgMarketSnapshot)
+    .where(
+      and(
+        eq(tcgMarketSnapshot.printingId, printingId),
+        eq(tcgMarketSnapshot.priceType, "sold"),
+        eq(tcgMarketSnapshot.condition, input.condition),
+        eq(tcgMarketSnapshot.currency, input.currency),
+        eq(tcgMarketSnapshot.outlierFlag, false),
+        ...gradeClauses,
+      ),
+    )
+    .orderBy(desc(tcgMarketSnapshot.observedAt))
+    .limit(8);
+  return { prior, otherSource };
+}
+
+/** The snapshot row for a parsed record of a resolved printing. Throws TcgMarketValidationError on a bad amount. */
+function snapshotValues(
+  input: TcgMarketRecordInput,
+  printingId: string,
+  snapshotId: string,
+  fingerprint: string,
+  context: SnapshotContext,
+): typeof tcgMarketSnapshot.$inferInsert {
+  const observedMs = Date.parse(input.observed_at);
+  const peer = context.otherSource.find((row) => row.sourceKey !== input.provider && row.price != null);
+  const price = input.price ?? input.low_price ?? null;
+  let outlier = flagOutlierV1({
+    price,
+    priorPrices: context.prior,
+    quantity: input.quantity ?? null,
+  });
+  if (
+    !outlier.outlier_flag &&
+    price != null &&
+    peer?.price != null &&
+    Number(peer.price) > 0 &&
+    (price > Number(peer.price) * 5 || price < Number(peer.price) * 0.2)
+  ) {
+    outlier = {
+      outlier_flag: true,
+      outlier_reason: "source_disagreement",
+      outlier_algorithm_version: outlier.outlier_algorithm_version,
+    };
+  }
+  const incomplete =
+    input.market_type === "marketplace_listing" &&
+    input.listing_count == null &&
+    input.low_price == null &&
+    input.price == null;
+  const staleListing =
+    input.market_type === "marketplace_listing" && Date.now() - observedMs > 7 * 86_400_000;
+  const qualityLabel = outlier.outlier_flag
+    ? "outlier"
+    : incomplete
+      ? "incomplete"
+      : staleListing
+        ? "stale"
+        : "normal";
+
+  return {
+    id: snapshotId,
+    printingId,
+    sourceKey: input.provider,
+    marketType: input.market_type,
+    priceType: input.price_type ?? defaultPriceType(input.market_type),
+    observedAt: new Date(input.observed_at),
+    currency: input.currency,
+    condition: input.condition,
+    gradingCompany: input.grading_company ?? null,
+    gradeLabel: input.grade_label ?? null,
+    gradeNumeric: input.grade_numeric == null ? null : input.grade_numeric.toString(),
+    certificationNumber: input.certification_number ?? null,
+    price: parsePositiveAmount(input.price ?? null, "price"),
+    quantity: input.quantity ?? null,
+    listingCount: input.listing_count ?? null,
+    salesCount: input.sales_count ?? null,
+    volumeValue: parsePositiveAmount(input.volume_value ?? null, "volume_value"),
+    lowPrice: parsePositiveAmount(input.low_price ?? null, "low_price"),
+    highPrice: parsePositiveAmount(input.high_price ?? null, "high_price"),
+    medianPrice: parsePositiveAmount(input.median_price ?? null, "median_price"),
+    averagePrice: parsePositiveAmount(input.average_price ?? null, "average_price"),
+    bidCount: input.bid_count ?? null,
+    sellerCount: input.seller_count ?? null,
+    shippingAmount: parsePositiveAmount(input.shipping_amount ?? null, "shipping_amount"),
+    taxAmount: parsePositiveAmount(input.tax_amount ?? null, "tax_amount"),
+    feeAmount: parsePositiveAmount(input.fee_amount ?? null, "fee_amount"),
+    windowSeconds: input.window_seconds ?? null,
+    aggregationKind: input.aggregation_kind ?? "event",
+    sourceRecordId: input.provider_record_id,
+    fingerprint,
+    sourceReference: input.source_reference ?? null,
+    qualityLabel,
+    outlierFlag: outlier.outlier_flag,
+    outlierReason: outlier.outlier_reason,
+    outlierAlgorithmVersion: outlier.outlier_algorithm_version,
+    attributes: {
+      ...(input.attributes ?? {}),
+      ...(input.raw_condition ? { raw_condition: input.raw_condition } : {}),
+      provenance: {
+        provider: input.provider,
+        external_record_id: input.provider_record_id,
+        source_url: input.source_reference ?? null,
+        source_timestamp: input.observed_at,
+        ingested_at: new Date().toISOString(),
+        normalizer_version: "tcg.market.normalize.v1",
+      },
+    },
+  };
 }
 
 export async function ingestTcgMarketRecord(
@@ -236,123 +374,11 @@ export async function ingestTcgMarketRecord(
     return { status: "quarantined", snapshotId: null, quarantineId, ingestId };
   }
 
-  const boundFingerprint = fingerprint;
   const snapshotId = stableMarketId("msn", [input.provider, input.provider_record_id]);
-  const gradeClauses =
-    input.grading_company == null
-      ? [isNull(tcgMarketSnapshot.gradingCompany)]
-      : [
-          eq(tcgMarketSnapshot.gradingCompany, input.grading_company),
-          ...(input.grade_label ? [eq(tcgMarketSnapshot.gradeLabel, input.grade_label)] : []),
-        ];
-  const prior = await listRecentSoldPrices(db, {
-    printingId: resolved.printingId,
-    condition: input.condition,
-    currency: input.currency,
-    gradingCompany: input.grading_company ?? null,
-    gradeLabel: input.grade_label ?? null,
-  });
-  const otherSource = await db
-    .select({ price: tcgMarketSnapshot.price, sourceKey: tcgMarketSnapshot.sourceKey })
-    .from(tcgMarketSnapshot)
-    .where(
-      and(
-        eq(tcgMarketSnapshot.printingId, resolved.printingId),
-        eq(tcgMarketSnapshot.priceType, "sold"),
-        eq(tcgMarketSnapshot.condition, input.condition),
-        eq(tcgMarketSnapshot.currency, input.currency),
-        eq(tcgMarketSnapshot.outlierFlag, false),
-        ...gradeClauses,
-      ),
-    )
-    .orderBy(desc(tcgMarketSnapshot.observedAt))
-    .limit(8);
-  const peer = otherSource.find((row) => row.sourceKey !== input.provider && row.price != null);
-  const price = input.price ?? input.low_price ?? null;
-  let outlier = flagOutlierV1({
-    price,
-    priorPrices: prior,
-    quantity: input.quantity ?? null,
-  });
-  if (
-    !outlier.outlier_flag &&
-    price != null &&
-    peer?.price != null &&
-    Number(peer.price) > 0 &&
-    (price > Number(peer.price) * 5 || price < Number(peer.price) * 0.2)
-  ) {
-    outlier = {
-      outlier_flag: true,
-      outlier_reason: "source_disagreement",
-      outlier_algorithm_version: outlier.outlier_algorithm_version,
-    };
-  }
-  const incomplete =
-    input.market_type === "marketplace_listing" &&
-    input.listing_count == null &&
-    input.low_price == null &&
-    input.price == null;
-  const staleListing =
-    input.market_type === "marketplace_listing" && Date.now() - observedMs > 7 * 86_400_000;
-  const qualityLabel = outlier.outlier_flag
-    ? "outlier"
-    : incomplete
-      ? "incomplete"
-      : staleListing
-        ? "stale"
-        : "normal";
-
+  const context = await loadSnapshotContext(db, resolved.printingId, input);
   await db
     .insert(tcgMarketSnapshot)
-    .values({
-      id: snapshotId,
-      printingId: resolved.printingId,
-      sourceKey: input.provider,
-      marketType: input.market_type,
-      priceType: input.price_type ?? defaultPriceType(input.market_type),
-      observedAt: new Date(input.observed_at),
-      currency: input.currency,
-      condition: input.condition,
-      gradingCompany: input.grading_company ?? null,
-      gradeLabel: input.grade_label ?? null,
-      gradeNumeric: input.grade_numeric == null ? null : input.grade_numeric.toString(),
-      certificationNumber: input.certification_number ?? null,
-      price: parsePositiveAmount(input.price ?? null, "price"),
-      quantity: input.quantity ?? null,
-      listingCount: input.listing_count ?? null,
-      salesCount: input.sales_count ?? null,
-      volumeValue: parsePositiveAmount(input.volume_value ?? null, "volume_value"),
-      lowPrice: parsePositiveAmount(input.low_price ?? null, "low_price"),
-      highPrice: parsePositiveAmount(input.high_price ?? null, "high_price"),
-      medianPrice: parsePositiveAmount(input.median_price ?? null, "median_price"),
-      averagePrice: parsePositiveAmount(input.average_price ?? null, "average_price"),
-      bidCount: input.bid_count ?? null,
-      sellerCount: input.seller_count ?? null,
-      shippingAmount: parsePositiveAmount(input.shipping_amount ?? null, "shipping_amount"),
-      taxAmount: parsePositiveAmount(input.tax_amount ?? null, "tax_amount"),
-      feeAmount: parsePositiveAmount(input.fee_amount ?? null, "fee_amount"),
-      windowSeconds: input.window_seconds ?? null,
-      aggregationKind: input.aggregation_kind ?? "event",
-      sourceRecordId: input.provider_record_id,
-      fingerprint: boundFingerprint,
-      sourceReference: input.source_reference ?? null,
-      qualityLabel,
-      outlierFlag: outlier.outlier_flag,
-      outlierReason: outlier.outlier_reason,
-      outlierAlgorithmVersion: outlier.outlier_algorithm_version,
-      attributes: {
-        ...(input.attributes ?? {}),
-        ...(input.raw_condition ? { raw_condition: input.raw_condition } : {}),
-        provenance: {
-          provider: input.provider,
-          external_record_id: input.provider_record_id,
-          source_url: input.source_reference ?? null,
-          source_timestamp: input.observed_at,
-          ingested_at: new Date().toISOString(),
-          normalizer_version: "tcg.market.normalize.v1",
-        },
-      },
-    })
+    .values(snapshotValues(input, resolved.printingId, snapshotId, fingerprint, context))
     .onConflictDoNothing();
 
   await db
@@ -360,12 +386,150 @@ export async function ingestTcgMarketRecord(
     .set({
       processingStatus: "processed",
       snapshotId,
-      fingerprint: boundFingerprint,
+      fingerprint,
       updatedAt: new Date(),
     })
     .where(eq(tcgMarketIngest.id, ingestId));
 
   return { status: "processed", snapshotId, quarantineId: null, ingestId };
+}
+
+const BATCH_INSERT_ROWS = 500;
+
+/**
+ * Ingests many records of one printing (a price history) in a few multi-row
+ * statements instead of ~10 round trips each. Records whose snapshot reads
+ * nothing the batch itself writes take the fast path: not sold prices (the
+ * outlier check reads only sold rows), same provider and printing reference,
+ * no earlier ingest row, a plausible timestamp, an exact printing. Every
+ * other record goes through ingestTcgMarketRecord one by one, so results
+ * match it. Returns, per input, its result or the error that refused it.
+ */
+export async function ingestTcgMarketRecordsBatch(
+  db: Database,
+  raws: TcgMarketRecordInput[],
+): Promise<Array<TcgMarketIngestResult | Error>> {
+  const results: Array<TcgMarketIngestResult | Error | undefined> = new Array(raws.length);
+  const parsed: Array<{ index: number; input: TcgMarketRecordInput } | null> = raws.map((raw, index) => {
+    try {
+      return { index, input: parseTcgMarketRecord(raw) };
+    } catch (error) {
+      results[index] = error instanceof Error ? error : new Error(String(error));
+      return null;
+    }
+  });
+  const valid = parsed.filter((row): row is { index: number; input: TcgMarketRecordInput } => row != null);
+  const first = valid[0]?.input;
+  const referenceKey = (input: TcgMarketRecordInput) =>
+    JSON.stringify([input.provider, input.printing ?? null, input.external_id ?? null]);
+  const fast: Array<{ index: number; input: TcgMarketRecordInput }> = [];
+  const slow: Array<{ index: number; input: TcgMarketRecordInput }> = [];
+  for (const row of valid) {
+    const observedMs = Date.parse(row.input.observed_at);
+    const eligible =
+      referenceKey(row.input) === referenceKey(first!) &&
+      (row.input.price_type ?? defaultPriceType(row.input.market_type)) !== "sold" &&
+      !(Number.isFinite(observedMs) && observedMs > Date.now() + IMPOSSIBLE_OBSERVED_AT_SKEW_MS);
+    (eligible ? fast : slow).push(row);
+  }
+
+  if (fast.length) {
+    const seen = new Set<string>();
+    for (let i = 0; i < fast.length; i += BATCH_INSERT_ROWS) {
+      const ids = fast.slice(i, i + BATCH_INSERT_ROWS).map((row) => row.input.provider_record_id);
+      const rows = await db
+        .select({ id: tcgMarketIngest.sourceRecordId })
+        .from(tcgMarketIngest)
+        .where(and(eq(tcgMarketIngest.sourceKey, first!.provider), inArray(tcgMarketIngest.sourceRecordId, ids)));
+      for (const row of rows) seen.add(row.id);
+    }
+    let resolved: Awaited<ReturnType<typeof resolveTcgPrinting>> | null = null;
+    const hasCorePrinting = Boolean(first!.printing?.game && first!.printing.set && first!.printing.collector_number);
+    if (first!.external_id || (hasCorePrinting && first!.printing?.language)) {
+      try {
+        resolved = await resolveTcgPrinting(db, {
+          game: first!.printing?.game,
+          set: first!.printing?.set,
+          collector_number: first!.printing?.collector_number,
+          language: first!.printing?.language,
+          variant: first!.printing?.variant,
+          external_id: first!.external_id,
+        });
+      } catch (error) {
+        if (!(error instanceof TcgValidationError)) throw error;
+      }
+    }
+    const printingId = resolved?.status === "exact" ? resolved.printingId : null;
+    const contexts = new Map<string, SnapshotContext>();
+    const snapshots: Array<typeof tcgMarketSnapshot.$inferInsert> = [];
+    const ingests: Array<typeof tcgMarketIngest.$inferInsert> = [];
+    const written: Array<{ index: number; snapshotId: string; ingestId: string }> = [];
+    for (const row of fast) {
+      // A repeated id goes one by one after the batch lands, as a duplicate or revision.
+      if (!printingId || seen.has(row.input.provider_record_id)) {
+        slow.push(row);
+        continue;
+      }
+      seen.add(row.input.provider_record_id);
+      const { input } = row;
+      const fingerprint = materialFingerprint(input);
+      const ingestId = stableMarketId("min", [input.provider, input.provider_record_id]);
+      const snapshotId = stableMarketId("msn", [input.provider, input.provider_record_id]);
+      const contextKey = JSON.stringify([input.condition, input.currency, input.grading_company ?? null, input.grade_label ?? null]);
+      let context = contexts.get(contextKey);
+      if (!context) {
+        context = await loadSnapshotContext(db, printingId, input);
+        contexts.set(contextKey, context);
+      }
+      try {
+        snapshots.push(snapshotValues(input, printingId, snapshotId, fingerprint, context));
+      } catch (error) {
+        if (!(error instanceof TcgMarketValidationError)) throw error;
+        // Refused like the one-by-one path, after recording what arrived.
+        await db
+          .insert(tcgMarketIngest)
+          .values({
+            id: ingestId,
+            sourceKey: input.provider,
+            sourceRecordId: input.provider_record_id,
+            eventType: input.event_type,
+            fingerprint,
+            payload: input as unknown as Record<string, unknown>,
+            processingStatus: "received",
+          })
+          .onConflictDoNothing();
+        results[row.index] = error;
+        continue;
+      }
+      ingests.push({
+        id: ingestId,
+        sourceKey: input.provider,
+        sourceRecordId: input.provider_record_id,
+        eventType: input.event_type,
+        fingerprint,
+        payload: input as unknown as Record<string, unknown>,
+        processingStatus: "processed",
+        snapshotId,
+      });
+      written.push({ index: row.index, snapshotId, ingestId });
+    }
+    for (let i = 0; i < snapshots.length; i += BATCH_INSERT_ROWS) {
+      await db.insert(tcgMarketSnapshot).values(snapshots.slice(i, i + BATCH_INSERT_ROWS)).onConflictDoNothing();
+      await db.insert(tcgMarketIngest).values(ingests.slice(i, i + BATCH_INSERT_ROWS)).onConflictDoNothing();
+    }
+    for (const row of written) {
+      results[row.index] = { status: "processed", snapshotId: row.snapshotId, quarantineId: null, ingestId: row.ingestId };
+    }
+  }
+
+  for (const row of slow.sort((a, b) => a.index - b.index)) {
+    try {
+      results[row.index] = await ingestTcgMarketRecord(db, row.input);
+    } catch (error) {
+      results[row.index] = error instanceof Error ? error : new Error(String(error));
+    }
+  }
+  return results as Array<TcgMarketIngestResult | Error>;
 }
 
 export async function receiveTcgMarketRecord(

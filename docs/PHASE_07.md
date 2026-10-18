@@ -125,7 +125,7 @@ tcg_printing:tcg:canonical_printing_key:{printing_key}
 
 | Data | Scope | RLS | Runtime writes |
 |---|---|---|---|
-| `tcg_game`, `tcg_language`, `tcg_set`, `tcg_card_concept`, `tcg_printing`, `tcg_printing_identifier`, `tcg_identifier_conflict` | Platform-global canonical reference | No tenant RLS | `app_user` / `app_worker`: SELECT only. INSERT via trusted system/migration/admin path. UPDATE/DELETE forbidden by trigger `app.forbid_tcg_canonical_mutate()` |
+| `tcg_game`, `tcg_language`, `tcg_set`, `tcg_card_concept`, `tcg_printing`, `tcg_printing_identifier`, `tcg_identifier_conflict` | Platform-global canonical reference | No tenant RLS | `app_user`: SELECT only. `app_worker`: SELECT, plus INSERT on sets, cards, printings, identifiers and conflicts for the TCG Card Central catalog import (0032), accepted only from the system principal (`app.require_system_tcg_catalog_write()`). Otherwise INSERT via trusted migration/admin path. UPDATE/DELETE forbidden by trigger `app.forbid_tcg_canonical_mutate()` |
 | Kernel `entity` of type `tcg_printing` | Tenant-owned analytical subject | FORCE RLS | Tenant/worker may create the link; cannot rewrite global printing identity |
 
 Tenant API keys cannot alter canonical game/set/card/printing identity.

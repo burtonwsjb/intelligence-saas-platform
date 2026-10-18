@@ -36,7 +36,7 @@ async function creatorVotes(db: Database, printingId: string, languageCode: stri
     }
     const slice =
       slices.find((row) => row.languageCode === languageCode) ??
-      slices.find((row) => row.languageCode == null && row.priceTier === "all") ??
+      slices.find((row) => row.languageCode == null && row.priceTier === "all" && row.gameKey == null) ??
       slices[0];
     votes.push({
       creatorId: call.creatorId,

@@ -9,6 +9,13 @@ import { getProviderRuntime } from "./runtime.js";
 import { providerCredentialStatus, resolveProviderMode } from "./catalog.js";
 import { budgetedDiscoveryTransport, DiscoveryBudgetError } from "./discovery-budget.js";
 import { createLiveRedditProvider, createLiveYoutubeProvider } from "./live-social.js";
+import { createLiveGoogleProvider } from "./live-google.js";
+
+/** A website is monitored by searching it for the topic it was found under. */
+function monitoringQuery(provenance: Record<string, unknown>): string {
+  const query = provenance.last_query ?? provenance.first_query;
+  return typeof query === "string" && query.trim() ? query : "price";
+}
 import { ProviderHttpError, type HttpTransport } from "./transport.js";
 
 export type CreatorMonitoringReport = {
@@ -58,7 +65,13 @@ export async function runCreatorMonitoring(db: Database, input: {
   try {
     const records = provider === "youtube"
       ? await createLiveYoutubeProvider(env, budget.transport)!.getRecentChannelContent(target.externalAccountId, 10)
-      : await createLiveRedditProvider(env, budget.transport)!.getRecentAuthorPosts(target.externalAccountId, 10);
+      : provider === "google"
+        ? await createLiveGoogleProvider(env, budget.transport)!.getRecentSiteContent(
+            target.externalAccountId,
+            monitoringQuery(target.discoveryProvenance),
+            10,
+          )
+        : await createLiveRedditProvider(env, budget.transport)!.getRecentAuthorPosts(target.externalAccountId, 10);
     return await withPlatformContext(db, async (tx) => {
       // Honor an exclusion/pause made while the external request was in flight.
       const runtime = await getProviderRuntime(tx, provider);

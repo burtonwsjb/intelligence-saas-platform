@@ -1,5 +1,9 @@
 # Neon + Better Auth vs Supabase
 
+> **Superseded 2026-10-12.** The owner decided to move the hosted database to a new, Sentiment-only
+> Supabase project, used as plain Postgres. Drizzle, our migrations, RLS, Better Auth and first-party
+> API keys stay, as the last paragraph below requires. See [../supabase-migration.md](../supabase-migration.md).
+
 **Status:** Phase 02 decision is **Neon + Drizzle + Better Auth + PostgreSQL RLS**.
 
 Do **not** use Supabase for this product.

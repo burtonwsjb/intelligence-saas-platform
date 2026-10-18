@@ -8,8 +8,8 @@ import "./globals.css";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Intelligence Platform",
-  description: "Standalone decision intelligence SaaS",
+  title: "Sentiment",
+  description: "Buy and sell sentiment for trading cards and sealed products",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
@@ -21,14 +21,14 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         </a>
         <header className="shell-header">
           <Link className="shell-brand" href="/">
-            Intelligence Platform
+            Sentiment
           </Link>
           <HeaderNav />
         </header>
         <main id="main" className="shell-main">
           {children}
         </main>
-        <footer className="shell-header">
+        <footer className="shell-footer">
           <nav className="shell-nav" aria-label="Legal">
             <Link href="/terms">Terms</Link>
             <Link href="/privacy">Privacy</Link>

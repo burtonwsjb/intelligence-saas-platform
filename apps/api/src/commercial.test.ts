@@ -234,6 +234,10 @@ describe("commercial API and webhooks", () => {
       }),
     );
     expect((await app.request("/v1/creators", { headers: auth })).status).toBe(200);
+    const board = await app.request("/v1/creators/leaderboard?game=pokemon", { headers: auth });
+    expect(board.status).toBe(200);
+    await expect(board.json()).resolves.toMatchObject({ game: "pokemon", window_days: 365, min_evaluated_calls: 5, data: [], not_enough_calls: [] });
+    expect((await app.request("/v1/creators/leaderboard?game=not%20a%20game", { headers: auth })).status).toBe(400);
 
     const ssrf = await app.request("/v1/webhooks", {
       method: "POST",

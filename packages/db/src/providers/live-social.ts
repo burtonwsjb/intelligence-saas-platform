@@ -111,6 +111,23 @@ export class LiveRedditSourceProvider implements RedditSourceProvider {
     return rows.filter((row) => row.account.external_account_id.replace(/^u\//, "").toLowerCase() === author.toLowerCase()).slice(0, limit);
   }
 
+  /** One data request. Returns the account's canonical name, or null when it does not exist. */
+  async getUser(username: string): Promise<{ external_account_id: string; display_name: string } | null> {
+    const name = username.replace(/^u\//i, "");
+    if (!/^[A-Za-z0-9_-]{3,20}$/.test(name)) {
+      throw new ProviderHttpError({ status: 0, errorClass: "invalid_account" });
+    }
+    const token = await this.token();
+    const response = await this.transport.fetch(`https://oauth.reddit.com/user/${encodeURIComponent(name)}/about`, {
+      headers: { authorization: `Bearer ${token}`, "user-agent": this.auth.userAgent, accept: "application/json" },
+    });
+    if (response.status === 404) return null;
+    const json = requireOkJson(response, (value) => value as { data?: { name?: string; is_suspended?: boolean } });
+    const canonical = json.data?.name;
+    if (!canonical || json.data?.is_suspended) return null;
+    return { external_account_id: canonical, display_name: canonical };
+  }
+
   async getPost(externalContentId: string) {
     const rows = await this.listing(`/by_id/t3_${externalContentId}`);
     return rows[0] ?? null;
@@ -258,6 +275,100 @@ export class LiveYoutubeSourceProvider implements YoutubeSourceProvider {
     const rows = await this.videos(new URLSearchParams({ part: "snippet,statistics", id: ids.join(",") }));
     // Never attach a response for another channel to this monitored identity.
     return rows.filter((row) => row.account.external_account_id === externalAccountId).slice(0, limit);
+  }
+
+  /** The channel's uploads playlist id. One data request; null when the channel is unavailable. */
+  async getUploadsPlaylistId(channelId: string): Promise<string | null> {
+    if (!/^UC[A-Za-z0-9_-]{22}$/.test(channelId)) {
+      throw new ProviderHttpError({ status: 0, errorClass: "invalid_account" });
+    }
+    const params = new URLSearchParams({ part: "contentDetails", id: channelId });
+    const response = await this.transport.fetch(`https://www.googleapis.com/youtube/v3/channels?${params}`, {
+      headers: { accept: "application/json", "x-goog-api-key": this.auth.apiKey },
+    });
+    const channel = requireOkJson(response, (value) => value as {
+      items?: Array<{ id?: string; contentDetails?: { relatedPlaylists?: { uploads?: string } } }>;
+    }).items?.find((item) => item.id === channelId);
+    const uploads = channel?.contentDetails?.relatedPlaylists?.uploads;
+    return typeof uploads === "string" && /^[A-Za-z0-9_-]{10,64}$/.test(uploads) ? uploads : null;
+  }
+
+  /**
+   * One page (up to 50) of an uploads playlist, newest first: video ids and
+   * their publish times. One data request (playlistItems.list, 1 quota unit).
+   */
+  async getUploadsPage(
+    playlistId: string,
+    pageToken: string | null,
+  ): Promise<{ items: Array<{ videoId: string; publishedAt: string | null }>; nextPageToken: string | null }> {
+    if (!/^[A-Za-z0-9_-]{10,64}$/.test(playlistId) || (pageToken != null && !/^[A-Za-z0-9_-]{1,200}$/.test(pageToken))) {
+      throw new ProviderHttpError({ status: 0, errorClass: "invalid_request" });
+    }
+    const params = new URLSearchParams({ part: "contentDetails", playlistId, maxResults: "50" });
+    if (pageToken) params.set("pageToken", pageToken);
+    const response = await this.transport.fetch(`https://www.googleapis.com/youtube/v3/playlistItems?${params}`, {
+      headers: { accept: "application/json", "x-goog-api-key": this.auth.apiKey },
+    });
+    const json = requireOkJson(response, (value) => value as {
+      items?: Array<{ contentDetails?: { videoId?: string; videoPublishedAt?: string } }>;
+      nextPageToken?: string;
+    });
+    const items = (json.items ?? [])
+      .map((item) => ({
+        videoId: item.contentDetails?.videoId ?? "",
+        publishedAt: typeof item.contentDetails?.videoPublishedAt === "string" ? item.contentDetails.videoPublishedAt : null,
+      }))
+      .filter((item) => /^[A-Za-z0-9_-]{6,20}$/.test(item.videoId));
+    return { items, nextPageToken: typeof json.nextPageToken === "string" && json.nextPageToken ? json.nextPageToken : null };
+  }
+
+  /**
+   * Metadata of up to 50 videos (videos.list snippet+statistics, one data
+   * request): the normalized record plus the full description, which the
+   * caller scans for card names and never stores whole.
+   */
+  async getVideoDetails(ids: string[]): Promise<Array<{ record: SourceContentRecordInput; description: string }>> {
+    const unique = [...new Set(ids.filter((id) => /^[A-Za-z0-9_-]{6,20}$/.test(id)))].slice(0, 50);
+    if (unique.length === 0) return [];
+    const params = new URLSearchParams({ part: "snippet,statistics", id: unique.join(",") });
+    const response = await this.transport.fetch(`https://www.googleapis.com/youtube/v3/videos?${params}`, {
+      headers: { accept: "application/json", "x-goog-api-key": this.auth.apiKey },
+    });
+    const json = requireOkJson(response, (value) => value as { items?: Array<{ snippet?: { description?: unknown } }> });
+    const details: Array<{ record: SourceContentRecordInput; description: string }> = [];
+    for (const item of json.items ?? []) {
+      let record: SourceContentRecordInput;
+      try {
+        record = normalizeYoutubeVideo(item);
+      } catch {
+        continue; // A malformed item is skipped, never half-stored.
+      }
+      details.push({
+        record,
+        description: typeof item.snippet?.description === "string" ? item.snippet.description.slice(0, 10_000) : "",
+      });
+    }
+    return details;
+  }
+
+  /**
+   * Resolve a channel ID (UC...) or @handle to its channel. One data request,
+   * never a search request. Returns null when YouTube has no such channel.
+   */
+  async resolveChannel(input: string): Promise<{ external_account_id: string; display_name: string; handle: string | null } | null> {
+    const params = new URLSearchParams({ part: "snippet" });
+    if (/^UC[A-Za-z0-9_-]{22}$/.test(input)) params.set("id", input);
+    else if (/^@[A-Za-z0-9._-]{3,30}$/.test(input)) params.set("forHandle", input);
+    else throw new ProviderHttpError({ status: 0, errorClass: "invalid_account" });
+    const response = await this.transport.fetch(`https://www.googleapis.com/youtube/v3/channels?${params.toString()}`, {
+      headers: { accept: "application/json", "x-goog-api-key": this.auth.apiKey },
+    });
+    const json = requireOkJson(response, (value) => value as {
+      items?: Array<{ id?: string; snippet?: { title?: string; customUrl?: string } }>;
+    });
+    const item = (json.items ?? []).find((row) => typeof row.id === "string" && /^UC[A-Za-z0-9_-]{22}$/.test(row.id));
+    if (!item?.id) return null;
+    return { external_account_id: item.id, display_name: item.snippet?.title ?? item.id, handle: item.snippet?.customUrl ?? null };
   }
 
   async getChannel(externalAccountId: string) {

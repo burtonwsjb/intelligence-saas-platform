@@ -40,6 +40,145 @@ Prefer URL, ids, timestamps, structured extracts. Max excerpt **500** characters
 
 Source text is untrusted: not executed as HTML, prompts, or code.
 
+## Transcript backfill (YouTube)
+
+Video titles rarely name a card, so creator calls from YouTube could not bind to a printing. The worker step `runTranscriptBackfill` (hourly, with the catalog import and call scoring) fetches the transcript of the newest unchecked YouTube videos, finds catalog card names in it (`source/card-detect.ts`: longest match over canonical names and English aliases; names under four characters and a stoplist of generic card names such as "energy", "rare candy" or "ultra ball" are ignored; a collector number said right after the name and the nearest set name of the same game are attached), and stores them as mentions. New mentions are resolved (the resolver now also reads the excerpt of the mention's segment, with prices and years blanked, and the transcript's set key and collector number) and the content's creator calls are extracted again.
+
+Retention: full transcripts are **not** stored. Only ~60 s windows that contain a detected card name are kept, as one `timestamp_range` segment each with `t=<seconds>` start/end refs and a bounded excerpt (≤ 480 characters around the mentions, under the 500 limit). All other windows are discarded after detection. `source_content` is immutable, so `transcript_available` is not updated on existing rows; each check is recorded as a `provider_sync_run` row (provider `youtube`, trigger `transcript`, id `ptx_<content id>`) whose checkpoint carries the outcome and `transcript_available`. Completed and unavailable videos are never fetched again; failures are retried after 24 h, at most three attempts. Videos of creators an operator excluded are skipped. No migration was needed.
+
+| Env | Default | Meaning |
+| --- | --- | --- |
+| `TRANSCRIPT_PROVIDER` | `none` | `youtube_captions`, `supadata` or `none`. Nothing runs unless set. |
+| `SUPADATA_API_KEY` | — | Required for `supadata`; sent only as the `x-api-key` header, never logged. |
+| `YOUTUBE_TRANSCRIPT_REQUESTS_PER_DAY` | 50 | HTTP requests per America/Los_Angeles day (0–10000). Each video reserves its worst case: 2 for captions, 1 for Supadata. Failed requests still count. |
+
+- `youtube_captions` (primary, free) reads the captions YouTube already publishes (manual English first, then auto-generated) from the watch page's `ytInitialPlayerResponse` and the `json3` timedtext track: at most two requests per video, 15 s timeout each. It uses YouTube's **unofficial web endpoints, not the Data API** (which cannot download captions of other people's videos); the owner accepted this. YouTube **may block these requests from cloud IPs**: a consent page, a "confirm you're not a bot" page or a 429 is recorded as `blocked`, and the step stops until the next Pacific day. YouTube may also answer an empty body when it wants a proof-of-origin token; that is recorded as a retryable failure.
+- `supadata` (optional paid backup) calls `GET https://api.supadata.ai/v1/youtube/transcript?videoId=…&lang=en`. Its request/response shape was written from memory and could not be checked from the build sandbox; the parser is defensive.
+
+Validation state: implemented and **fixture-tested only** (recorded watch-page HTML and a `json3` track under `packages/db/src/providers/fixtures/transcripts/`, fake Supadata responses, PGlite ingest tests). Neither adapter has been hosted-validated, and no provider is enabled anywhere by this change.
+
+## Website feeds (influencer sites)
+
+Influencer websites are a creator source without downloading any video. An operator registers a site on **/admin/sources → Influencer websites** (website URL, optional feed URL and display name; platform operators only, audited as `discovery.monitor` with `change: web_feed.register`). The site becomes a `web` `source_account` keyed by domain (the same account and creator a Google web search finds for that domain, so calls from both count toward one creator) and its registration lives in that account's `metadata.web_feed` (`site_url`, `feed_url`, `state` active/paused, `registered_at`, `registered_by`). URLs must be public http(s) addresses (the webhook SSRF guard plus a DNS check); YouTube, Reddit, social sites and stores are refused. Sites can be paused and resumed from the same page.
+
+The worker step `runWebFeedSync` (hourly, after the transcript backfill) reads due sites (not checked in the last 6 h, oldest first, at most 10 per run; paused sites and sites of creators an operator excluded are skipped):
+
+1. robots.txt of every origin it touches is read once per run and honored for every path (group `SentimentBot`, else `*`; longest match wins, Allow wins ties). A 4xx robots.txt means no rules; a 5xx or network failure means the site is skipped for that run. A disallowed feed is never requested.
+2. The feed is the stored feed URL, else `<link rel="alternate" type="application/rss+xml|application/atom+xml">` on the homepage, else `/feed`, `/rss.xml`, `/feed.xml`, `/atom.xml`, `/index.xml`. `If-None-Match` / `If-Modified-Since` are sent when the last read stored validators.
+3. RSS 2.0, RSS 1.0 and Atom are parsed by a small dependency-free reader (`providers/web-feed.ts`; DOCTYPE entities are skipped, never expanded). Post text is `content:encoded` / Atom `content`, else `description` / `summary`, as plain text (scripts and styles dropped). Only when an item has a title and no text is its article page read (at most 3 per site per run), and only where robots.txt allows.
+4. Each post (newest 20) is stored once as `web` `article` content (id = hash of the post URL without fragment and `utm_*`; posts already ingested from the feed are skipped). Card names are found with the same detector as transcripts over ~700-character paragraph windows (body first, then the title); each card (name + collector number) is kept once per post. Only windows naming a card are stored, as `paragraph` segments (`p=<n>` refs) with an excerpt of at most 480 characters; the post text itself is never stored (content `summary` and `excerpt` stay empty). Mentions carry the detector's hints under `metadata.card_detect` (card name, collector number, set key), which the resolver reads like transcript hints. Calls are then extracted for the content, so they count toward the site's accuracy.
+
+Bounds: every request (robots.txt, homepage, feed candidates, redirects, article pages) counts against 10 per site per run; 10 s timeout and 2 MB body cap per response (512 KB for robots.txt); redirects are followed by hand, at most 3, each re-checked for SSRF and robots. User-Agent: `SentimentBot/1.0 (+<APP_URL origin>) …`. Each site check is one `provider_sync_run` row (provider `web_feed`, trigger `web_feed`, id `pwf_…`) that reserves 10 requests in `limit_count` before any request and is corrected to the requests used; the checkpoint carries the account id, feed URL, validators and counts. Logs carry counts only.
+
+| Env | Default | Meaning |
+| --- | --- | --- |
+| `PROVIDER_WEB_FEED_MODE` | `disabled` (staging/production) | Must be `live` for anything to run. `fixture` does nothing. No credentials. The admin Enable/Disable/Pause controls on the `web_feed` provider apply. |
+| `WEB_FEED_REQUESTS_PER_DAY` | 200 | HTTP requests per America/Los_Angeles day across all sites (0–10000). |
+
+The provider key `web_feed` is new in `PROVIDER_KEYS`; its `provider_runtime` row is created by the worker at startup like the others (`applyProviderModeFromEnv`). The provider sync queue never schedules it; an admin "Trigger staging sync" for `web_feed` runs at most 3 due sites. No migration was needed: the registry uses `source_account.metadata`, checks use `provider_sync_run`, and the audit uses an existing action.
+
+Validation state: implemented and **fixture-tested only** (RSS, Atom, homepage and robots.txt fixtures under `packages/db/src/providers/fixtures/web-feed/`, fake HTTP transports, PGlite ingest tests). No real site (for example pokeinsider.com) was reachable from the build sandbox; nothing is hosted-validated and `PROVIDER_WEB_FEED_MODE` is not set anywhere by this change. Workspace users cannot add sites yet: the workspace creator list (`tenant_creator_list`) only accepts `youtube` / `reddit` by check constraint, so a user-facing path needs a migration.
+
+## Influencer seed list, 12-month backfills and the accuracy leaderboard
+
+Goal: rank Pokemon influencers by how many of their last-12-month calls came true, and keep weighting card sentiment by the authority those outcomes produce. Card sentiment already used authority before this change (`scoring/gather.ts` weights each creator's call by the creator's newest authority slice, default 0.05 without one; excluded creators are dropped); nothing new was added to the weighting.
+
+### Seed list
+
+`packages/db/src/creator/seed/pokemon-influencers.ts` holds 50 candidate influencers generated from `top-pokemon-influencers.csv` (rank, name, YouTube channel id / @handle / URL, website, feed and newsletter URLs only). The CSV's handles are mostly unverified; rows marked `unverified` carry no handle. Regenerate with `node scripts/generate-influencer-seed.mjs <csv> 2026-10-10 > packages/db/src/creator/seed/pokemon-influencers.ts` instead of editing by hand. Being on the list schedules polling and the backfill only; it is never authority.
+
+An operator registers the list on **/admin/sources → Influencer seed list** (type `seed` to confirm; platform operators only; one break-glass audit row `discovery.monitor` / `change: influencer_seed.request`, plus each new website's own `web_feed.register` row). Idempotent:
+
+- Websites and newsletters go through `registerWebFeedSite` at once (no network request). Shared platforms where one domain holds many creators (Patreon, Ko-fi, Buy Me a Coffee, Linktree, Medium) are reported as `shared_platform`, never registered; platform/store domains refused by the registry are reported with its error code; an already registered (or paused) site is left as it is.
+- YouTube rows with a channel id (`UC…`) or `@handle` are queued. The YouTube provider's scheduled sync resolves at most 5 per tick through `channels.list?id=` / `?forHandle=` (one data request each, inside the shared daily data budget; never a search). A found channel gets its canonical `source_account` and creator and is monitored (`discovery_provenance.operator_seed = true`) unless an operator excluded it (`excluded_by_operator`). A missing channel is `not_found`; legacy `/c/` URLs (`custom_url`) and rows without an id or handle (`no_handle`) are reported, never guessed from a name. Failed lookups retry hourly up to 3 times; registering again re-queues failed ones.
+
+State: no new table. Each entry is a `provider_sync_run` row (trigger `influencer_seed`, id `pis_…`); its status is the entry's state and its checkpoint carries rank, name, input and outcome. The admin page lists every entry.
+
+### YouTube uploads backfill (12 months)
+
+`runYoutubeUploadsBackfill` (hourly market work, after the website feeds) walks each monitored channel's uploads playlist back `YOUTUBE_BACKFILL_DAYS` days (seeded channels first, at most 3 channels and 4 pages per channel per run, hard stop at 20 pages = 1,000 uploads per channel): `channels.list` (contentDetails) once for the uploads playlist id, then per page `playlistItems.list` (50) and `videos.list` (snippet, statistics) for the uploads inside the window. Official Data API only; no captions or media are downloaded. Each video is stored as ordinary `youtube` content (observation id `<videoId>:backfill`), catalog card names in the title and description (links removed, one paragraph per line) become bounded `paragraph` segments and mentions with the same detector as websites and transcripts (`source: youtube_description`, at most 40 per video, excerpts ≤ 480 characters; the description is never stored whole), and card and product calls are extracted with the video's publish time as the call time.
+
+Budget: every request is reserved in the shared YouTube daily data bucket (`YOUTUBE_DISCOVERY_DATA_REQUESTS_PER_DAY`), and the backfill itself may use at most `YOUTUBE_BACKFILL_REQUESTS_PER_DAY` (default 60) per Pacific day, so monitoring and discovery keep the rest. Each channel run is a `provider_sync_run` row (trigger `youtube_backfill`, id `pyb_…`) whose checkpoint holds the playlist, next page token, cutoff and totals, saved after every page; the next run (or next day) resumes there. A 403/429 stops the run; a deleted channel is finished as `not_found`. Pausing the YouTube provider or excluding the creator stops it between pages.
+
+### Website sitemap backfill (12 months)
+
+Feeds hold only the newest 10–20 posts. `runWebSitemapBackfill` reads, for each registered active site (at most 3 per run, not within 50 minutes of its last run): robots.txt `Sitemap:` lines (same host only), else `/sitemap.xml` and `/sitemap_index.xml`; sitemap indexes are followed (at most 25 sitemaps, `.gz` skipped); URL entries whose `lastmod` is inside the window (or missing) and that are posts of the site (same host or subdomain, under the registered path, not tag/category/author/shop/listing pages or files) are queued, newest first, at most 300 per site. Queued article pages are fetched one by one through the same `WebFeedClient` (robots.txt honored for every URL, SSRF guard, redirects by hand, 10 s / 2 MB). A post counts only when its page states a publication time (`article:published_time` and similar meta tags, then JSON-LD `datePublished`, then `<time datetime>` inside `<article>`; modification dates are never used) inside the window; it is then ingested exactly like a feed post (`published_at_source: article_metadata`, `discovered_via: sitemap`), so a post already read from the feed is never stored twice. Only the title and ≤ 480-character excerpts around card names are kept.
+
+Bounds: 10 requests per site per run, `WEB_FEED_BACKFILL_REQUESTS_PER_SITE_PER_DAY` (default 30) per site per Pacific day, and the shared `WEB_FEED_REQUESTS_PER_DAY` across feed checks and backfill runs (the feed's claim now sums both triggers). State: one `provider_sync_run` row per site run (trigger `web_backfill`, id `pwb_…`); the newest row's checkpoint holds the sitemap and URL queues and totals.
+
+### Price history for scoring
+
+Backfilled calls are older than the daily TCC quotes, so they had no prices to score against. `runPriceHistory` (hourly, before call scoring) finds printings named in finalized, resolved card calls of the last 400 days that lack a raw price within the scorer's start window (3 days before to 2 days after the call, when the call stored no price) or close window (7 days before the horizon end, once it has passed), and asks TCC:
+
+`POST {TCC_API_BASE_URL}/api/public/integrations/social-signal/price-history` (Bearer `TCC_API_TOKEN`), body `{ items: [the quote request item], from, to }`, at most 50 items and 400 days per request, requests spaced 2.5 s apart (the feed allows 30/min). Response `{ ok, from, to, histories: [{ status, reason?, product_id?, group_name?, sub_type?, points: [{ date, market, low, mid, high }] }] }` in item order. `ok` points inside a call window with a positive market price are written as `tcg_market_snapshot` reference prices (`price_type=reference`, condition `unknown`, USD, `tcc:history:<printingId>:<date>`, observed at the end of that day, `price_source: tcgplayer_market_history_via_tcg_card_central`) through the synchronous market ingest; days that already have a daily quote or a history row are skipped, and `to` is always yesterday. `pending` (TCC is backfilling; it fills a product in about 5–15 minutes) and a transient `unavailable` are retried after 30 minutes plus up to 15 minutes of jitter (in practice the next hourly run), `unavailable` with TCC's reason "no historical price source for this game yet" (TCC serves history for Pokemon and One Piece only) after 7 days, `ok` after a day, `not_found` after 30 days, a 400 after a week; a 429 or transport failure stops the run. Outcomes of the touched printings that were `insufficient_data` for a missing price go back to `pending` so the next scoring run reads the history. State: one `provider_sync_run` row per printing (trigger `price_history`, id `pph_…`) with status, reason, covered range, last chart day (`chart_to`) and next attempt.
+
+**Chart universe.** After the call printings, the same run asks for up to `TCC_PRICE_HISTORY_CHART_ITEMS_PER_RUN` more printings (default 150, 0 turns only this part off) so Chart Sentiment has a series to read: English Pokemon and One Piece printings, built into request items exactly like the call printings. Order: printings named in creator calls or in exactly resolved mentions (most recent first), then open index members (there are no watchlist or collection tables), then the rest of the catalog, alternating Pokemon and One Piece (One Piece sets carry no release dates, so it would otherwise wait behind the whole Pokemon catalog), each by newest set release, set key (descending) and printing id. Printings waiting for their next attempt, already fetched through yesterday, or already in this run's call set are skipped. The first request covers the last 365 days to yesterday; once `ok`, a printing is asked again a day later only from 3 days before its last stored day. Call printings and chart printings are planned in separate requests (≤ 50 items, 2.5 s apart), call printings first.
+
+Gating: the daily quote job's (TCC `live`, `TCC_API_BASE_URL` and `TCC_API_TOKEN` set, provider not paused, enabled when hosted, retry-after honored); at most `TCC_PRICE_HISTORY_ITEMS_PER_RUN` call printings per run (default 100; 0 turns the whole step off) plus `TCC_PRICE_HISTORY_CHART_ITEMS_PER_RUN` chart printings, and 60,000 points per run (about 164 first-year printings). A printing whose new points would pass that cap is deferred whole (status `deferred`, retried after about 30 minutes; TCC keeps its history), never written in part, so its range is never marked fetched with days missing. The run is one transaction under an advisory lock; at the cap the worker logs `worker.price_history` with `reason: points_cap` at info level.
+
+### Leaderboard
+
+`GET /v1/creators/leaderboard?game=pokemon` (scope `creators:read`, `creator_analytics` feature, metered as `creator.read`) and **/app/creators → Leaderboard** rank creators over finalized, unrevised calls published in the last 365 days for the game. A call is evaluated when its outcome is scored and directional (correct / incorrect); accuracy = came true / evaluated. Ranking is by the lower bound of the 95% Wilson interval (then accuracy, evaluated count, name), so a short lucky streak does not outrank a long record; only creators with at least 5 evaluated calls are ranked and the rest are listed under `not_enough_calls`. Each row: rank, name, platforms, calls made, evaluated, came true, accuracy, Wilson lower bound, authority weight (the newest overall slice, the one sentiment uses), trust state and last call. Creators an operator excluded and creators the workspace hid are left out.
+
+| Env | Default | Meaning |
+| --- | --- | --- |
+| `YOUTUBE_BACKFILL_DAYS` | unset (off) | Days of uploads to backfill per monitored channel (recommended 365, max 400). Needs YouTube live and credentialed. |
+| `YOUTUBE_BACKFILL_REQUESTS_PER_DAY` | 60 | Backfill share of the shared YouTube data budget per Pacific day. |
+| `WEB_FEED_BACKFILL_DAYS` | unset (off) | Days of posts to backfill from sitemaps (recommended 365, max 400). Needs `PROVIDER_WEB_FEED_MODE=live`. |
+| `WEB_FEED_BACKFILL_REQUESTS_PER_SITE_PER_DAY` | 30 | Backfill requests per site per Pacific day (inside `WEB_FEED_REQUESTS_PER_DAY`). |
+| `TCC_PRICE_HISTORY_ITEMS_PER_RUN` | 100 | Call printings asked for history per hourly run (0–500; 0 = the whole history step off). |
+| `TCC_PRICE_HISTORY_CHART_ITEMS_PER_RUN` | 150 | Chart universe printings asked per hourly run on top of the call printings (0–500; 0 = off). |
+
+No migration was needed (the chart universe reuses the per-printing `provider_sync_run` checkpoints). Validation state: implemented and **fixture-tested only** (fake TCC transport and PGlite scoring test for price history; pure tests for sitemaps, article dates, description detection, the seed plan and leaderboard ranking; API route test). The YouTube and website backfills have no end-to-end DB test yet. Nothing is hosted-validated, the TCC price-history endpoint has not been called from here, and no new env var is set anywhere by this change.
+
+## Chart Sentiment
+
+Goal: a second score per card, next to market (social) sentiment, that reads the card's price, demand and population charts the way stock charts are read, separately for raw copies and for each grade. Standard chart-reading methods only; no individual trader's material.
+
+### Inputs and segments
+
+`packages/db/src/analytics/chart/series.ts` turns a printing's `tcg_market_snapshot` rows (last 410 days, `outlier_flag = false`, quality not `outlier`/`suspect`) into one daily series per segment: `raw` (no grading company) and each grade (`psa10`, `bgs9_5`, `cgc10`, ...). Segments are never mixed. Each segment uses one price type (`reference` or `sold`, whichever has more days) and one currency (the most common; other currencies are counted, never converted); the daily price is the median of that day's rows; gaps of up to 7 days are carried forward and a longer gap starts the series over; at most 400 points. Sales (`sales_count`), listings (`listing_count`) and graded population (`attributes.population`, when a source reports it) ride along per day. Today almost all rows are raw TCC reference prices, so graded segments, demand and population signals mostly report insufficient data.
+
+### Pattern database
+
+The catalog is committed code (`analytics/chart/patterns.ts`, `chart-patterns.v1`) and mirrored into the `chart_pattern` table with key, name, category, direction, horizon, rule, plain-English explanation, prior hit rate and the hit rate measured on our own card history. Every threshold is a named constant in `CHART_THRESHOLDS`.
+
+| Pattern | Direction | Rule (horizon judged over) |
+| --- | --- | --- |
+| Golden / death cross | bull / bear | 50-day MA crossed above / below the 200-day MA within 10 days (60 d; needs 201 points) |
+| Uptrend / downtrend | bull / bear | Price > 20-day MA > 50-day MA and the 50-day higher than 10 days ago, or the mirror (30 d; 60 points) |
+| RSI oversold / overbought | bull / bear | Wilder RSI(14) below 30 / above 70 (14 d; 30 points) |
+| MACD crossovers | bull / bear | MACD(12,26) crossed its 9-day signal within 5 days; stronger from below / above zero (21 d; 35 points) |
+| Resistance breakout / support breakdown | bull / bear | Close ≥ 2% beyond the extreme close of the 30 days before a 3-day window, the level tested at least twice (within 2%) and price still inside it 3 days ago; volume-confirmed (sales ≥ 1.5x the prior 30-day average) at full strength, unconfirmed 0.5x, no sales data 0.75x (30 d) |
+| Double bottom / top | bull / bear | Two pivot lows (highs) within 3%, ≥ 10 days apart in the last 60 days, a ≥ 5% move between them, neither undercut, and a close through the neckline within 5 days (30 d) |
+| Inverse / head and shoulders | bull / bear | Three pivots in 90 days, head ≥ 3% beyond shoulders that are within 5% of each other, ≥ 5 days apart, neckline broken within 5 days (30 d) |
+| Bollinger band breaks | bull (below) / bear (above) | Close outside the 20-day MA ± 2 standard deviations (14 d) |
+| Rising / falling demand | bull / bear | Average daily sales of the last 14 days ≥ 1.25x / ≤ 0.75x the 30 days before, ≥ 30% of days reporting (30 d) |
+| Shrinking / rising supply | bull / bear | Same comparison on active listings (30 d) |
+| Population growth | bear | Graded population up ≥ 10% in 90 days (60 d) |
+
+Pivots are closes that are the extreme of 3 days on each side; a pivot is only used once those 3 days have passed.
+
+### Score
+
+For the latest day of each segment, every pattern the data can evaluate is read; one that fires adds `direction x strength (0..1) x weight`, where weight = base weight x reliability and reliability = (hit rate - 0.5) / 0.5 (a coin flip or worse counts 0). The hit rate is the measured rate blended with the pattern's prior (0.52–0.55) as 30 pseudo-samples, so patterns with few samples lean on the prior. Score = 100 x net / max(gross, 0.35 x the weight of every pattern group the data could evaluate), clamped to -100..+100, so one weak signal among many silent ones stays near neutral. Bullish at ≥ +25, bearish at ≤ -25, otherwise neutral. Fewer than 30 points: `insufficient_history` with no score. Each pattern that could not be read is listed with why (`needs_points`, `needs_sales`, `needs_listings`, `needs_population`). Confidence (0..1) = sqrt(points / 200, capped at 1) x (0.5 + 0.5 x agreement among firing signals) x freshness (1 up to 3 days old, falling to 0 at 30 days).
+
+Hit rates are measured without look-ahead: indicators are causal, and `backtestChartSeries` replays every pattern over each stored series, judging a firing at day t by the close `horizon` days later (a move under 1% is flat and not a sample) and skipping ahead by the horizon so samples do not overlap. Each segment's backtest is stored with it and replaced when it is recomputed; `chart_pattern.samples / hits / measured_hit_rate` are their sums.
+
+### Storage, worker and reads
+
+Migration `0033_chart_sentiment` adds `chart_pattern` and `chart_sentiment` (primary key `printing_id, segment`; score, label, confidence, points, data range, last price, signals, insufficient, inputs, backtest, method and catalog versions, computed_at). Both are global derived data without RLS: `app_user` may only read, `app_worker` writes (and deletes segments that lost their data). Bootstrap repairs the same grants.
+
+The worker's hourly market work ends with `runChartSentiment`: in one transaction under an advisory lock it syncs the catalog, scores up to `CHART_SENTIMENT_BATCH_SIZE` printings (default 200, max 2,000, 0 = off) that have chart-usable prices and were never computed, received rows since they were last computed (e.g. a price history import; rows that arrived after the as-of time wait), or were not computed in the last 20 hours, in that order, upserts their segments and refreshes the measured hit rates. Database only, no provider requests, idempotent. Until 0033 is applied it logs `worker.chart_sentiment` with `reason: tables_missing` and does nothing; the API and web page then show chart sentiment as not computed instead of failing.
+
+Reads are one indexed lookup (`getChartSentiment`). `GET /v1/printings/{id}/sentiment` and `GET /v1/tcc/cards/{tccCardId}/sentiment` return `chart_sentiment: { method, status: computed|not_computed, raw, graded[] }` next to `sentiment`; each segment has score, label, confidence and `confidence_label`, points, data range, last price, price type, 30-day change, its signals (contribution, measured `hit_rate`, samples, horizon, detail, explanation) and `insufficient_history`. `GET /v1/tcc/sentiment?ids=` adds the same object per card with the top 3 signals and without `insufficient_history`. The card page's Sentiment tab shows Market sentiment and Chart sentiment side by side: a score badge per segment and its top 3 signals with explanations.
+
+| Env | Default | Meaning |
+| --- | --- | --- |
+| `CHART_SENTIMENT_BATCH_SIZE` | 200 | Printings scored per hourly run (0–2,000; 0 = off). |
+
+Validation state: implemented and **fixture-tested only**: pure tests with synthetic series that should and should not trigger each pattern, scoring and backtest tests, a PGlite storage test, worker and API route tests. **Hosted staging needs migration 0033 applied by the owner** before anything is stored; it has not been applied anywhere, and the measured hit rates start empty (priors only) until the first batches run.
+
 ## Segments
 
 `source_content_segment`: `timestamp_range`, `paragraph`, or `comment`, with start/end refs and optional bounded excerpt. Future creator-call evidence can point here.

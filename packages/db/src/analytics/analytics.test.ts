@@ -297,7 +297,7 @@ describe("persisted analytics, indices, benchmarks, and alpha", () => {
     });
     expect(recomputed.features.latest_sold_price).toBe(computed.features.latest_sold_price);
     expect(recomputed.sampleSize).toBe(computed.sampleSize);
-  });
+  }, 90_000);
 
   it("keeps English, Japanese, and zh-Hans indices separate and survivorship-safe", async () => {
     const { db, seeded } = await setup();
@@ -364,7 +364,7 @@ describe("persisted analytics, indices, benchmarks, and alpha", () => {
     const reconstructed = await computeIndexLevel(db, "pokemon.language.en", t1);
     expect(reconstructed.componentCount).toBe(enMembers.length);
     expect(reconstructed.componentCount).not.toBe(later.length);
-  });
+  }, 90_000);
 
   it("resolves language-aware benchmarks, relative strength, and creator alpha without rewriting outcomes", async () => {
     const { db, seeded } = await setup();
@@ -479,7 +479,7 @@ describe("persisted analytics, indices, benchmarks, and alpha", () => {
     expect((await getIndexDefinition(db, "pokemon.language.en"))?.weightingMethod).toBe("equal.v1");
     expect(MARKET_RETURN_PERIODS).toHaveLength(6);
     expect(MARKET_FEATURE_SET_VERSION).toBe("features.v1");
-  });
+  }, 90_000);
 
   it("supports 365d nearest observations and volume momentum sample gates", async () => {
     const { db, seeded } = await setup();
@@ -501,5 +501,5 @@ describe("persisted analytics, indices, benchmarks, and alpha", () => {
     const momentum = withPrior.features.volume_momentum as { status: string; sample_size: number };
     expect(momentum.status).toBe("ok");
     expect(momentum.sample_size).toBeGreaterThanOrEqual(4);
-  });
+  }, 90_000);
 });

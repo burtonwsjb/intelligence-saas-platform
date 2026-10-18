@@ -8,7 +8,7 @@ No hosted environment may fall back to local billing simulation, `PLATFORM_ADMIN
 
 | Concern | local | test | staging | production |
 |---|---|---|---|---|
-| Database | Docker Postgres; `DATABASE_URL` may be superuser locally | CI disposable Postgres | Neon; hosted web/API require `APP_DATABASE_URL` as pooled `app_user` and do not fall back to integration `DATABASE_URL`; migrations unpooled `DATABASE_ADMIN_URL` | Same pattern, separate project |
+| Database | Docker Postgres; `DATABASE_URL` may be superuser locally | CI disposable Postgres | Supabase Postgres (moved from Neon, see `docs/supabase-migration.md`); hosted web/API require `APP_DATABASE_URL` as Supavisor-pooled `app_user.<ref>` and do not fall back to integration `DATABASE_URL`; migrations use the session-mode `DATABASE_MIGRATE_URL` | Same pattern, separate project |
 | Worker DB | `DATABASE_URL` or `WORKER_DATABASE_URL` | same | `WORKER_DATABASE_URL` as `app_worker` (required; no `DATABASE_URL` fallback) | `app_worker` (required) |
 | Redis | `redis://localhost:6379` | CI Redis | Managed Redis; `rediss://` preferred | `rediss://` unless `REDIS_TLS=optional` on a private network |
 | Auth cookies | insecure HTTP ok | test | Secure + HTTPS `APP_URL` | Secure + HTTPS |
