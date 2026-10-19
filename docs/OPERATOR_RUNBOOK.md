@@ -106,6 +106,8 @@ Startup writes heartbeat. SIGTERM/SIGINT drain in-flight jobs (~20s) then exit. 
 
 Grant `platform_admins` by email with the documented grant script. Do not use a tenant role. Break-glass actions must write audit evidence.
 
+Password reset (no reset email yet): an operator issues a one-time link by inserting a `verification` row with `identifier = 'reset-password:<random token>'`, `value = <user id>` and an `expires_at` about an hour out, then sends the user `<APP_URL>/reset-password?token=<random token>`. The page sets the new password through Better Auth's `/reset-password` endpoint, which consumes the row, so the link works once.
+
 ## Security incident response
 
 1. Revoke sessions / API keys / webhook secrets involved
