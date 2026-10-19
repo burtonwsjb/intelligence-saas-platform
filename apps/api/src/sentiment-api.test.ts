@@ -8,6 +8,7 @@ import {
   member,
   organization,
   readMigrationSql,
+  recordUsage,
   runChartSentimentBatch,
   seedTcgIdentityFixtures,
   setCreatorPreference,
@@ -205,5 +206,13 @@ describe("sentiment API for cards and products", () => {
     const hidden = await app.request("/v1/products/sealed:pokemon:twm:booster_box/sentiment", { headers: auth });
     const hiddenBody = (await hidden.json()) as { sentiment: { posts: number } };
     expect(hiddenBody.sentiment.posts).toBe(0);
+
+    // Over the monthly plan quota: other reads stop, the TCG Card Central routes keep serving card pages.
+    await withOrganizationContext(db, { organizationId: "o_api", userId: "u_api" }, (scoped) =>
+      recordUsage(scoped, { id: "usage_over", organizationId: "o_api", meterKey: "api.reads", quantity: 10_000_000 }),
+    );
+    expect((await app.request("/v1/products/sealed:pokemon:twm:booster_box/sentiment", { headers: auth })).status).toBe(429);
+    expect((await app.request(`/v1/tcc/cards/${tccId}/sentiment`, { headers: auth })).status).toBe(200);
+    expect((await app.request(`/v1/tcc/sentiment?ids=${tccId}`, { headers: auth })).status).toBe(200);
   });
 });

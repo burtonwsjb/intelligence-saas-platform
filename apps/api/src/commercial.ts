@@ -112,12 +112,15 @@ async function meter(
   machine: MachinePrincipal,
   requestId: string,
   extraMeter?: "prices.read" | "market_history.read" | "opportunity.read" | "creator.read" | "prediction.read",
+  options: { enforceQuota?: boolean } = {},
 ) {
   await withMachineContext(
     db,
     { organizationId: machine.organizationId, apiKeyId: machine.apiKeyId },
     async (scoped) => {
-      await assertQuota(scoped, { organizationId: machine.organizationId, meterKey: "api.reads" });
+      if (options.enforceQuota !== false) {
+        await assertQuota(scoped, { organizationId: machine.organizationId, meterKey: "api.reads" });
+      }
       await recordUsage(scoped, {
         id: crypto.randomUUID(),
         organizationId: machine.organizationId,
@@ -658,7 +661,8 @@ export function registerCommercialRoutes(
       const window = sentimentWindow(c.req.query("window"));
       const language = tccLanguage(c.req.query("language"));
       const [tccCardId] = tccCardIds(c.req.param("tccCardId"));
-      await meter(c.get("db"), c.get("machine"), requestId);
+      // tcgcardcentral.com calls this once per card page view: counted, never cut off by the plan quota.
+      await meter(c.get("db"), c.get("machine"), requestId, undefined, { enforceQuota: false });
       const printingId = (await printingIdsForTccCards(c.get("db"), [tccCardId!], language)).get(tccCardId!);
       const row = printingId ? await loadPrinting(c.get("db"), printingId) : null;
       if (!row) {
@@ -688,7 +692,7 @@ export function registerCommercialRoutes(
       const window = sentimentWindow(c.req.query("window"));
       const language = tccLanguage(c.req.query("language"));
       const ids = tccCardIds(c.req.query("ids"));
-      await meter(c.get("db"), c.get("machine"), requestId);
+      await meter(c.get("db"), c.get("machine"), requestId, undefined, { enforceQuota: false });
       const printings = await printingIdsForTccCards(c.get("db"), ids, language);
       const hidden = await hiddenCreatorIds(c.get("db"), c.get("machine"));
       const to = new Date();
