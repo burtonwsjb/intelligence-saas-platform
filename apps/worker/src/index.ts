@@ -6,7 +6,7 @@ import {
   structuredLog,
 } from "@isp/shared";
 import { createShutdownLatch, WORKER_SHUTDOWN_FORCE_MS } from "@isp/queue";
-import { runEmailDeliverySweep, startWorker, workerHealthPayload } from "./worker.js";
+import { runEmailDeliverySweep, runMarketWork, startWorker, workerHealthPayload } from "./worker.js";
 import { startScheduledWorker } from "./scheduled-worker.js";
 
 assertHostedSecrets();
@@ -19,7 +19,13 @@ const scheduled = isHostedRuntime(process.env);
 const handle = scheduled
   ? startScheduledWorker({
       env: process.env,
-      afterBatch: (db) => runEmailDeliverySweep(db, process.env),
+      // The market work (catalog, prices, call scoring, Chart Sentiment) needs
+      // only Postgres and HTTP, so it runs after every batch, not only when the
+      // owner opens a metered Redis window.
+      afterBatch: async (db) => {
+        await runEmailDeliverySweep(db, process.env);
+        await runMarketWork(db, process.env);
+      },
       startMetered: (env, db) => startWorker({ env, db }),
     })
   : startWorker();
