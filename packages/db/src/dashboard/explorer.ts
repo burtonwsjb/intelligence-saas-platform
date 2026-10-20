@@ -1,6 +1,7 @@
 import { sql, type SQL } from "drizzle-orm";
 import type { Database } from "../client.js";
 import { callGradeFromEvidence } from "../creator/grade.js";
+import { loadPrintingImages } from "../tcg/card-image.js";
 
 // Card explorer read model. Every number returned here comes from persisted,
 // versioned records (score snapshots, market snapshots, resolved mentions).
@@ -250,6 +251,8 @@ export type ExplorerRow = {
   rarity: string | null;
   finish: string | null;
   canonicalPrintingKey: string;
+  /** The card's picture (https), or null for the placeholder. */
+  imageUrl: string | null;
   score: ExplorerScore | null;
   price: ExplorerPrice | null;
   series: ExplorerSeriesPoint[];
@@ -455,6 +458,7 @@ export async function listCardExplorerPage(
     loadComparableSeries(db, raw, { from, to: now }),
     loadSentimentSummaries(db, ids, { from, to: now }, { hiddenCreatorIds: options.hiddenCreatorIds }),
   ]);
+  const images = await loadPrintingImages(db, ids);
   const rows: ExplorerRow[] = raw.map((row) => {
     const printingId = String(row.printing_id);
     const series = seriesByPrinting.get(printingId) ?? [];
@@ -470,6 +474,7 @@ export async function listCardExplorerPage(
       rarity: row.rarity == null ? null : String(row.rarity),
       finish: row.finish == null ? null : String(row.finish),
       canonicalPrintingKey: String(row.canonical_printing_key),
+      imageUrl: images.get(printingId) ?? null,
       score:
         row.as_of == null
           ? null

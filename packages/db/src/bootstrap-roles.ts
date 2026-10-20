@@ -622,6 +622,12 @@ export async function bootstrapRoles(
           REVOKE INSERT, UPDATE, DELETE ON chart_pattern, chart_sentiment FROM app_user;
           REVOKE DELETE ON chart_pattern FROM app_worker;
         END IF;
+        IF to_regclass('public.tcg_printing_image') IS NOT NULL THEN
+          GRANT SELECT ON tcg_printing_image TO app_user, app_worker;
+          GRANT INSERT, UPDATE ON tcg_printing_image TO app_worker;
+          REVOKE INSERT, UPDATE, DELETE ON tcg_printing_image FROM app_user;
+          REVOKE DELETE ON tcg_printing_image FROM app_worker;
+        END IF;
         IF to_regprocedure('app.require_system_tcg_catalog_write()') IS NOT NULL THEN
           GRANT INSERT ON tcg_set, tcg_card_concept, tcg_printing, tcg_printing_identifier, tcg_identifier_conflict TO app_worker;
           REVOKE UPDATE, DELETE ON tcg_set, tcg_card_concept, tcg_printing, tcg_printing_identifier, tcg_identifier_conflict FROM app_worker;

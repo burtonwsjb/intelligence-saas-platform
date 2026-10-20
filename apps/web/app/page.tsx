@@ -3,9 +3,13 @@ import { redirect } from "next/navigation";
 import {
   CreatorBoard,
   HeroPreview,
+  LANDING_IMAGE_PICKS,
   MarketMovers,
+  type LandingImages,
 } from "@/components/LandingVisuals";
+import { getDb, tryGetAuth } from "@/lib/auth";
 import { getOptionalSession } from "@/lib/session";
+import { findCardImages } from "@isp/db";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +45,26 @@ const PRINCIPLES = [
   },
 ];
 
+/** Real card pictures for the showcase spots; drawn frames stand in when there is no catalog. */
+async function landingImages(): Promise<LandingImages> {
+  if (!tryGetAuth()) {
+    return {};
+  }
+  try {
+    const found = await findCardImages(getDb(), LANDING_IMAGE_PICKS);
+    const images: LandingImages = {};
+    for (const pick of LANDING_IMAGE_PICKS) {
+      const image = found.get(pick.key);
+      if (image) {
+        images[pick.key] = { src: image.imageUrl, alt: `${image.cardName}, ${image.setName}` };
+      }
+    }
+    return images;
+  } catch {
+    return {};
+  }
+}
+
 /**
  * Public landing page. Signed-in visitors go straight to their briefing, so the
  * pitch is only ever shown to people who have not started yet.
@@ -50,6 +74,7 @@ export default async function HomePage() {
   if (session) {
     redirect("/app");
   }
+  const images = await landingImages();
   return (
     <div className="landing">
       <section className="landing-hero" aria-labelledby="hero-heading">
@@ -77,7 +102,7 @@ export default async function HomePage() {
             ))}
           </ul>
         </div>
-        <HeroPreview />
+        <HeroPreview images={images} />
       </section>
 
       <section className="landing-section" aria-labelledby="movers-heading">
@@ -89,7 +114,7 @@ export default async function HomePage() {
             blur together.
           </p>
         </div>
-        <MarketMovers />
+        <MarketMovers images={images} />
         <p className="landing-example-note">
           Example readings to show the layout, not live market data.
         </p>

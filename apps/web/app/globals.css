@@ -162,11 +162,21 @@ svg {
 
 .shell-footer {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
   padding: var(--space-5);
   border-top: 1px solid var(--border);
   color: var(--ink-3);
   font-size: var(--text-s);
+}
+
+.shell-legal-note {
+  margin: 0;
+  max-width: 44rem;
+  text-align: center;
+  font-size: var(--text-xs);
+  color: var(--ink-3);
 }
 
 .shell-brand {
@@ -1767,6 +1777,41 @@ textarea {
 
 .holo-text.short {
   width: 60%;
+}
+
+.holo-photo-card {
+  padding: 0;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.holo-photo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.mover.has-photo {
+  grid-template-columns: minmax(0, 1fr) 3.5rem;
+}
+
+.mover.has-photo > :not(.mover-photo) {
+  grid-column: 1;
+}
+
+.mover-photo {
+  grid-column: 2;
+  grid-row: 1 / span 3;
+  width: 3.5rem;
+  aspect-ratio: 5 / 7;
+  object-fit: cover;
+  border-radius: 4px;
+  box-shadow: var(--shadow-1);
+}
+
+.mover.has-photo .mover-chart {
+  grid-column: 1 / -1;
 }
 
 .hero-panel {

@@ -204,6 +204,13 @@ export {
 } from "./tcg/provider.js";
 export { ensureTcgPrintingEntity } from "./tcg/kernel-link.js";
 export {
+  findCardImages,
+  loadPrintingImages,
+  safeCardImageUrl,
+  type CardImagePick,
+  type PickedCardImage,
+} from "./tcg/card-image.js";
+export {
   TcgMarketRevisionError,
   TcgMarketValidationError,
   computeTcgAskSoldSpread,

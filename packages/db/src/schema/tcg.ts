@@ -108,6 +108,16 @@ export const tcgPrinting = pgTable(
   }),
 );
 
+/** A printing's picture, from TCG Card Central's catalog feed (tcg_printing itself is immutable). */
+export const tcgPrintingImage = pgTable("tcg_printing_image", {
+  printingId: text("printing_id")
+    .primaryKey()
+    .references(() => tcgPrinting.id),
+  imageUrl: text("image_url").notNull(),
+  sourceKey: text("source_key").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const tcgPrintingIdentifier = pgTable(
   "tcg_printing_identifier",
   {

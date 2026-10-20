@@ -53,13 +53,43 @@ const HERO_CALLS = [
   { day: 58, side: "buy", hit: true },
 ] as const;
 
+/** Real card pictures for the landing page, looked up from the catalog when it is reachable. */
+export type LandingImage = { src: string; alt: string };
+export type LandingImages = Partial<Record<LandingImageKey, LandingImage>>;
+export type LandingImageKey = "heroCenter" | "heroLeft" | "heroRight" | "blueEyes" | "goku";
+
+/** Catalog cards to picture; any that are missing keep the drawn frame. */
+export const LANDING_IMAGE_PICKS: { key: LandingImageKey; gameKey: string; cardName: string; setName?: string }[] = [
+  { key: "heroCenter", gameKey: "pokemon", cardName: "Charizard ex", setName: "Obsidian Flames" },
+  { key: "heroLeft", gameKey: "one_piece", cardName: "Monkey.D.Luffy" },
+  { key: "heroRight", gameKey: "yugioh", cardName: "Blue-Eyes White Dragon" },
+  { key: "blueEyes", gameKey: "yugioh", cardName: "Blue-Eyes White Dragon" },
+  { key: "goku", gameKey: "dragon_ball", cardName: "Son Goku" },
+];
+
+function CardPhoto({ image, className }: { image: LandingImage; className?: string }) {
+  return (
+    // Card pictures come from several catalog hosts and are already sized.
+    <img className={className} src={image.src} alt={image.alt} decoding="async" referrerPolicy="no-referrer" />
+  );
+}
+
 function HoloCard({
   tone,
   className,
+  image,
 }: {
   tone: "gold" | "violet" | "ember";
   className: string;
+  image?: LandingImage;
 }) {
+  if (image) {
+    return (
+      <div className={`holo-card holo-photo-card ${className}`}>
+        <CardPhoto image={image} className="holo-photo" />
+      </div>
+    );
+  }
   return (
     <div className={`holo-card holo-${tone} ${className}`} aria-hidden="true">
       <div className="holo-frame">
@@ -72,7 +102,7 @@ function HoloCard({
   );
 }
 
-export function HeroPreview() {
+export function HeroPreview({ images = {} }: { images?: LandingImages }) {
   const width = 320;
   const height = 120;
   const points = scale(HERO_SERIES, width, height);
@@ -83,9 +113,9 @@ export function HeroPreview() {
       aria-label="Example of a Sentiment card reading"
     >
       <div className="hero-cards">
-        <HoloCard tone="violet" className="fan-left" />
-        <HoloCard tone="ember" className="fan-right" />
-        <HoloCard tone="gold" className="fan-center" />
+        <HoloCard tone="violet" className="fan-left" image={images.heroLeft} />
+        <HoloCard tone="ember" className="fan-right" image={images.heroRight} />
+        <HoloCard tone="gold" className="fan-center" image={images.heroCenter} />
       </div>
       <div className="hero-panel">
         <div className="hero-panel-top">
@@ -172,6 +202,8 @@ type Mover = {
   change: number;
   reading: "Buy" | "Sell" | "Hold";
   series: number[];
+  /** A single card's tile shows its picture when the catalog has one. */
+  imageKey?: LandingImageKey;
 };
 
 const MOVERS: Mover[] = [
@@ -197,6 +229,7 @@ const MOVERS: Mover[] = [
   },
   {
     name: "Blue-Eyes White Dragon PSA 10",
+    imageKey: "blueEyes",
     kind: "Yu-Gi-Oh! · graded",
     change: -9,
     reading: "Sell",
@@ -206,6 +239,7 @@ const MOVERS: Mover[] = [
   },
   {
     name: "Son Goku, Fusion World leader",
+    imageKey: "goku",
     kind: "Dragon Ball · card",
     change: -14,
     reading: "Sell",
@@ -215,13 +249,14 @@ const MOVERS: Mover[] = [
   },
 ];
 
-function MoverTile({ mover }: { mover: Mover }) {
+function MoverTile({ mover, image }: { mover: Mover; image?: LandingImage }) {
   const width = 200;
   const height = 56;
   const points = scale(mover.series, width, height, 3);
   const up = mover.change >= 0;
   return (
-    <li className="mover">
+    <li className={image ? "mover has-photo" : "mover"}>
+      {image ? <CardPhoto image={image} className="mover-photo" /> : null}
       <div className="mover-head">
         <span className="mover-kind">{mover.kind}</span>
         <span className={`reading reading-${mover.reading.toLowerCase()}`}>
@@ -251,11 +286,11 @@ function MoverTile({ mover }: { mover: Mover }) {
   );
 }
 
-export function MarketMovers() {
+export function MarketMovers({ images = {} }: { images?: LandingImages }) {
   return (
     <ul className="movers" aria-label="Example market movers">
       {MOVERS.map((mover) => (
-        <MoverTile key={mover.name} mover={mover} />
+        <MoverTile key={mover.name} mover={mover} image={mover.imageKey ? images[mover.imageKey] : undefined} />
       ))}
     </ul>
   );
