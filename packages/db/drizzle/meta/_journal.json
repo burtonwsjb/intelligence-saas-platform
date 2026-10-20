@@ -253,6 +253,13 @@
       "when": 35,
       "tag": "0036_worker_resource_schedule",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 36,
+      "tag": "0037_printing_image",
+      "breakpoints": true
     }
   ]
 }

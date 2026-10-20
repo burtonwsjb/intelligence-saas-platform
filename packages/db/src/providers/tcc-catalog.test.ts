@@ -3,10 +3,13 @@ import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import {
   extractCreatorCallsFromContent,
+  findCardImages,
   ingestSourceContentRecord,
   listSourceMentions,
+  loadPrintingImages,
   readMigrationSql,
   resolveSourceMention,
+  safeCardImageUrl,
   seedTcgIdentityFixtures,
   withPlatformContext,
   type Database,
@@ -472,5 +475,97 @@ describe("TCG Card Central catalog import", () => {
     expect(report).toMatchObject({ status: "completed", cards: 1000, printings: 1500, sets: 2, collisions: 0, rejected: 0 });
     expect(await count(client, "tcg_printing")).toBe(1500);
     expect(statements).toBeLessThan(40);
+  });
+});
+
+describe("TCG Card Central card pictures", () => {
+  const imageA = "https://assets.tcgdex.net/en/sv/sv06/214/high.webp";
+  const imageB = "https://cdn.example.test/card-images/sv06/214.webp";
+
+  it("stores each card's https picture, updates a changed one and keeps one the feed omits", async () => {
+    const { client, db } = await setup();
+    const rows = (pokemon: unknown[]) => fakeFeed({ pokemon }).transport;
+    const run = (transport: HttpTransport, at: number) =>
+      importTccCatalog(db, { baseUrl: BASE_URL, token: "t", transport, now: new Date(T0.getTime() + at) });
+    const day = TCC_CATALOG_RESWEEP_MS + 1;
+
+    const first = await run(
+      rows([
+        { ...card(1, { languages: ["en", "ja"] }), image_url: imageA },
+        { ...card(2), image_url: "http://insecure.example.test/a.png" },
+        { ...card(3), image_url: "en/sv/sv06/003" },
+        card(4),
+      ]),
+      0,
+    );
+    expect(first).toMatchObject({ printings: 5, images: 2 });
+    const pictures = async () =>
+      (
+        await client.query<{ identifier_value: string; image_url: string }>(`
+          SELECT i.identifier_value, img.image_url FROM tcg_printing_image img
+          JOIN tcg_printing_identifier i ON i.printing_id = img.printing_id
+          ORDER BY i.identifier_value
+        `)
+      ).rows;
+    expect(await pictures()).toEqual([
+      { identifier_value: `${uuid(1)}:en`, image_url: imageA },
+      { identifier_value: `${uuid(1)}:ja`, image_url: imageA },
+    ]);
+
+    // Unchanged pictures are not rewritten; a later picture for an imported card is added.
+    const same = await run(rows([{ ...card(1, { languages: ["en", "ja"] }), image_url: imageA }, { ...card(4), image_url: imageB }]), day);
+    expect(same).toMatchObject({ printings: 0, images: 1 });
+
+    // A changed picture replaces the old one; a card sent without one keeps its picture.
+    const changed = await run(rows([{ ...card(1, { languages: ["en", "ja"] }), image_url: imageB }, card(4)]), 2 * day);
+    expect(changed.images).toBe(2);
+    expect(await pictures()).toEqual([
+      { identifier_value: `${uuid(1)}:en`, image_url: imageB },
+      { identifier_value: `${uuid(1)}:ja`, image_url: imageB },
+      { identifier_value: `${uuid(4)}:en`, image_url: imageB },
+    ]);
+  });
+
+  it("serves pictures to the explorer and showcase lookups, and none when the table is missing", async () => {
+    const { client, db } = await setup();
+    await importTccCatalog(db, {
+      baseUrl: BASE_URL,
+      token: "t",
+      transport: fakeFeed({ pokemon: [{ ...card(1, { name: "Charizard ex" }), image_url: imageA }, card(2)] }).transport,
+      now: T0,
+    });
+    const { rows } = await client.query<{ printing_id: string; value: string }>(
+      `SELECT printing_id, identifier_value AS value FROM tcg_printing_identifier ORDER BY identifier_value`,
+    );
+    const [charizard, plain] = rows.map((row) => row.printing_id);
+    const images = await loadPrintingImages(db, [charizard!, plain!]);
+    expect([...images]).toEqual([[charizard, imageA]]);
+
+    const picks = await findCardImages(db, [
+      { key: "hero", gameKey: "pokemon", cardName: "charizard EX", setName: "Twilight" },
+      { key: "wrongSet", gameKey: "pokemon", cardName: "Charizard ex", setName: "Base Set" },
+      { key: "none", gameKey: "pokemon", cardName: "Card 2" },
+    ]);
+    expect([...picks]).toEqual([["hero", { imageUrl: imageA, cardName: "Charizard ex", setName: "Twilight Masquerade" }]]);
+
+    await client.exec(`DROP TABLE tcg_printing_image`);
+    expect((await loadPrintingImages(db, [charizard!])).size).toBe(0);
+    expect((await findCardImages(db, [{ key: "hero", gameKey: "pokemon", cardName: "Charizard ex" }])).size).toBe(0);
+    // The catalog import still runs without the table.
+    const report = await importTccCatalog(db, {
+      baseUrl: BASE_URL,
+      token: "t",
+      transport: fakeFeed({ pokemon: [{ ...card(3), image_url: imageB }] }).transport,
+      now: new Date(T0.getTime() + TCC_CATALOG_RESWEEP_MS + 1),
+    });
+    expect(report).toMatchObject({ status: "completed", printings: 1, images: 0 });
+  });
+
+  it("only accepts absolute https picture URLs", () => {
+    expect(safeCardImageUrl(` ${imageA} `)).toBe(imageA);
+    for (const bad of ["http://a.test/x.png", "//a.test/x.png", "en/sv/1", "https://a.test/x y.png", 'https://a.test/"x', "data:image/png;base64,AA", 42, null]) {
+      expect(safeCardImageUrl(bad)).toBeNull();
+    }
+    expect(safeCardImageUrl(`https://a.test/${"x".repeat(1001)}`)).toBeNull();
   });
 });

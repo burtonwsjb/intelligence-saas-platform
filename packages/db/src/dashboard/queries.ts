@@ -13,6 +13,7 @@ import { getLatestScoreSnapshot } from "../scoring/persist.js";
 import { getMarketFeatureSnapshot } from "../analytics/features.js";
 import { listCallsByPrinting } from "../creator/query.js";
 import { listMembershipAsOf } from "../analytics/index-engine.js";
+import { loadPrintingImages } from "../tcg/card-image.js";
 
 export type OpportunityFilter = {
   game?: string;
@@ -37,6 +38,8 @@ export type PrintingIdentity = {
   rarity: string | null;
   finish: string | null;
   canonicalPrintingKey: string;
+  /** Set by getPrintingWorkspace; catalog lists leave it out. */
+  imageUrl?: string | null;
 };
 
 export function formatPrintingIdentity(identity: PrintingIdentity): string {
@@ -155,10 +158,12 @@ export async function listLatestOpportunities(db: Database, filter: OpportunityF
 }
 
 export async function getPrintingWorkspace(db: Database, printingId: string) {
-  const identity = await getPrintingIdentity(db, printingId);
-  if (!identity) {
+  const found = await getPrintingIdentity(db, printingId);
+  if (!found) {
     return null;
   }
+  const images = await loadPrintingImages(db, [printingId]);
+  const identity: PrintingIdentity = { ...found, imageUrl: images.get(printingId) ?? null };
   const [sold, listing, reference, score, features, calls, predictions, spread, social] = await Promise.all([
     listTcgSoldHistory(db, { printingId }),
     getLatestTcgMarketSnapshot(db, { printingId, marketType: "marketplace_listing" }),

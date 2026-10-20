@@ -11,6 +11,7 @@ import {
   insertTcgPrintingIdentifier,
   insertTcgSet,
 } from "../tcg/catalog.js";
+import { safeCardImageUrl } from "../tcg/card-image.js";
 import { TCC_ID_TYPE, TCC_NAMESPACE } from "../tcg/fixtures.js";
 import {
   canonicalPrintingKey,
@@ -159,6 +160,8 @@ type CatalogCard = {
   collectorNumber: string;
   rarity: string | null;
   variantKey: string;
+  /** TCC's picture of the card, https only. */
+  imageUrl: string | null;
   languages: string[];
   unsupportedLanguages: number;
   set: { setKey: string; name: string; releaseDate: string | null };
@@ -203,6 +206,7 @@ export function parseCatalogCard(gameKey: string, raw: unknown): CatalogCard | n
     collectorNumber,
     rarity: text(row.rarity, 100),
     variantKey: catalogVariant(typeof row.variant === "string" ? row.variant : null),
+    imageUrl: safeCardImageUrl(row.image_url),
     languages: [...languages],
     unsupportedLanguages,
     set: { setKey, name: setName, releaseDate: releaseDate(set?.release_date) },
@@ -279,6 +283,8 @@ export type TccCatalogReport = {
   conflicts: number;
   /** Cards the database refused; the rest of the page is still imported. */
   rejected: number;
+  /** Printings whose card picture was added or changed this run. */
+  images: number;
   sweepComplete: boolean;
 };
 
@@ -595,6 +601,61 @@ async function importPage(
     report.alreadyImported += card.languages.length - pending.length;
     if (pending.length > 0) pendingByCard.set(card, pending);
   }
+  await importPendingCards(db, gameKey, pendingByCard, report, caches);
+  report.images += await syncCardImages(db, cards);
+}
+
+/**
+ * Stores each card's picture for the printings its TCC id is bound to, new and
+ * already imported cards alike, so pictures arrive on the next daily pass.
+ * Only rows whose picture is new or different are written; a card the feed
+ * sends without a picture keeps the one it has. Returns how many changed.
+ */
+async function syncCardImages(db: Database, cards: CatalogCard[]): Promise<number> {
+  const pairs = cards.flatMap((card) =>
+    card.imageUrl
+      ? card.languages.map((language) => ({
+          value: catalogIdentifierValue(card.id, language).toLowerCase(),
+          url: card.imageUrl!,
+        }))
+      : [],
+  );
+  if (pairs.length === 0) return 0;
+  const values = sql.join(
+    pairs.map((pair) => sql`(${pair.value}, ${pair.url})`),
+    sql`, `,
+  );
+  // A savepoint, so a database without tcg_printing_image (migration 0037 not
+  // applied yet) skips pictures instead of failing the catalog import.
+  try {
+    return await db.transaction(async (tx) => {
+      const changed = await tx.execute(sql`
+        INSERT INTO tcg_printing_image (printing_id, image_url, source_key, updated_at)
+        SELECT DISTINCT ON (i.printing_id) i.printing_id, v.url, ${TCC_NAMESPACE}, now()
+        FROM (VALUES ${values}) AS v(value, url), tcg_printing_identifier i
+        WHERE i.normalized_value = v.value
+          AND i.source_namespace = ${TCC_NAMESPACE}
+          AND i.identifier_type = ${TCC_ID_TYPE}
+        ORDER BY i.printing_id
+        ON CONFLICT (printing_id) DO UPDATE
+          SET image_url = EXCLUDED.image_url, source_key = EXCLUDED.source_key, updated_at = now()
+          WHERE tcg_printing_image.image_url IS DISTINCT FROM EXCLUDED.image_url
+        RETURNING printing_id
+      `);
+      return (Array.isArray(changed) ? changed : ((changed as { rows?: unknown[] }).rows ?? [])).length;
+    });
+  } catch {
+    return 0;
+  }
+}
+
+async function importPendingCards(
+  db: Database,
+  gameKey: string,
+  pendingByCard: Map<CatalogCard, string[]>,
+  report: TccCatalogReport,
+  caches: Caches,
+) {
   if (pendingByCard.size === 0) return;
   try {
     const result = await db.transaction((tx) =>
@@ -690,6 +751,7 @@ export async function importTccCatalog(
     collisions: 0,
     conflicts: 0,
     rejected: 0,
+    images: 0,
     sweepComplete: false,
   };
   const skipped = (reason: string, sweepComplete = false): TccCatalogReport => ({

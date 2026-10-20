@@ -29,7 +29,12 @@ export function CardTile({ row, href, windowLabel }: { row: ExplorerRow; href: s
   return (
     <article className="card-tile">
       <div className="card-art">
-        <CardArt cardName={row.cardName} setName={row.setName} collectorNumber={row.collectorNumber} />
+        <CardArt
+          cardName={row.cardName}
+          setName={row.setName}
+          collectorNumber={row.collectorNumber}
+          imageUrl={row.imageUrl}
+        />
         <div className="card-badges">
           <Badge tone="solid">{languageText(row.languageCode)}</Badge>
           <Badge tone="solid">{variantText(row.variantKey)}</Badge>

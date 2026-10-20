@@ -137,7 +137,12 @@ export default async function CardDetailPage({
       </p>
       <header className="detail-header">
         <div className="card-art">
-          <CardArt cardName={identity.cardName} setName={identity.setName} collectorNumber={identity.collectorNumber} />
+          <CardArt
+            cardName={identity.cardName}
+            setName={identity.setName}
+            collectorNumber={identity.collectorNumber}
+            imageUrl={identity.imageUrl}
+          />
         </div>
         <div>
           <p className="eyebrow">
