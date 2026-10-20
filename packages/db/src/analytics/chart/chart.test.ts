@@ -213,6 +213,18 @@ describe("chart sentiment score", () => {
     expect(reliability(0.75)).toBe(0.5);
   });
 
+  it("keeps a lone signal near neutral when every other pattern measured no better than a coin flip", () => {
+    // A year of slow fall ending in a sharp dip: downtrend, RSI and Bollinger all fire.
+    const prices = [...Array.from({ length: 249 }, (_, i) => 100 * 0.999 ** i + (i % 2 ? 0.5 : -0.5)), 60];
+    const stats = new Map(CHART_PATTERNS.map((p) => [p.key, { samples: 10_000, hits: 4_300 }]));
+    stats.set("bollinger_lower_break", { samples: 10_000, hits: 6_000 });
+    const result = scoreChartSeries(series(prices), stats, now);
+    const bollinger = result.signals.find((s) => s.key === "bollinger_lower_break")!;
+    expect(bollinger.contribution > 0).toBe(true);
+    expect(result.label).toBe("neutral");
+    expect(Math.abs(result.score!) < 25).toBe(true);
+  });
+
   it("loses confidence as data goes stale", () => {
     const prices = Array.from({ length: 80 }, (_, i) => 100 * 1.005 ** i);
     const fresh = scoreChartSeries(series(prices), new Map(), now);

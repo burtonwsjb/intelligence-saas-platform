@@ -137,7 +137,7 @@ describe("sentiment API for cards and products", () => {
     expect(chart.graded).toEqual([expect.objectContaining({ segment: "psa10", grading_company: "psa", grade: "10", label: "neutral" })]);
     const other = await app.request(`/v1/printings/${seeded.printings.greninjaJaNormal.id}/sentiment`, { headers: auth });
     expect(((await other.json()) as { chart_sentiment: unknown }).chart_sentiment).toEqual({
-      method: "chart-sentiment.v1",
+      method: "chart-sentiment.v2",
       status: "not_computed",
       raw: null,
       graded: [],

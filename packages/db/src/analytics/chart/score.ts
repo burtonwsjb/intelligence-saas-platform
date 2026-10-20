@@ -7,7 +7,7 @@
 import { buildChartContext, CHART_PATTERNS, type ChartContext, type ChartPatternDef } from "./patterns.js";
 import type { ChartSeries, DailyPoint } from "./series.js";
 
-export const CHART_METHOD_VERSION = "chart-sentiment.v1";
+export const CHART_METHOD_VERSION = "chart-sentiment.v2";
 
 export const CHART_SCORE_RULES = {
   /** Fewer daily points than this and no score is given. */
@@ -16,7 +16,11 @@ export const CHART_SCORE_RULES = {
   labelThreshold: 25,
   /**
    * The score is net / max(gross, floor x the weight of every pattern group the
-   * data could evaluate), so one weak signal among many silent ones stays near neutral.
+   * data could evaluate), so one weak signal among many silent ones stays near
+   * neutral. Each group counts at its base weight times the best reliability any
+   * evaluable pattern has, so a group measured no better than a coin flip still
+   * counts as silent: a lone signal cannot reach +-100 just because every other
+   * pattern was measured unreliable.
    */
   denominatorFloorShare: 0.35,
   /** Pseudo-samples of the prior hit rate blended with measured samples. */
@@ -162,7 +166,8 @@ export function scoreChartSeries(series: ChartSeries, stats: PatternStatsMap, no
   }
   const ctx = buildChartContext(points);
   const t = points.length - 1;
-  const groupWeight = new Map<string, number>();
+  const groupBaseWeight = new Map<string, number>();
+  let bestReliability = 0;
   const fired: Array<{ pattern: ChartPatternDef; strength: number; weight: number; hitRate: number; samples: number; detail: string }> = [];
   for (const pattern of CHART_PATTERNS) {
     const missing = evaluable(pattern, ctx, t);
@@ -172,14 +177,15 @@ export function scoreChartSeries(series: ChartSeries, stats: PatternStatsMap, no
     }
     const hitRate = blendedHitRate(pattern, stats.get(pattern.key));
     const weight = pattern.baseWeight * reliability(hitRate);
-    groupWeight.set(pattern.group, Math.max(groupWeight.get(pattern.group) ?? 0, weight));
+    groupBaseWeight.set(pattern.group, Math.max(groupBaseWeight.get(pattern.group) ?? 0, pattern.baseWeight));
+    bestReliability = Math.max(bestReliability, reliability(hitRate));
     const hit = pattern.detect(ctx, t);
     if (hit) fired.push({ pattern, strength: hit.strength, weight, hitRate, samples: stats.get(pattern.key)?.samples ?? 0, detail: hit.detail });
   }
   const sign = (p: ChartPatternDef) => (p.direction === "bullish" ? 1 : -1);
   const net = fired.reduce((sum, f) => sum + sign(f.pattern) * f.strength * f.weight, 0);
   const gross = fired.reduce((sum, f) => sum + f.strength * f.weight, 0);
-  const available = [...groupWeight.values()].reduce((sum, w) => sum + w, 0);
+  const available = bestReliability * [...groupBaseWeight.values()].reduce((sum, w) => sum + w, 0);
   const denominator = Math.max(gross, R.denominatorFloorShare * available);
   const score = denominator > 0 ? Math.round(Math.max(-100, Math.min(100, (100 * net) / denominator))) : 0;
   base.score = score;
