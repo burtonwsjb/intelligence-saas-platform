@@ -327,6 +327,21 @@ describe("startup redis transport probe", () => {
   });
 });
 
+describe("market work", () => {
+  it("runs in the Redis worker loop and after every scheduled free-only batch", () => {
+    const dir = path.dirname(fileURLToPath(import.meta.url));
+    const worker = readFileSync(path.join(dir, "worker.ts"), "utf8");
+    const entry = readFileSync(path.join(dir, "index.ts"), "utf8");
+    const startWorker = worker.slice(worker.indexOf("export function startWorker"));
+    expect(startWorker).toContain("void runMarketWork(db, env)");
+    const market = worker.slice(worker.indexOf("export async function runMarketWork"));
+    for (const step of ["runTccCatalogImport", "runPriceHistory", "runCallScoring", "runChartSentiment"]) {
+      expect(market.slice(0, market.indexOf("\n}\n"))).toContain(`await ${step}(`);
+    }
+    expect(entry).toMatch(/afterBatch: async \(db\) => \{[\s\S]*runEmailDeliverySweep\(db, process\.env\);[\s\S]*runMarketWork\(db, process\.env\);/);
+  });
+});
+
 describe("provider runtime startup sync", () => {
   it("completes env reconciliation before the provider scheduler is armed", async () => {
     const order: string[] = [];

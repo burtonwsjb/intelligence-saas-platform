@@ -181,6 +181,34 @@ export async function runTccCatalogImport(
   }
 }
 
+/**
+ * The hourly market work, one step after another: the TCG Card Central card
+ * catalog (with card pictures), sealed products and a set asset for any new
+ * set, transcript card mentions for new YouTube videos (when a transcript
+ * provider is configured), posts from registered influencer websites (when
+ * PROVIDER_WEB_FEED_MODE=live), the 12-month YouTube and website backfills
+ * (when their *_BACKFILL_DAYS are set), TCC price history for calls without
+ * prices and the chart universe, scoring of calls that have come due, then a
+ * batch of Chart Sentiment. Every step is bounded and catches its own errors.
+ * Postgres and HTTP only: no Redis, so the scheduled free-only worker runs it
+ * after each batch as well.
+ */
+export async function runMarketWork(db: Database, env: NodeJS.ProcessEnv = process.env): Promise<void> {
+  await runTccCatalogImport(db, env);
+  await runSealedCatalogSync(db);
+  await runSetCatalogSync(db);
+  await runTranscriptBackfill(db, env);
+  await runWebFeedSync(db, env);
+  await runYoutubeUploadsBackfill(db, env);
+  await runWebSitemapBackfill(db, env);
+  await runMentionRetry(db);
+  await runAssetCallRescan(db);
+  await runPostTrace(db, env);
+  await runPriceHistory(db, env);
+  await runCallScoring(db);
+  await runChartSentiment(db, env);
+}
+
 /** Adds the standard sealed products for any new set. Database only. */
 export async function runSealedCatalogSync(db: Database) {
   try {
@@ -769,33 +797,15 @@ export function startWorker(options?: {
     },
   });
 
-  // Hourly, and once a minute after startup: the TCG Card Central card
-  // catalog, sealed products and a set asset for any new set, transcript card mentions for
-  // new YouTube videos (when a transcript provider is configured), posts from
-  // registered influencer websites (when PROVIDER_WEB_FEED_MODE=live), the
-  // 12-month YouTube and website backfills (when their *_BACKFILL_DAYS are
-  // set), TCC price history for calls without prices and the chart universe, scoring of calls
-  // that have come due, then a batch of Chart Sentiment.
-  const runMarketWork = () => {
+  // Hourly, and once a minute after startup (see runMarketWork).
+  const runMarketWorkLoop = () => {
     if (status === "shutting_down" || status === "stopped") {
       return;
     }
-    void runTccCatalogImport(db, env)
-      .then(() => runSealedCatalogSync(db))
-      .then(() => runSetCatalogSync(db))
-      .then(() => runTranscriptBackfill(db, env))
-      .then(() => runWebFeedSync(db, env))
-      .then(() => runYoutubeUploadsBackfill(db, env))
-      .then(() => runWebSitemapBackfill(db, env))
-      .then(() => runMentionRetry(db))
-      .then(() => runAssetCallRescan(db))
-      .then(() => runPostTrace(db, env))
-      .then(() => runPriceHistory(db, env))
-      .then(() => runCallScoring(db))
-      .then(() => runChartSentiment(db, env));
+    void runMarketWork(db, env);
   };
-  const firstMarketWork = setTimeout(runMarketWork, 60_000);
-  const callScoring = setInterval(runMarketWork, CALL_SCORING_INTERVAL_MS);
+  const firstMarketWork = setTimeout(runMarketWorkLoop, 60_000);
+  const callScoring = setInterval(runMarketWorkLoop, CALL_SCORING_INTERVAL_MS);
 
   void runRedisTransportProbe({ env, queue })
     .then(logRedisTransportProbe)
