@@ -61,7 +61,7 @@ export type LandingImageKey = "heroCenter" | "heroLeft" | "heroRight" | "blueEye
 /** Catalog cards to picture; any that are missing keep the drawn frame. */
 export const LANDING_IMAGE_PICKS: { key: LandingImageKey; gameKey: string; cardName: string; setName?: string }[] = [
   { key: "heroCenter", gameKey: "pokemon", cardName: "Charizard ex", setName: "Obsidian Flames" },
-  { key: "heroLeft", gameKey: "one_piece", cardName: "Monkey.D.Luffy" },
+  { key: "heroLeft", gameKey: "one_piece", cardName: "Monkey D. Luffy" },
   { key: "heroRight", gameKey: "yugioh", cardName: "Blue-Eyes White Dragon" },
   { key: "blueEyes", gameKey: "yugioh", cardName: "Blue-Eyes White Dragon" },
   { key: "goku", gameKey: "dragon_ball", cardName: "Son Goku" },
