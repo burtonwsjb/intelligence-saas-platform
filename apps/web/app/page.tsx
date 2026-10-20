@@ -1,5 +1,10 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import {
+  CreatorBoard,
+  HeroPreview,
+  MarketMovers,
+} from "@/components/LandingVisuals";
 import { getOptionalSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -48,25 +53,61 @@ export default async function HomePage() {
   return (
     <div className="landing">
       <section className="landing-hero" aria-labelledby="hero-heading">
-        <p className="eyebrow">Trading card market sentiment</p>
-        <h1 id="hero-heading">Know which calls to trust before the price moves.</h1>
-        <p className="landing-lede">
-          Sentiment turns what collectors and creators are saying into a buy or sell reading for every card, set,
-          sealed box and graded slab, weighted by whose calls actually came true.
-        </p>
-        <div className="landing-actions">
-          <Link className="button" href="/signup">
-            Start free
-          </Link>
-          <Link className="button secondary" href="/login">
-            Log in
-          </Link>
+        <div className="landing-hero-copy">
+          <p className="eyebrow">Trading card market sentiment</p>
+          <h1 id="hero-heading">
+            Know which calls to trust before the price moves.
+          </h1>
+          <p className="landing-lede">
+            Sentiment turns what collectors and creators are saying into a buy
+            or sell reading for every card, set, sealed box and graded slab,
+            weighted by whose calls actually came true.
+          </p>
+          <div className="landing-actions">
+            <Link className="button" href="/signup">
+              Start free
+            </Link>
+            <Link className="button secondary" href="/login">
+              Log in
+            </Link>
+          </div>
+          <ul className="landing-games" aria-label="Games covered">
+            {GAMES.map((game) => (
+              <li key={game}>{game}</li>
+            ))}
+          </ul>
         </div>
-        <ul className="landing-games" aria-label="Games covered">
-          {GAMES.map((game) => (
-            <li key={game}>{game}</li>
-          ))}
-        </ul>
+        <HeroPreview />
+      </section>
+
+      <section className="landing-section" aria-labelledby="movers-heading">
+        <div className="landing-section-head">
+          <h2 id="movers-heading">Spot the moves while they are happening</h2>
+          <p>
+            Sets, single cards, sealed boxes and graded slabs each get their own
+            reading, so a rising set and a falling slab from the same game never
+            blur together.
+          </p>
+        </div>
+        <MarketMovers />
+        <p className="landing-example-note">
+          Example readings to show the layout, not live market data.
+        </p>
+      </section>
+
+      <section
+        className="landing-section landing-split"
+        aria-labelledby="board-heading"
+      >
+        <div className="landing-section-head">
+          <h2 id="board-heading">Follow the creators who get it right</h2>
+          <p>
+            Every call a creator makes is scored against sold prices. Sentiment
+            ranks them by results, not subscribers, and lets you drop anyone
+            whose calls you do not trust.
+          </p>
+        </div>
+        <CreatorBoard />
       </section>
 
       <section className="landing-section" aria-labelledby="how-heading">
@@ -97,12 +138,15 @@ export default async function HomePage() {
       </section>
 
       <section className="landing-cta" aria-labelledby="cta-heading">
-        <h2 id="cta-heading">See what the market is saying about your cards.</h2>
+        <h2 id="cta-heading">
+          See what the market is saying about your cards.
+        </h2>
         <Link className="button" href="/signup">
           Create your free workspace
         </Link>
         <p className="subtle">
-          Scores describe evidence, not certainty. Sentiment is not investment advice.
+          Scores describe evidence, not certainty. Sentiment is not investment
+          advice.
         </p>
       </section>
     </div>
