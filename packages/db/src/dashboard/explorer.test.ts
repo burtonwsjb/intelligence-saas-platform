@@ -311,4 +311,28 @@ describe("card explorer against the canonical pipeline", () => {
     const unrated = after.filter((row) => !row.rated);
     for (const row of unrated) expect(row.weight).toBe(SENTIMENT_BASELINE_WEIGHT);
   });
+
+  // Runs last in this block: calls are append-only, so it adds a graded copy rather than editing one.
+  it("splits a card's creator calls into raw and graded and links each to its post", async () => {
+    const db = await setup();
+    const found = (await db.execute(sql`
+      SELECT id, printing_id FROM creator_call WHERE printing_id IS NOT NULL AND content_id IS NOT NULL
+      ORDER BY id LIMIT 1
+    `)) as unknown as { rows: { id: string; printing_id: string }[] };
+    const call = found.rows[0];
+    expect(call).toBeTruthy();
+    const before = await listCardCreatorCalls(db, call!.printing_id);
+    expect(before.items.every((item) => item.grade === null)).toBe(true);
+    expect(before.items.find((item) => item.id === call!.id)?.contentUrl).toMatch(/^https?:\/\//);
+    await db.execute(sql`CREATE TEMP TABLE graded_call AS SELECT * FROM creator_call WHERE id = ${call!.id}`);
+    await db.execute(sql`UPDATE graded_call SET id = 'graded-copy', fingerprint = 'graded-copy', mention_id = NULL,
+      evidence = evidence || '{"grade":{"company":"psa","grade":10}}'::jsonb`);
+    await db.execute(sql`INSERT INTO creator_call SELECT * FROM graded_call`);
+    const raw = await listCardCreatorCalls(db, call!.printing_id, { kind: "raw" });
+    const graded = await listCardCreatorCalls(db, call!.printing_id, { kind: "graded" });
+    expect(raw.items.some((item) => item.id === "graded-copy")).toBe(false);
+    expect(graded.items.map((item) => [item.id, item.grade])).toEqual([["graded-copy", "PSA 10"]]);
+    expect(graded.items[0]!.contentUrl).toMatch(/^https?:\/\//);
+    expect(graded.counts).toEqual({ raw: before.counts.raw, graded: before.counts.graded + 1 });
+  });
 });

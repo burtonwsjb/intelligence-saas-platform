@@ -26,6 +26,7 @@ import {
   variantText,
 } from "@/lib/display";
 import {
+  CARD_CALL_KINDS,
   EXPLORER_WINDOWS,
   comparableSoldSeries,
   explorerQueryToSearch,
@@ -38,6 +39,7 @@ import {
   parseExplorerQuery,
   publishedPredictionsForCustomer,
   windowChange,
+  type CardCallKind,
   type ExplorerWindow,
 } from "@isp/db";
 import { formatMoney } from "@isp/shared";
@@ -84,6 +86,10 @@ export default async function CardDetailPage({
     ? (windowParam as ExplorerWindow)
     : "30d";
   const page = Math.max(1, Math.min(500, Math.trunc(Number(first(raw.page) ?? 1)) || 1));
+  const callsParam = first(raw.calls);
+  const callKind: CardCallKind = (CARD_CALL_KINDS as readonly string[]).includes(callsParam ?? "")
+    ? (callsParam as CardCallKind)
+    : "raw";
   // The list state travels as an opaque param; re-parse it so only valid explorer state is echoed back.
   const fromRaw = first(raw.from);
   const backSearch = fromRaw?.startsWith("?")
@@ -97,13 +103,15 @@ export default async function CardDetailPage({
   }
   const { identity, score } = workspace;
   const base = `/app/cards/${encodeURIComponent(printingId)}`;
-  const href = (overrides: { tab?: TabKey; window?: ExplorerWindow; page?: number }) => {
+  const href = (overrides: { tab?: TabKey; window?: ExplorerWindow; page?: number; calls?: CardCallKind }) => {
     const next = new URLSearchParams();
     const t = overrides.tab ?? tab;
     if (t !== "overview") next.set("tab", t);
     const w = overrides.window ?? window;
     if (w !== "30d") next.set("window", w);
     if (overrides.page && overrides.page > 1) next.set("page", String(overrides.page));
+    const c = overrides.calls ?? callKind;
+    if (t === "creators" && c !== "raw") next.set("calls", c);
     if (backSearch) next.set("from", backSearch);
     const text = next.toString();
     return text ? `${base}?${text}` : base;
@@ -362,7 +370,9 @@ export default async function CardDetailPage({
         <CreatorsPanel
           printingId={printingId}
           page={page}
+          kind={callKind}
           pageHref={(p) => href({ page: p })}
+          kindHref={(calls) => href({ calls })}
           hiddenCreatorIds={await loadHiddenCreatorIds(organizationId, userId)}
         />
       ) : null}
@@ -423,37 +433,67 @@ async function SentimentPanel({
   );
 }
 
+const CALL_KIND_TEXT: Record<CardCallKind, string> = { raw: "Raw", graded: "Graded (slabs)" };
+
 async function CreatorsPanel({
   printingId,
   page,
+  kind,
   pageHref,
+  kindHref,
   hiddenCreatorIds,
 }: {
   printingId: string;
   page: number;
+  kind: CardCallKind;
   pageHref: (page: number) => string;
+  kindHref: (kind: CardCallKind) => string;
   hiddenCreatorIds: string[];
 }) {
-  const calls = await listCardCreatorCalls(getDb(), printingId, { page, hiddenCreatorIds });
+  const calls = await listCardCreatorCalls(getDb(), printingId, { page, hiddenCreatorIds, kind });
   return (
     <section className="panel">
-      <h2>Creator calls on this printing</h2>
+      <div className="section-head" style={{ marginTop: 0 }}>
+        <h2>Creator calls on this printing</h2>
+        <nav className="segmented" aria-label="Raw or graded calls">
+          {CARD_CALL_KINDS.map((k) => (
+            <Link key={k} href={kindHref(k)} aria-current={k === kind ? "page" : undefined} scroll={false}>
+              {CALL_KIND_TEXT[k]} ({calls.counts[k]})
+            </Link>
+          ))}
+        </nav>
+      </div>
       {calls.items.length === 0 ? (
-        <EmptyState title="No creator calls" body="No monitored creator has made a call resolved to this exact printing." />
+        <EmptyState
+          title={kind === "graded" ? "No graded calls" : "No raw calls"}
+          body={
+            kind === "graded"
+              ? "No monitored creator has made a call about a graded copy (PSA, BGS, CGC, SGC) of this exact printing."
+              : "No monitored creator has made a call about a raw copy of this exact printing."
+          }
+        />
       ) : (
         <ul className="item-list">
           {calls.items.map((call) => (
             <li key={call.id}>
               <span className="item-main">
                 <Link href={`/app/creators/${encodeURIComponent(call.creatorId)}`}>{call.creatorName ?? "Unnamed creator"}</Link>
+                {call.contentUrl ? (
+                  <a href={call.contentUrl} target="_blank" rel="noopener noreferrer nofollow" className="text-link">
+                    {call.contentTitle ?? "Open the original post"} ↗
+                  </a>
+                ) : null}
                 <span className="subtle">
                   {formatDate(call.publishedAt)} · horizon {call.horizonCode.replaceAll("_", " ")}
                   {call.priceAtCall && call.priceCurrency ? ` · price at call ${formatMoney(call.priceAtCall, call.priceCurrency)}` : ""}
                 </span>
               </span>
-              <Badge tone={call.direction === "bullish" ? "info" : call.direction === "bearish" ? "warn" : undefined}>
-                {call.direction.replaceAll("_", " ")}
-              </Badge>
+              <span className="badge-row">
+                {call.grade ? <Badge>{call.grade}</Badge> : null}
+                <Badge tone={call.direction === "bullish" ? "info" : call.direction === "bearish" ? "warn" : undefined}>
+                  {call.direction.replaceAll("_", " ")}
+                </Badge>
+              </span>
             </li>
           ))}
         </ul>
