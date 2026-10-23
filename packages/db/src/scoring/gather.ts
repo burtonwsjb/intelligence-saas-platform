@@ -122,6 +122,7 @@ export async function gatherScoreInputs(
     featureSnapshotId: snapshot.id,
     featureSetVersion: computed.features.feature_set_version as string,
     sampleSize: computed.sampleSize,
+    priceBasis: computed.priceBasis,
     dataQuality: computed.dataQuality,
     stalenessHours: quality.staleness_hours,
     sourceCount: Object.keys(quality.source_composition ?? {}).length,

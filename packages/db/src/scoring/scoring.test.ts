@@ -107,9 +107,10 @@ describe("opportunity scoring model", () => {
     expect(scored.recommendation).not.toBe("strong_buy");
   });
 
-  it("blocks Strong Buy when social hype is unconfirmed by sales", () => {
+  it("blocks Strong Buy when social hype runs ahead of a current market price", () => {
     const scored = scoreFromInputs(
       baseInput({
+        stalenessHours: 10 * 24,
         salesVelocity: {
           sales_7d: 1,
           sales_30d: 8,
@@ -130,6 +131,39 @@ describe("opportunity scoring model", () => {
     expect(scored.recommendation).not.toBe("strong_buy");
     expect(scored.recommendation).not.toBe("buy");
     expect(scored.explanations.some((line) => line.code === "hype_unconfirmed")).toBe(true);
+  });
+
+  it("reads a fresh daily market price as market evidence when there are no sales", () => {
+    const scored = scoreFromInputs(
+      baseInput({
+        priceBasis: "reference",
+        sampleSize: 14,
+        dataQuality: "complete",
+        stalenessHours: 20,
+        sourceCount: 1,
+        volumeMomentum: { status: "insufficient_data", value: null },
+        salesVelocity: {
+          sales_7d: 0,
+          sales_30d: 0,
+          sales_per_day_30d: { status: "ok", value: 0 },
+          median_intersale_ms: { status: "insufficient_data", value: null },
+        },
+        supply: {},
+        latestSpreadRatio: null,
+        creatorVotes: [
+          { creatorId: "large", direction: "bullish", languageCode: "en", authorityWeight: 0.62, sampleSize: 40, publishedAt: "2026-01-20T00:00:00.000Z" },
+        ],
+      }),
+    );
+    expect(scored.components.market_confirmed).toBe(true);
+    expect(scored.components.price_basis).toBe("reference");
+    expect(scored.recommendation).not.toBe("insufficient_data");
+    const salesFrequency = scored.components.liquidity.find((row) => row.key === "sales_frequency");
+    expect(salesFrequency?.present).toBe(false);
+    const thin = scored.components.risk.find((row) => row.key === "thin_liquidity");
+    expect(thin?.present).toBe(false);
+    const stale = scoreFromInputs(baseInput({ priceBasis: "reference", sampleSize: 2, salesVelocity: { sales_7d: 0, sales_30d: 0 } }));
+    expect(stale.recommendation).toBe("insufficient_data");
   });
 
   it("weights creator consensus by authority so 4/4 cannot dominate 730/1000", () => {
