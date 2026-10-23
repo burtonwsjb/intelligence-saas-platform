@@ -21,6 +21,7 @@ import {
   languageText,
   priceFreshness,
   providerText,
+  quoteText,
   recommendationText,
   variantText,
 } from "@/lib/display";
@@ -117,8 +118,9 @@ export default async function CardDetailPage({
     : null;
   const confirmation = CONFIRMATION_TEXT[marketConfirmationState(scoreView)];
   const hypeUnconfirmed = components.hype_unconfirmed === true;
-  const headline = workspace.latestSold;
-  const series = comparableSoldSeries(workspace.sold, headline);
+  const headline = workspace.headline;
+  const headlineSold = workspace.headlineKind === "sold";
+  const series = comparableSoldSeries(headlineSold ? workspace.sold : workspace.referenceHistory, headline);
   const freshness = priceFreshness(headline?.observedAt);
   const windowFrom = Date.now() - { "7d": 7, "30d": 30, "90d": 90 }[window] * 86_400_000;
   const windowPoints = series.points.filter((point) => point.observedAt.getTime() > windowFrom);
@@ -160,7 +162,9 @@ export default async function CardDetailPage({
               <>
                 <span className="amount">{formatMoney(headline.price, headline.currency)}</span>
                 <span className="subtle">
-                  Last sold · {conditionText(headline.condition)} · ungraded · {headline.currency} · {providerText(headline.sourceKey)}
+                  {headlineSold
+                    ? `${quoteText("sold")} · ${conditionText(headline.condition)} · ungraded · ${headline.currency} · ${providerText(headline.sourceKey)}`
+                    : `${quoteText("reference")} · ungraded · ${headline.currency} · ${providerText(headline.sourceKey)}`}
                 </span>
                 {change ? (
                   <span className={`change ${change.direction}`}>
@@ -260,9 +264,16 @@ export default async function CardDetailPage({
         <>
           <section className="panel">
             <div className="section-head" style={{ marginTop: 0 }}>
-              <h2>Sold price history</h2>
+              <h2>{headlineSold || !headline ? "Sold price history" : "Market price history"}</h2>
             </div>
-            {headline ? (
+            {headline && !headlineSold ? (
+              <PriceTrendChart
+                points={series.points}
+                currency={headline.currency}
+                title={`TCGplayer market price, ungraded, ${headline.currency}`}
+                caption={`Daily TCGplayer market price from ${providerText(headline.sourceKey)}. No sale in the last 30 days, so this is not a sold price.`}
+              />
+            ) : headline ? (
               <PriceTrendChart
                 points={series.points}
                 currency={headline.currency}
@@ -276,7 +287,10 @@ export default async function CardDetailPage({
                 }Asks and reference prices are shown separately below and never joined to this line.`}
               />
             ) : (
-              <EmptyState title="No sales on record" body="Sold history appears once a market source reports a valid sale for this exact printing." />
+              <EmptyState
+                title="No price yet"
+                body="Prices appear once TCG Card Central reports a sale or a TCGplayer market price for this exact printing."
+              />
             )}
           </section>
           <section className="panel">
@@ -284,8 +298,8 @@ export default async function CardDetailPage({
             <dl className="kv">
               <dt>Last valid sale</dt>
               <dd>
-                {headline
-                  ? `${formatMoney(headline.price, headline.currency)} · ${formatAge(headline.observedAt)} · ${providerText(headline.sourceKey)}`
+                {workspace.latestSold
+                  ? `${formatMoney(workspace.latestSold.price, workspace.latestSold.currency)} · ${formatAge(workspace.latestSold.observedAt)} · ${providerText(workspace.latestSold.sourceKey)}`
                   : "—"}
               </dd>
               <dt>Lowest ask</dt>
@@ -294,7 +308,7 @@ export default async function CardDetailPage({
                   ? `${formatMoney(workspace.listing.lowPrice ?? workspace.listing.price, workspace.listing.currency)} · ${formatAge(workspace.listing.observedAt)}`
                   : "No listing data"}
               </dd>
-              <dt>Reference price</dt>
+              <dt>TCGplayer market</dt>
               <dd>
                 {workspace.reference
                   ? `${formatMoney(workspace.reference.price, workspace.reference.currency)} · ${formatAge(workspace.reference.observedAt)} · not an ask or a sale`

@@ -8,6 +8,7 @@ import {
   formatChange,
   languageText,
   priceFreshness,
+  quoteText,
   recommendationText,
   variantText,
 } from "@/lib/display";
@@ -54,7 +55,8 @@ export function CardTile({ row, href, windowLabel }: { row: ExplorerRow; href: s
               <>
                 <span className="amount">{formatMoney(row.price.amount, row.price.currency)}</span>
                 <span className="quote">
-                  Last sold · {conditionText(row.price.condition)} · {row.price.currency}
+                  {quoteText(row.price.quoteType)}
+                  {row.price.quoteType === "sold" ? ` · ${conditionText(row.price.condition)}` : ""} · {row.price.currency}
                 </span>
                 {change ? (
                   <span className={`change ${change.direction}`}>
@@ -69,12 +71,12 @@ export function CardTile({ row, href, windowLabel }: { row: ExplorerRow; href: s
                 <span className="amount" style={{ color: "var(--ink-3)" }}>
                   No price
                 </span>
-                <span className="quote">No valid sale on record</span>
+                <span className="quote">No sale or market price yet</span>
               </>
             )}
           </div>
           {row.series.length >= 2 ? (
-            <Sparkline values={row.series.map((point) => point.amount)} label={`${windowLabel} sold price trend`} />
+            <Sparkline values={row.series.map((point) => point.amount)} label={`${windowLabel} ${row.price?.quoteType === "sold" ? "sold" : "market"} price trend`} />
           ) : null}
         </div>
         <div className="card-signal">

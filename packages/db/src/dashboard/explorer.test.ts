@@ -210,10 +210,17 @@ describe("card explorer against the canonical pipeline", () => {
     expect(all.total).toBe(counted.rows[0]!.printings);
     for (const row of all.rows) {
       if (row.price) {
-        expect(row.price.quoteType).toBe("sold");
+        expect(["sold", "reference"]).toContain(row.price.quoteType);
         expect(row.price.currency).toMatch(/^[A-Z]{3}$/);
       }
     }
+    // Fixture sales are from early January: today they are too old to headline, so
+    // priced cards fall back to the TCGplayer market price; on the sale date the sale wins.
+    expect(all.rows.some((row) => row.price?.quoteType === "sold")).toBe(false);
+    const thatWeek = await listCardExplorerPage(db, parseExplorerQuery({ pageSize: "48" }), {
+      now: new Date("2026-01-06T00:00:00Z"),
+    });
+    expect(thatWeek.rows.some((row) => row.price?.quoteType === "sold")).toBe(true);
 
     const small = await listCardExplorerPage(db, parseExplorerQuery({ pageSize: "12" }));
     expect(small.rows.length).toBeLessThanOrEqual(12);
