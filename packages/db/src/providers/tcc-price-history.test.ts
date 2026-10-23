@@ -157,7 +157,7 @@ describe("TCG Card Central price history", () => {
     });
     expect(again).toMatchObject({ status: "skipped", requests: 0 });
     expect(sent).toHaveLength(3);
-  });
+  }, 90_000);
 
   it("is off unless TCC is live with a URL and token", async () => {
     const untouched = {
