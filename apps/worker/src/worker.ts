@@ -14,6 +14,9 @@ import {
   requireWorkerDatabaseUrl,
   resolveProviderMode,
   runChartSentimentBatch,
+  runCardRescoreBatch,
+  cardRescoreBatchSize,
+  type CardRescoreReport,
   runTranscriptBackfillBatch,
   runWebBackfill,
   runYoutubeBackfill,
@@ -206,6 +209,7 @@ export async function runMarketWork(db: Database, env: NodeJS.ProcessEnv = proce
   await runPostTrace(db, env);
   await runPriceHistory(db, env);
   await runCallScoring(db);
+  await runCardRescore(db, env);
   await runChartSentiment(db, env);
 }
 
@@ -532,6 +536,35 @@ export async function runCallScoring(db: Database, asOf = new Date()) {
     return report;
   } catch (error) {
     logLoopFailure("worker.call_scoring_failed", "call_scoring", error);
+    return null;
+  }
+}
+
+/**
+ * Card scores: rescores up to CARD_RESCORE_BATCH_SIZE priced printings
+ * (default 300, 0 = off) whose latest score is missing, from an older model
+ * revision, older than their newest price, or older than 20 hours.
+ * Database-only; an advisory lock keeps two replicas apart.
+ */
+export async function runCardRescore(
+  db: Database,
+  env: NodeJS.ProcessEnv = process.env,
+  asOf = new Date(),
+): Promise<CardRescoreReport | null> {
+  try {
+    const batchSize = cardRescoreBatchSize(env);
+    if (batchSize === 0) return null;
+    const report = await withPlatformContext(db, (scoped) => runCardRescoreBatch(scoped, { asOf, batchSize, exclusive: true }));
+    logQueueEvent("info", "worker.card_rescore", {
+      status: report.status,
+      reason: report.reason,
+      considered: report.considered,
+      scored: report.scored,
+      failed: report.failed,
+    });
+    return report;
+  } catch (error) {
+    logLoopFailure("worker.card_rescore_failed", "card_rescore", error);
     return null;
   }
 }

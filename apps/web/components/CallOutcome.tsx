@@ -4,8 +4,10 @@ import { DEFAULT_EVALUATION_DAYS } from "@isp/db";
 export const CALL_DIRECTION_TEXT: Record<string, string> = {
   bullish: "Said it would go up",
   bearish: "Said it would go down",
-  neutral: "Neutral",
+  neutral: "Hold",
   hold: "Hold",
+  avoid: "Said to avoid it",
+  watch: "Watching it",
 };
 
 export function callDirectionText(direction: string): string {
@@ -13,9 +15,13 @@ export function callDirectionText(direction: string): string {
 }
 
 export function callHorizonText(horizonCode: string): string {
-  return horizonCode !== "unspecified"
-    ? `within ${horizonCode.replaceAll("_", " ")}`
-    : `no deadline given, judged after ${DEFAULT_EVALUATION_DAYS} days`;
+  if (horizonCode === "unspecified") return `no deadline given, judged after ${DEFAULT_EVALUATION_DAYS} days`;
+  if (horizonCode === "custom") return "by a date the creator gave";
+  const match = horizonCode.match(/^(\d+)([dwmy])$/);
+  if (!match) return `within ${horizonCode.replaceAll("_", " ")}`;
+  const n = Number(match[1]);
+  const unit = { d: "day", w: "week", m: "month", y: "year" }[match[2] as "d" | "w" | "m" | "y"];
+  return `within ${n} ${unit}${n === 1 ? "" : "s"}`;
 }
 
 /** How a call turned out: came true, did not, still waiting, or why it cannot be judged. */
@@ -38,6 +44,9 @@ export function CallOutcomeBadge({
     return <Badge>Evaluated, no clear direction</Badge>;
   }
   if (outcomeStatus === "insufficient_data") return <Badge>Not enough price data</Badge>;
-  if (outcomeStatus && outcomeStatus !== "pending") return <Badge>{outcomeStatus.replaceAll("_", " ")}</Badge>;
+  if (outcomeStatus && outcomeStatus !== "pending") {
+    const text = outcomeStatus.replaceAll("_", " ");
+    return <Badge>{text.charAt(0).toUpperCase() + text.slice(1)}</Badge>;
+  }
   return <Badge tone="info">Waiting for the market</Badge>;
 }

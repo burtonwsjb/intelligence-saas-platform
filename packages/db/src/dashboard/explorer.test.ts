@@ -19,6 +19,7 @@ import {
   scoredPriceBasis,
   parseExplorerQuery,
   primaryDriver,
+  explanationSentence,
   sentimentLabel,
   summarizeSentiment,
   windowChange,
@@ -157,8 +158,31 @@ describe("score and price helpers", () => {
         { code: "recommendation", text: "recommendation watch" },
         { code: "price_return_7d", text: "price +4.0% over 7d" },
       ]),
-    ).toBe("price +4.0% over 7d");
+    ).toBe("Price up 4.0% over 7 days");
     expect(primaryDriver(null)).toBeNull();
+  });
+
+  it("leads with creator calls and rewrites old internal wording as plain sentences", () => {
+    expect(
+      primaryDriver([
+        { code: "price_return_7d", text: "price -2.5% over 7d" },
+        { code: "creator_consensus", text: "authority-weighted creator consensus bullish (n=6)" },
+      ]),
+    ).toBe("6 creator calls on this card");
+    expect(explanationSentence({ code: "creator_consensus", text: "authority-weighted creator consensus bearish (n=1)" })).toBe(
+      "1 creator call lean bearish",
+    );
+    expect(explanationSentence({ code: "price_return_7d", text: "price -2.5% over 7d" })).toBe("Price down 2.5% over 7 days");
+    expect(explanationSentence({ code: "liquidity", text: "liquidity weak" })).toBe("Sells slowly");
+    expect(explanationSentence({ code: "relative_strength", text: "relative strength -1.2% vs benchmark" })).toBe(
+      "Trailing similar cards by 1.2%",
+    );
+    expect(explanationSentence({ code: "listings", text: "active listings +3" })).toBe("3 more copies listed for sale");
+    expect(explanationSentence({ code: "volatility", text: "volatility elevated" })).toBe("Price swings a lot");
+    // New-model sentences pass through unchanged.
+    expect(explanationSentence({ code: "creator_consensus", text: "6 creator calls lean bullish, weighted by each creator's track record" })).toBe(
+      "6 creator calls lean bullish, weighted by each creator's track record",
+    );
   });
 
   it("needs two comparable observations for a change and excludes non-comparable rows", () => {
@@ -313,6 +337,45 @@ describe("card explorer against the canonical pipeline", () => {
     }
     const unrated = after.filter((row) => !row.rated);
     for (const row of unrated) expect(row.weight).toBe(SENTIMENT_BASELINE_WEIGHT);
+  });
+
+  it("filters and sorts by market and social sentiment in SQL, matching the card summaries", async () => {
+    const db = await setup();
+    const latest = (await db.execute(sql`SELECT max(published_at) AS at FROM source_content`)) as unknown as {
+      rows: { at: string | Date }[];
+    };
+    const now = new Date(new Date(latest.rows[0]!.at).getTime() + 86_400_000);
+    const options = { now };
+    const base = { pageSize: "48", window: "90d" };
+    const all = await listCardExplorerPage(db, parseExplorerQuery(base), options);
+    const withPosts = all.rows.filter((row) => row.sentiment.classified > 0);
+    expect(withPosts.length).toBeGreaterThan(0);
+
+    const any = await listCardExplorerPage(db, parseExplorerQuery({ ...base, social: "any" }), options);
+    expect(any.total).toBe(withPosts.length);
+    expect(any.rows.every((row) => row.sentiment.classified > 0)).toBe(true);
+    const none = await listCardExplorerPage(db, parseExplorerQuery({ ...base, social: "none" }), options);
+    expect(none.total).toBe(all.total - withPosts.length);
+
+    const lean = (row: (typeof all.rows)[number]) => row.sentiment.weighted.positive - row.sentiment.weighted.negative;
+    const positive = await listCardExplorerPage(db, parseExplorerQuery({ ...base, social: "positive" }), options);
+    expect(positive.total).toBe(withPosts.filter((row) => lean(row) > 0).length);
+    expect(positive.rows.every((row) => lean(row) > 0)).toBe(true);
+    const negative = await listCardExplorerPage(db, parseExplorerQuery({ ...base, social: "negative" }), options);
+    expect(negative.rows.every((row) => lean(row) < 0)).toBe(true);
+
+    const talked = await listCardExplorerPage(db, parseExplorerQuery({ ...base, sort: "social_posts" }), options);
+    const counts = talked.rows.map((row) => row.sentiment.classified);
+    expect(counts.slice(0, withPosts.length)).toEqual([...counts.slice(0, withPosts.length)].sort((a, b) => b - a));
+
+    const step: Record<string, number> = { strong_buy: 4, buy: 3, hold: 2, watch: 2, reduce: 1, sell: 1, strong_sell: 0 };
+    const buyFirst = await listCardExplorerPage(db, parseExplorerQuery({ ...base, sort: "market_buy" }), options);
+    const steps = buyFirst.rows.map((row) => step[row.score?.recommendation ?? ""]).filter((value) => value != null);
+    expect(steps).toEqual([...steps].sort((a, b) => b - a));
+    const buys = await listCardExplorerPage(db, parseExplorerQuery({ ...base, market: "buy" }), options);
+    expect(buys.rows.every((row) => ["buy", "strong_buy"].includes(row.score!.recommendation))).toBe(true);
+    const noReading = await listCardExplorerPage(db, parseExplorerQuery({ ...base, market: "none" }), options);
+    expect(noReading.rows.every((row) => row.score == null || row.score.recommendation === "insufficient_data")).toBe(true);
   });
 
   // Runs last in this block: calls are append-only, so it adds a graded copy rather than editing one.

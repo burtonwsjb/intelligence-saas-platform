@@ -1,6 +1,8 @@
 // Plain-language labels and chart geometry for the customer app. Pure functions
 // only: no scoring happens here, the inputs are persisted values.
 
+import { SENTIMENT_LABEL_TEXT, type SentimentLabel } from "@isp/db";
+
 export const RECOMMENDATION_TEXT: Record<string, string> = {
   strong_buy: "Strong buy",
   buy: "Buy",
@@ -9,8 +11,39 @@ export const RECOMMENDATION_TEXT: Record<string, string> = {
   reduce: "Reduce",
   sell: "Sell",
   strong_sell: "Strong sell",
-  insufficient_data: "Not enough data",
+  insufficient_data: "No reading yet",
 };
+
+/** A card's social sentiment in a few words; one or two posts read as an early lean, not a verdict. */
+export function socialText(summary: {
+  label: SentimentLabel;
+  classified: number;
+  weighted: Record<"positive" | "negative" | "neutral" | "mixed", number>;
+}): string {
+  if (summary.label !== "too_few") return SENTIMENT_LABEL_TEXT[summary.label];
+  const lean =
+    summary.weighted.positive > summary.weighted.negative
+      ? "leans positive"
+      : summary.weighted.negative > summary.weighted.positive
+        ? "leans negative"
+        : "no clear lean";
+  return `${lean} (${plural(summary.classified, "post")})`;
+}
+
+/** Where a post came from, in words. */
+export function sourceTypeText(type: string): string {
+  const map: Record<string, string> = {
+    youtube: "YouTube video",
+    youtube_video: "YouTube video",
+    reddit: "Reddit post",
+    reddit_post: "Reddit post",
+    web: "Website post",
+    web_feed: "Website post",
+    web_article: "Website post",
+    transcript: "Video transcript",
+  };
+  return map[type] ?? type.replaceAll("_", " ").replace(/^\w/, (char) => char.toUpperCase());
+}
 
 /** Five-step buy/sell scale shown as the headline reading on a card. */
 export const VERDICT_STEPS = ["Strong sell", "Sell", "Hold", "Buy", "Strong buy"] as const;

@@ -6,13 +6,14 @@ import {
   CONFIRMATION_TEXT,
   conditionText,
   formatChange,
+  socialText,
   languageText,
   priceFreshness,
   quoteText,
   recommendationText,
   variantText,
 } from "@/lib/display";
-import { SENTIMENT_LABEL_TEXT, marketConfirmationState, type ExplorerRow } from "@isp/db";
+import { marketConfirmationState, type ExplorerRow } from "@isp/db";
 import { formatMoney } from "@isp/shared";
 import Link from "next/link";
 
@@ -25,8 +26,10 @@ export function CardTile({ row, href, windowLabel }: { row: ExplorerRow; href: s
   const change = formatChange(row.windowChange);
   const freshness = priceFreshness(row.price?.observedAt);
   const confirmation = CONFIRMATION_TEXT[marketConfirmationState(row.score)];
-  const lowConfidence = row.score != null && row.score.confidence < 40;
-  const highRisk = row.score != null && row.score.risk >= 60;
+  // Without a reading the stored opportunity is the neutral midpoint, not a measurement: show no number.
+  const hasReading = row.score != null && row.score.recommendation !== "insufficient_data";
+  const lowConfidence = hasReading && row.score!.confidence < 40;
+  const highRisk = hasReading && row.score!.risk >= 60;
   return (
     <article className="card-tile">
       <div className="card-art">
@@ -80,10 +83,15 @@ export function CardTile({ row, href, windowLabel }: { row: ExplorerRow; href: s
           ) : null}
         </div>
         <div className="card-signal">
-          <ScoreRing kind="opportunity" value={row.score?.opportunity} size="sm" caption={false} />
+          <ScoreRing
+            kind="opportunity"
+            value={hasReading && row.score!.opportunityMeasured ? row.score!.opportunity : null}
+            size="sm"
+            caption={false}
+          />
           <div className="card-signal-text">
             <strong>{row.score ? recommendationText(row.score.recommendation) : "Not scored yet"}</strong>
-            <span className="subtle">Social: {SENTIMENT_LABEL_TEXT[row.sentiment.label]}</span>
+            <span className="subtle">Social: {socialText(row.sentiment)}</span>
           </div>
         </div>
         <div className="badge-row">
