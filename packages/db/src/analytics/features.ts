@@ -229,6 +229,40 @@ async function loadSold(
     }));
 }
 
+/**
+ * Daily market (reference) prices of a raw printing, used as the price series
+ * when it has too few recorded sales. TCGplayer's market price is product
+ * level, so no condition filter applies. Graded segments never fall back.
+ */
+async function loadReference(db: Database, input: ComputeFeaturesInput): Promise<SoldPoint[]> {
+  if (input.gradingCompany != null) {
+    return [];
+  }
+  const rows = await db
+    .select()
+    .from(tcgMarketSnapshot)
+    .where(
+      and(
+        eq(tcgMarketSnapshot.printingId, input.printingId),
+        eq(tcgMarketSnapshot.priceType, "reference"),
+        isNull(tcgMarketSnapshot.gradingCompany),
+        lte(tcgMarketSnapshot.observedAt, input.asOf),
+      ),
+    )
+    .orderBy(asc(tcgMarketSnapshot.observedAt));
+  return rows
+    .filter((row) => row.price != null)
+    .map((row) => ({
+      id: row.id,
+      observedAt: row.observedAt,
+      price: moneyToFiniteNumber(row.price),
+      quantity: null,
+      sourceKey: row.sourceKey,
+      outlierFlag: row.outlierFlag,
+      currency: row.currency,
+    }));
+}
+
 async function loadListings(db: Database, printingId: string, asOf: Date, condition: string): Promise<ListingPoint[]> {
   const rows = await db
     .select()
@@ -256,12 +290,24 @@ async function loadListings(db: Database, printingId: string, asOf: Date, condit
 export function computeFeaturesFromSeries(input: {
   asOf: Date;
   sold: SoldPoint[];
+  /** Daily market prices; they stand in as the price series when there are fewer than 2 sales. */
+  reference?: SoldPoint[];
   listings: ListingPoint[];
   outlierPolicy: MarketOutlierPolicy;
   benchmarkReturn30d?: number | null;
 }): Record<string, unknown> {
-  const usable = sameCurrencyOrEmpty(applyOutliers(input.sold, input.outlierPolicy));
-  const included = usable.filter((point) => point.observedAt.getTime() <= input.asOf.getTime());
+  const asOfMs = input.asOf.getTime();
+  const sales = sameCurrencyOrEmpty(applyOutliers(input.sold, input.outlierPolicy)).filter(
+    (point) => point.observedAt.getTime() <= asOfMs,
+  );
+  const referencePoints = sameCurrencyOrEmpty(applyOutliers(input.reference ?? [], input.outlierPolicy)).filter(
+    (point) => point.observedAt.getTime() <= asOfMs,
+  );
+  // Price features read sales when there are enough of them, otherwise the
+  // daily market price. Sales counts, volume and absorption only ever read sales.
+  const priceBasis: "sold" | "reference" = sales.length < 2 && referencePoints.length >= 2 ? "reference" : "sold";
+  const included = priceBasis === "sold" ? sales : referencePoints;
+  const salesConfirm = priceBasis === "sold";
   const listings = sameCurrencyOrEmpty(
     input.listings.filter((point) => point.observedAt.getTime() <= input.asOf.getTime()),
   );
@@ -271,9 +317,10 @@ export function computeFeaturesFromSeries(input: {
   ) as Record<MarketReturnPeriod, ScalarMetric>;
 
   const window30 = salesInWindow(included, input.asOf, 30);
-  const window7 = salesInWindow(included, input.asOf, 7);
-  const window1 = salesInWindow(included, input.asOf, 1);
-  const prior7 = included.filter((point) => {
+  const sales30 = salesInWindow(sales, input.asOf, 30);
+  const window7 = salesInWindow(sales, input.asOf, 7);
+  const window1 = salesInWindow(sales, input.asOf, 1);
+  const prior7 = sales.filter((point) => {
     const t = point.observedAt.getTime();
     return t > input.asOf.getTime() - 14 * MS_DAY && t <= input.asOf.getTime() - 7 * MS_DAY;
   });
@@ -304,15 +351,15 @@ export function computeFeaturesFromSeries(input: {
   });
 
   const salesPerDay = metric({
-    value: window30.length / 30,
-    sample_size: window30.length,
+    value: sales30.length / 30,
+    sample_size: sales30.length,
     method: "sales_count.v1",
     window_days: 30,
     interpretation: "Completed-sale count / 30. Listing count is never used as volume.",
   });
   const medianGap = metric({
-    value: intersaleMedian(window30),
-    sample_size: Math.max(0, window30.length - 1),
+    value: intersaleMedian(sales30),
+    sample_size: Math.max(0, sales30.length - 1),
     method: "median_intersale.v1",
     window_days: 30,
     interpretation: "Median milliseconds between consecutive completed sales in the window.",
@@ -350,11 +397,12 @@ export function computeFeaturesFromSeries(input: {
     interpretation: "Completed sales in 7d / active listings. Higher means inventory is being absorbed.",
   });
 
+  const latestSale = sales.at(-1) ?? null;
   const spreadNow =
-    latestListing?.lowPrice != null && latest?.price ? latestListing.lowPrice - latest.price : null;
+    latestListing?.lowPrice != null && latestSale?.price ? latestListing.lowPrice - latestSale.price : null;
   const spreadPrev =
-    priorListing?.lowPrice != null && included.at(-2)?.price
-      ? priorListing.lowPrice - included.at(-2)!.price
+    priorListing?.lowPrice != null && sales.at(-2)?.price
+      ? priorListing.lowPrice - sales.at(-2)!.price
       : null;
   const spreadChange = metric({
     value: spreadNow != null && spreadPrev != null ? spreadNow - spreadPrev : null,
@@ -396,12 +444,17 @@ export function computeFeaturesFromSeries(input: {
   });
 
   const lastReturn = tradeRet.at(-1) ?? null;
-  const thinVolumeSpike = Boolean(lastReturn != null && Math.abs(lastReturn) > 0.25 && window7.length <= 1);
-  const priceJumpNoVolume = Boolean(lastReturn != null && lastReturn > 0.2 && window7.length <= 1);
+  // A market-price series has no volume to judge, so the no-volume flags only read sales.
+  const thinVolumeSpike = Boolean(salesConfirm && lastReturn != null && Math.abs(lastReturn) > 0.25 && window7.length <= 1);
+  const priceJumpNoVolume = Boolean(salesConfirm && lastReturn != null && lastReturn > 0.2 && window7.length <= 1);
   const supplyDisappearance = Boolean(
     listingChange != null && listingChange < 0 && Math.abs(listingChange) >= 0.5 * (priorListing?.listingCount ?? 0) && window7.length === 0,
   );
-    const outlierDriven = Boolean(input.sold.filter((point) => point.observedAt.getTime() <= input.asOf.getTime()).at(-1)?.outlierFlag);
+  const outlierDriven = Boolean(
+    (priceBasis === "sold" ? input.sold : (input.reference ?? []))
+      .filter((point) => point.observedAt.getTime() <= asOfMs)
+      .at(-1)?.outlierFlag,
+  );
   const pvDivergence = Boolean(
     returns["7d"].status === "ok" &&
       returns["7d"].value != null &&
@@ -414,12 +467,12 @@ export function computeFeaturesFromSeries(input: {
   const breakout = Boolean(
     returns["7d"].status === "ok" &&
       (returns["7d"].value ?? 0) > 0.1 &&
-      window7.length >= 3 &&
+      (!salesConfirm || window7.length >= 3) &&
       !thinVolumeSpike &&
       !priceJumpNoVolume,
   );
   const reversal = Boolean(
-    drawdown.status === "ok" && (drawdown.value ?? 0) > 0.2 && (returns["7d"].value ?? 0) > 0 && window7.length >= 2,
+    drawdown.status === "ok" && (drawdown.value ?? 0) > 0.2 && (returns["7d"].value ?? 0) > 0 && (!salesConfirm || window7.length >= 2),
   );
   const anomaly = Boolean(latest?.outlierFlag || outlierDriven);
 
@@ -455,7 +508,7 @@ export function computeFeaturesFromSeries(input: {
     sales_velocity: {
       sales_1d: window1.length,
       sales_7d: window7.length,
-      sales_30d: window30.length,
+      sales_30d: sales30.length,
       sales_per_day_30d: salesPerDay,
       median_intersale_ms: medianGap,
       interpretation: "Transaction frequency from completed sales only.",
@@ -500,15 +553,17 @@ export function computeFeaturesFromSeries(input: {
     },
     data_quality: {
       state: quality,
+      price_basis: priceBasis,
       sample_size: included.length,
-      sample_size_raw: input.sold.length,
+      sample_size_raw: priceBasis === "sold" ? input.sold.length : (input.reference ?? []).length,
       coverage: okPeriods / expectedPeriods,
       staleness_hours: stalenessHours,
       outlier_policy: input.outlierPolicy,
       source_composition: sourceCounts,
     },
-    latest_sold_price: latest?.price ?? null,
-    latest_sold_at: latest?.observedAt.toISOString() ?? null,
+    price_basis: priceBasis,
+    latest_sold_price: latestSale?.price ?? null,
+    latest_sold_at: latestSale?.observedAt.toISOString() ?? null,
   };
 }
 
@@ -519,26 +574,29 @@ export async function computeMarketFeatures(db: Database, input: ComputeFeatures
   }
   const outlierPolicy = input.outlierPolicy ?? DEFAULT_OUTLIER_POLICY;
   const sold = await loadSold(db, input);
+  const reference = await loadReference(db, input);
   const listings = await loadListings(db, input.printingId, input.asOf, input.condition ?? "nm");
   const features = computeFeaturesFromSeries({
     asOf: input.asOf,
     sold,
+    reference,
     listings,
     outlierPolicy,
     benchmarkReturn30d: input.benchmarkReturn30d,
   });
-  const quality = features.data_quality as { state: string; sample_size: number; coverage: number; staleness_hours: number | null; source_composition: Record<string, number> };
+  const quality = features.data_quality as { state: string; price_basis: "sold" | "reference"; sample_size: number; coverage: number; staleness_hours: number | null; source_composition: Record<string, number> };
   return {
     printingId: input.printingId,
     asOf: input.asOf,
     languageCode: identity.languageCode,
-    currency: sold.at(-1)?.currency ?? listings.at(-1)?.currency ?? "USD",
+    currency: sold.at(-1)?.currency ?? reference.at(-1)?.currency ?? listings.at(-1)?.currency ?? "USD",
     condition: input.condition ?? "nm",
     gradingCompany: input.gradingCompany ?? null,
     gradeLabel: input.gradeLabel ?? null,
     outlierPolicy,
     features,
     dataQuality: quality.state,
+    priceBasis: quality.price_basis,
     sampleSize: quality.sample_size,
     coverage: quality.coverage,
     stalenessHours: quality.staleness_hours,

@@ -148,6 +148,41 @@ describe("market feature formulas", () => {
     expect(velocity.sales_7d).not.toBe(12);
   });
 
+  it("uses the daily market price as the price series when there are too few sales, without counting it as sales", () => {
+    const asOf = new Date("2026-01-30T00:00:00.000Z");
+    const start = Date.UTC(2025, 11, 31);
+    const reference = Array.from({ length: 31 }, (_, i) => ({
+      id: `r${i}`,
+      observedAt: new Date(start + i * 86_400_000),
+      price: 100 + i,
+      quantity: null,
+      sourceKey: "tcg_card_central",
+      outlierFlag: false,
+      currency: "USD",
+    }));
+    const features = computeFeaturesFromSeries({ asOf, sold: [], reference, listings: [], outlierPolicy: "exclude_flagged.v1" });
+    const quality = features.data_quality as { price_basis: string; sample_size: number; state: string };
+    expect(quality.price_basis).toBe("reference");
+    expect(quality.sample_size).toBe(31);
+    expect(quality.state).not.toBe("insufficient_data");
+    const returns = features.returns as Record<string, { status: string; value: number | null }>;
+    expect(returns["7d"].status).toBe("ok");
+    expect(returns["7d"].value).toBeCloseTo(130 / 123 - 1);
+    const velocity = features.sales_velocity as { sales_7d: number; sales_30d: number };
+    expect(velocity).toMatchObject({ sales_7d: 0, sales_30d: 0 });
+    const flags = features.manipulation_foundation as { thin_volume_spike: boolean };
+    expect(flags.thin_volume_spike).toBe(false);
+
+    const withSales = computeFeaturesFromSeries({
+      asOf,
+      sold: reference.slice(-3).map((point) => ({ ...point, id: `s${point.id}`, quantity: 1, sourceKey: "ebay" })),
+      reference,
+      listings: [],
+      outlierPolicy: "exclude_flagged.v1",
+    });
+    expect((withSales.data_quality as { price_basis: string }).price_basis).toBe("sold");
+  });
+
   it("computes moving stats, velocity, volatility, drawdown, and momentum on a high-volume series", () => {
     const asOf = new Date("2026-01-30T00:00:00.000Z");
     const start = Date.UTC(2025, 11, 22);

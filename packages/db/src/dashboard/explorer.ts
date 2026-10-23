@@ -55,8 +55,8 @@ export const EXPLORER_VIEW_DEFINITIONS: Record<ExplorerView, { label: string; de
     description: "Opportunity score 60 or higher with enough evidence to score.",
   },
   confirmed: {
-    label: "Market-confirmed",
-    description: "The latest score saw enough recent sales to confirm market activity.",
+    label: "Market price tracked",
+    description: "The latest score had an up-to-date market price series (recent sales or daily TCGplayer market price).",
   },
   social: {
     label: "Social attention",
@@ -64,7 +64,7 @@ export const EXPLORER_VIEW_DEFINITIONS: Record<ExplorerView, { label: string; de
   },
   caution: {
     label: "Caution",
-    description: "Risk 60 or higher, social activity without sales confirmation, or stale/outlier-dependent data.",
+    description: "Risk 60 or higher, social activity without a current market price, or stale/outlier-dependent data.",
   },
 };
 
@@ -961,6 +961,14 @@ export function marketConfirmationState(
   if (!score) return "no_score";
   if (score.dataQuality === "insufficient_data" || score.marketConfirmed == null) return "insufficient";
   return score.marketConfirmed ? "confirmed" : "unconfirmed";
+}
+
+/** Which prices a stored score read (sales, or the daily market price) and how many. Null for scores stored before this was recorded. */
+export function scoredPriceBasis(components: unknown): { basis: "sold" | "reference"; points: number } | null {
+  const value = components as { price_basis?: unknown; price_points?: unknown } | null;
+  if (value?.price_basis !== "sold" && value?.price_basis !== "reference") return null;
+  const points = typeof value.price_points === "number" && Number.isFinite(value.price_points) ? value.price_points : 0;
+  return { basis: value.price_basis, points };
 }
 
 export type ExplorerFacets = {

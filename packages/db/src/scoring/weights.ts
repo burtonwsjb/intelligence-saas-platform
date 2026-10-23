@@ -57,3 +57,5 @@ export const RECOMMENDATION_THRESHOLDS_V1 = {
 
 export const SOCIAL_STRONG_BUY_CAP = 55;
 export const MIN_SALES_FOR_MARKET_CONFIRM = 3;
+/** A price series (sold or daily market price) newer than this counts as market evidence. */
+export const MARKET_PRICE_FRESH_HOURS = 7 * 24;

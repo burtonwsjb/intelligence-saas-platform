@@ -16,6 +16,7 @@ import {
   listCardExplorerPage,
   listExplorerFacets,
   marketConfirmationState,
+  scoredPriceBasis,
   parseExplorerQuery,
   primaryDriver,
   sentimentLabel,
@@ -143,6 +144,8 @@ describe("sentiment summary", () => {
 describe("score and price helpers", () => {
   it("reports market confirmation as its own state", () => {
     expect(marketConfirmationState(null)).toBe("no_score");
+    expect(scoredPriceBasis({ price_basis: "reference", price_points: 14 })).toEqual({ basis: "reference", points: 14 });
+    expect(scoredPriceBasis({})).toBeNull();
     expect(marketConfirmationState({ dataQuality: "insufficient_data", marketConfirmed: true })).toBe("insufficient");
     expect(marketConfirmationState({ dataQuality: "ok", marketConfirmed: false })).toBe("unconfirmed");
     expect(marketConfirmationState({ dataQuality: "ok", marketConfirmed: true })).toBe("confirmed");

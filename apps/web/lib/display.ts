@@ -37,9 +37,9 @@ export function recommendationText(value: string | null | undefined): string {
 }
 
 export const CONFIRMATION_TEXT = {
-  confirmed: { label: "Market-confirmed", tone: "good" },
-  unconfirmed: { label: "Not confirmed by sales", tone: "warn" },
-  insufficient: { label: "Insufficient market evidence", tone: "info" },
+  confirmed: { label: "Market price tracked", tone: "good" },
+  unconfirmed: { label: "Market price out of date", tone: "warn" },
+  insufficient: { label: "Not enough price history yet", tone: "info" },
   no_score: { label: "Not scored yet", tone: "info" },
 } as const;
 

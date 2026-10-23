@@ -880,6 +880,7 @@ export {
   listSetSummaries,
   listSentimentEvidence,
   marketConfirmationState,
+  scoredPriceBasis,
   parseExplorerQuery,
   primaryDriver,
   sentimentLabel,

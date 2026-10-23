@@ -1,4 +1,5 @@
 import {
+  MARKET_PRICE_FRESH_HOURS,
   MIN_SALES_FOR_MARKET_CONFIRM,
   OPPORTUNITY_WEIGHTS_V1,
   RECOMMENDATION_THRESHOLDS_V1,
@@ -54,6 +55,8 @@ export type ScoreInputs = {
   featureSnapshotId?: string | null;
   featureSetVersion?: string | null;
   sampleSize: number;
+  /** "reference" when the price series is the daily market price because the printing has too few sales. */
+  priceBasis?: "sold" | "reference";
   dataQuality: string;
   stalenessHours: number | null;
   sourceCount: number;
@@ -264,7 +267,14 @@ export function scoreFromInputs(input: ScoreInputs) {
   const sales30 = input.salesVelocity?.sales_30d ?? 0;
   const consensus = creatorConsensus(input.creatorVotes ?? [], input.languageCode);
   const social = socialMomentum(input.social ?? null);
-  const marketConfirmed = sales7 >= MIN_SALES_FOR_MARKET_CONFIRM;
+  const referenceBasis = input.priceBasis === "reference";
+  // Market evidence is a current price, sold or market: recent sales confirm
+  // it, and so does a daily market price series that is up to date.
+  const freshPrice =
+    input.sampleSize >= RECOMMENDATION_THRESHOLDS_V1.insufficient_sample &&
+    input.stalenessHours != null &&
+    input.stalenessHours <= MARKET_PRICE_FRESH_HOURS;
+  const marketConfirmed = sales7 >= MIN_SALES_FOR_MARKET_CONFIRM || freshPrice;
   const hypeUnconfirmed = Boolean(social.present && (social.score ?? 0) >= 65 && !marketConfirmed);
 
   const opportunityParts = {
@@ -292,11 +302,14 @@ export function scoreFromInputs(input: ScoreInputs) {
   const socialUnconfirmedPresent = hypeUnconfirmed || Boolean(input.manipulation?.thin_volume_spike);
   const riskParts = {
     volatility: metricPart(input.volatility, (value) => positiveToScore(value, 0.15)),
-    thin_liquidity: {
-      present: true as const,
-      score: inverseToScore(sales7, 10),
-      raw: sales7,
-    },
+    // A market-price series carries no sale counts, so liquidity is unknown rather than zero.
+    thin_liquidity: referenceBasis
+      ? { present: false as const, score: null as number | null, raw: sales7, skipped_reason: "market_price_basis" }
+      : {
+          present: true as const,
+          score: inverseToScore(sales7, 10),
+          raw: sales7,
+        },
     spread: input.latestSpreadRatio == null
       ? { present: false as const, score: null, raw: null, skipped_reason: "missing_input" }
       : { present: true as const, score: clamp((input.latestSpreadRatio - 1) * 200), raw: input.latestSpreadRatio },
@@ -342,7 +355,9 @@ export function scoreFromInputs(input: ScoreInputs) {
   const confidence = combine(CONFIDENCE_WEIGHTS_V1, confidenceParts);
 
   const liquidityParts = {
-    sales_frequency: { present: true as const, score: clamp((sales7 / 8) * 100), raw: sales7 },
+    sales_frequency: referenceBasis
+      ? { present: false as const, score: null as number | null, raw: sales7, skipped_reason: "market_price_basis" }
+      : { present: true as const, score: clamp((sales7 / 8) * 100), raw: sales7 },
     intersale_time: metricPart(input.salesVelocity?.median_intersale_ms, (value) => inverseToScore(value / 86_400_000, 14)),
     listing_depth: input.supply?.listing_count == null
       ? { present: false as const, score: null, raw: null, skipped_reason: "missing_input" }
@@ -353,7 +368,9 @@ export function scoreFromInputs(input: ScoreInputs) {
     seller_diversity: input.supply?.seller_count == null
       ? { present: false as const, score: null, raw: null, skipped_reason: "missing_input" }
       : { present: true as const, score: positiveToScore(input.supply.seller_count, 12), raw: input.supply.seller_count },
-    historical_sales: { present: true as const, score: clamp((sales30 / 20) * 100), raw: sales30 },
+    historical_sales: referenceBasis
+      ? { present: false as const, score: null as number | null, raw: sales30, skipped_reason: "market_price_basis" }
+      : { present: true as const, score: clamp((sales30 / 20) * 100), raw: sales30 },
   };
   const liquidity = combine(LIQUIDITY_WEIGHTS_V1, liquidityParts);
 
@@ -420,7 +437,7 @@ export function scoreFromInputs(input: ScoreInputs) {
   if (hypeUnconfirmed) {
     explanations.push({
       code: "hype_unconfirmed",
-      text: "social activity without sales confirmation; Strong Buy blocked",
+      text: "social activity without a current market price; Strong Buy blocked",
       refs: ["phase09.social", "score.v1.hype_gate"],
     });
   }
@@ -452,6 +469,8 @@ export function scoreFromInputs(input: ScoreInputs) {
       confidence: confidence.components,
       liquidity: liquidity.components,
       market_confirmed: marketConfirmed,
+      price_basis: input.priceBasis ?? "sold",
+      price_points: input.sampleSize,
       hype_unconfirmed: hypeUnconfirmed,
       creator_consensus: consensus,
       social,

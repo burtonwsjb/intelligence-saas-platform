@@ -109,9 +109,10 @@ describe("intelligence regression catalog", () => {
     expect(features.latest_sold_price).toBeNull();
   });
 
-  it("viral social without sales is not treated as market confirmation", () => {
+  it("viral social without a current market price is not treated as market confirmation", () => {
     const scored = scoreFromInputs(
       baseInput({
+        stalenessHours: 10 * 24,
         salesVelocity: { sales_7d: 1, sales_30d: 8, sales_per_day_30d: { status: "ok", value: 0.2 } },
         social: {
           mentions_7d: 40,

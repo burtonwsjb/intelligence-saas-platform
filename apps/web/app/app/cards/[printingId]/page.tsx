@@ -19,6 +19,7 @@ import {
   formatChange,
   formatDate,
   languageText,
+  plural,
   priceFreshness,
   providerText,
   quoteText,
@@ -38,6 +39,7 @@ import {
   marketConfirmationState,
   parseExplorerQuery,
   publishedPredictionsForCustomer,
+  scoredPriceBasis,
   windowChange,
   type CardCallKind,
   type ExplorerWindow,
@@ -125,6 +127,13 @@ export default async function CardDetailPage({
       }
     : null;
   const confirmation = CONFIRMATION_TEXT[marketConfirmationState(scoreView)];
+  const priceBasis = scoredPriceBasis(components);
+  const marketNote =
+    priceBasis == null
+      ? "Whether the market price backs up the reading"
+      : priceBasis.basis === "reference"
+        ? `Measured against ${plural(priceBasis.points, "daily TCGplayer market price")}; 3 needed`
+        : `Measured against ${plural(priceBasis.points, "recorded sale")}; 3 needed`;
   const hypeUnconfirmed = components.hype_unconfirmed === true;
   const headline = workspace.headline;
   const headlineSold = workspace.headlineKind === "sold";
@@ -200,6 +209,7 @@ export default async function CardDetailPage({
             recommendation={score?.recommendation ?? null}
             uncalibrated={score?.uncalibrated === "true"}
             confirmation={confirmation}
+            marketNote={marketNote}
             hiddenCreatorIds={await loadHiddenCreatorIds(organizationId, userId)}
             hrefs={{
               sentiment: href({ tab: "sentiment", page: 1 }),
@@ -226,7 +236,7 @@ export default async function CardDetailPage({
                   <dt>Market confirmation</dt>
                   <dd>
                     {confirmation.label}
-                    {hypeUnconfirmed ? " · social activity is ahead of sales, so strong recommendations are blocked" : ""}
+                    {hypeUnconfirmed ? " · social activity is ahead of the market price, so strong recommendations are blocked" : ""}
                   </dd>
                   <dt>Data quality</dt>
                   <dd>{dataQualityText(score.dataQuality).label}</dd>

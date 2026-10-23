@@ -24,6 +24,7 @@ export function SentimentVerdict({
   social,
   chart,
   confirmation,
+  marketNote,
   hrefs,
 }: {
   recommendation: string | null;
@@ -31,6 +32,8 @@ export function SentimentVerdict({
   social: SentimentSummary;
   chart: ChartSentimentSegmentView | null;
   confirmation: { label: string; tone: Tone };
+  /** Which prices the reading is measured against, in plain words. */
+  marketNote: string;
   hrefs: { sentiment: string; creators: string; market: string };
 }) {
   const step = verdictStep(recommendation);
@@ -44,7 +47,8 @@ export function SentimentVerdict({
         <p className="verdict-value">{step == null ? "No reading yet" : recommendationText(recommendation)}</p>
         {step == null ? (
           <p className="subtle" style={{ margin: 0 }}>
-            There is not enough evidence on this exact printing to lean either way.
+            A buy/sell reading needs at least 3 days of market prices for this exact printing. Once it has them, what
+            creators say and how the price moves set the reading.
           </p>
         ) : null}
       </div>
@@ -87,11 +91,11 @@ export function SentimentVerdict({
           </span>
         </li>
         <li>
-          <span className="verdict-evidence-name">What sales say</span>
+          <span className="verdict-evidence-name">What the price says</span>
           <Link href={hrefs.market}>
             <StatusBadge tone={confirmation.tone} label={confirmation.label} />
           </Link>
-          <span className="subtle">Whether recent sold prices back up the reading</span>
+          <span className="subtle">{marketNote}</span>
         </li>
       </ul>
       <p className="subtle" style={{ margin: 0 }}>
