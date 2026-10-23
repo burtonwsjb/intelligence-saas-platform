@@ -1066,30 +1066,56 @@ export type CardCreatorCall = {
   publishedAt: Date;
   priceAtCall: string | null;
   priceCurrency: string | null;
+  /** "PSA 10" when the call was about a graded copy (slab), else null. */
+  grade: string | null;
+  /** The post or video the call was made in, so a reader can check it. */
+  contentUrl: string | null;
+  contentTitle: string | null;
 };
 
-/** Creator calls bound to this printing, newest first, one page at a time. */
+export const CARD_CALL_KINDS = ["raw", "graded"] as const;
+export type CardCallKind = (typeof CARD_CALL_KINDS)[number];
+
+/**
+ * Creator calls bound to this printing, newest first, one page at a time.
+ * `kind` keeps calls about raw copies apart from calls about slabs; counts
+ * covers both so the page can show the size of each side.
+ */
 export async function listCardCreatorCalls(
   db: Database,
   printingId: string,
-  input: { page?: number; hiddenCreatorIds?: string[] } = {},
-): Promise<{ items: CardCreatorCall[]; hasMore: boolean; page: number }> {
+  input: { page?: number; hiddenCreatorIds?: string[]; kind?: CardCallKind } = {},
+): Promise<{ items: CardCreatorCall[]; hasMore: boolean; page: number; counts: Record<CardCallKind, number> }> {
   const page = Math.min(Math.max(1, Math.trunc(input.page ?? 1)), EXPLORER_MAX_PAGE);
   const hidden = input.hiddenCreatorIds ?? [];
-  const result = await db.execute(sql`
-    SELECT cc.id, cc.creator_id, cr.display_name, cc.direction, cc.horizon_code, cc.published_at,
-      cc.price_at_call, cc.price_currency
-    FROM creator_call cc
-    LEFT JOIN creator cr ON cr.id = cc.creator_id
-    WHERE cc.printing_id = ${printingId}
-      ${hidden.length ? sql`AND cc.creator_id NOT IN (${inList(hidden)})` : sql``}
-    ORDER BY cc.published_at DESC, cc.id DESC
-    LIMIT ${EVIDENCE_PAGE_SIZE + 1} OFFSET ${(page - 1) * EVIDENCE_PAGE_SIZE}
-  `);
+  const kind = input.kind ?? "raw";
+  const visible = sql`cc.printing_id = ${printingId}
+      ${hidden.length ? sql`AND cc.creator_id NOT IN (${inList(hidden)})` : sql``}`;
+  const [result, counted] = await Promise.all([
+    db.execute(sql`
+      SELECT cc.id, cc.creator_id, cr.display_name, cc.direction, cc.horizon_code, cc.published_at,
+        cc.price_at_call, cc.price_currency, cc.evidence -> 'grade' AS grade, sc.canonical_url, sc.title AS content_title
+      FROM creator_call cc
+      LEFT JOIN creator cr ON cr.id = cc.creator_id
+      LEFT JOIN source_content sc ON sc.id = cc.content_id
+      WHERE ${visible}
+        AND ${kind === "graded" ? sql`(cc.evidence ? 'grade')` : sql`NOT (cc.evidence ? 'grade')`}
+      ORDER BY cc.published_at DESC, cc.id DESC
+      LIMIT ${EVIDENCE_PAGE_SIZE + 1} OFFSET ${(page - 1) * EVIDENCE_PAGE_SIZE}
+    `),
+    db.execute(sql`
+      SELECT count(*) FILTER (WHERE cc.evidence ? 'grade')::int AS graded,
+        count(*) FILTER (WHERE NOT (cc.evidence ? 'grade'))::int AS raw
+      FROM creator_call cc
+      WHERE ${visible}
+    `),
+  ]);
   const rows = asRows(result);
+  const totals = asRows(counted)[0] ?? {};
   return {
     page,
     hasMore: rows.length > EVIDENCE_PAGE_SIZE,
+    counts: { raw: Number(totals.raw ?? 0), graded: Number(totals.graded ?? 0) },
     items: rows.slice(0, EVIDENCE_PAGE_SIZE).map((row) => ({
       id: String(row.id),
       creatorId: String(row.creator_id),
@@ -1099,6 +1125,9 @@ export async function listCardCreatorCalls(
       publishedAt: toDate(row.published_at),
       priceAtCall: row.price_at_call == null ? null : String(row.price_at_call),
       priceCurrency: row.price_currency == null ? null : String(row.price_currency),
+      grade: gradeLabel(row.grade),
+      contentUrl: row.canonical_url == null ? null : String(row.canonical_url),
+      contentTitle: row.content_title == null ? null : String(row.content_title),
     })),
   };
 }

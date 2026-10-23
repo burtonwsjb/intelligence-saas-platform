@@ -871,6 +871,8 @@ export {
   sentimentHistory,
   type SentimentHistoryPoint,
   listCardCreatorCalls,
+  CARD_CALL_KINDS,
+  type CardCallKind,
   listCardEvidence,
   listCardExplorerPage,
   listExplorerFacets,
