@@ -16,6 +16,7 @@ import {
   listCardExplorerPage,
   listExplorerFacets,
   marketConfirmationState,
+  scoredRecentSales,
   parseExplorerQuery,
   primaryDriver,
   sentimentLabel,
@@ -143,6 +144,8 @@ describe("sentiment summary", () => {
 describe("score and price helpers", () => {
   it("reports market confirmation as its own state", () => {
     expect(marketConfirmationState(null)).toBe("no_score");
+    expect(scoredRecentSales({ liquidity: [{ key: "sales_frequency", raw: 2 }] })).toBe(2);
+    expect(scoredRecentSales({})).toBeNull();
     expect(marketConfirmationState({ dataQuality: "insufficient_data", marketConfirmed: true })).toBe("insufficient");
     expect(marketConfirmationState({ dataQuality: "ok", marketConfirmed: false })).toBe("unconfirmed");
     expect(marketConfirmationState({ dataQuality: "ok", marketConfirmed: true })).toBe("confirmed");

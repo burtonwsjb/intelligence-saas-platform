@@ -633,6 +633,7 @@ export {
   SCORE_POLICY_KEY,
   SCORE_POLICY_VERSION,
   SCORE_UNCALIBRATED,
+  MIN_SALES_FOR_MARKET_CONFIRM,
 } from "./scoring/weights.js";
 export { creatorConsensus, recommend, scoreFromInputs } from "./scoring/model.js";
 export {
@@ -880,6 +881,7 @@ export {
   listSetSummaries,
   listSentimentEvidence,
   marketConfirmationState,
+  scoredRecentSales,
   parseExplorerQuery,
   primaryDriver,
   sentimentLabel,

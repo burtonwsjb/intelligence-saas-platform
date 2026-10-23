@@ -19,6 +19,7 @@ import {
   formatChange,
   formatDate,
   languageText,
+  plural,
   priceFreshness,
   providerText,
   quoteText,
@@ -28,6 +29,7 @@ import {
 import {
   CARD_CALL_KINDS,
   EXPLORER_WINDOWS,
+  MIN_SALES_FOR_MARKET_CONFIRM,
   comparableSoldSeries,
   explorerQueryToSearch,
   getCardSentiment,
@@ -38,6 +40,7 @@ import {
   marketConfirmationState,
   parseExplorerQuery,
   publishedPredictionsForCustomer,
+  scoredRecentSales,
   windowChange,
   type CardCallKind,
   type ExplorerWindow,
@@ -125,6 +128,11 @@ export default async function CardDetailPage({
       }
     : null;
   const confirmation = CONFIRMATION_TEXT[marketConfirmationState(scoreView)];
+  const recentSales = scoredRecentSales(components);
+  const salesNote =
+    recentSales == null
+      ? "Whether recent sold prices back up the reading"
+      : `${plural(recentSales, "sale")} recorded in the 7 days before scoring; ${MIN_SALES_FOR_MARKET_CONFIRM} needed to confirm`;
   const hypeUnconfirmed = components.hype_unconfirmed === true;
   const headline = workspace.headline;
   const headlineSold = workspace.headlineKind === "sold";
@@ -200,6 +208,7 @@ export default async function CardDetailPage({
             recommendation={score?.recommendation ?? null}
             uncalibrated={score?.uncalibrated === "true"}
             confirmation={confirmation}
+            salesNote={salesNote}
             hiddenCreatorIds={await loadHiddenCreatorIds(organizationId, userId)}
             hrefs={{
               sentiment: href({ tab: "sentiment", page: 1 }),

@@ -963,6 +963,15 @@ export function marketConfirmationState(
   return score.marketConfirmed ? "confirmed" : "unconfirmed";
 }
 
+/** Sold prints this printing had in the 7 days before it was scored, read from the stored liquidity breakdown. */
+export function scoredRecentSales(components: unknown): number | null {
+  const liquidity = (components as { liquidity?: unknown } | null)?.liquidity;
+  if (!Array.isArray(liquidity)) return null;
+  const part = liquidity.find((item) => item && typeof item === "object" && (item as { key?: unknown }).key === "sales_frequency");
+  const raw = (part as { raw?: unknown } | undefined)?.raw;
+  return typeof raw === "number" && Number.isFinite(raw) ? raw : null;
+}
+
 export type ExplorerFacets = {
   games: { key: string; label: string }[];
   languages: { key: string; label: string }[];
