@@ -234,7 +234,8 @@ export type ExplorerPrice = {
   condition: string;
   sourceKey: string;
   observedAt: Date;
-  quoteType: "sold";
+  /** "sold" is a recent valid sale; "reference" is the TCGplayer market price from TCG Card Central. */
+  quoteType: "sold" | "reference";
 };
 
 export type ExplorerSeriesPoint = { observedAt: Date; amount: number };
@@ -338,7 +339,8 @@ function orderBy(sort: ExplorerSort): SQL {
     case "recent":
       return sql`s.as_of DESC NULLS LAST`;
     default:
-      return sql`s.opportunity_score DESC NULLS LAST, s.confidence_score DESC NULLS LAST`;
+      // Unscored cards follow in catalog order; priced ones first so the page isn't a wall of "No price".
+      return sql`s.opportunity_score DESC NULLS LAST, s.confidence_score DESC NULLS LAST, (m.price IS NULL) ASC`;
   }
 }
 
@@ -376,9 +378,40 @@ function filterClauses(query: ExplorerQuery): SQL[] {
   return clauses;
 }
 
+/** A sale older than this no longer outranks the daily TCGplayer market price. */
+export const HEADLINE_SOLD_MAX_AGE_DAYS = 30;
+
+/**
+ * Lateral subquery for a printing's headline price: the latest valid ungraded
+ * sale from the last HEADLINE_SOLD_MAX_AGE_DAYS, else the latest TCGplayer
+ * market (reference) price. Each branch walks the (printing_id, observed_at)
+ * index, so price sorts and filters stay cheap across the catalog.
+ */
+function headlinePriceSql(now: Date) {
+  const soldFrom = new Date(now.getTime() - HEADLINE_SOLD_MAX_AGE_DAYS * 86_400_000);
+  return sql`
+    SELECT q.price, q.price_type, q.currency, q.condition, q.source_key, q.observed_at FROM (
+      (SELECT ms.price, ms.price_type, ms.currency, ms.condition, ms.source_key, ms.observed_at, 0 AS rank
+       FROM tcg_market_snapshot ms
+       WHERE ms.printing_id = p.id AND ms.price_type = 'sold' AND ms.price IS NOT NULL
+         AND ms.outlier_flag = FALSE AND ms.grading_company IS NULL
+         AND ms.observed_at > ${ts(soldFrom)} AND ms.observed_at <= ${ts(now)}
+       ORDER BY ms.observed_at DESC, ms.id DESC LIMIT 1)
+      UNION ALL
+      (SELECT ms.price, ms.price_type, ms.currency, ms.condition, ms.source_key, ms.observed_at, 1 AS rank
+       FROM tcg_market_snapshot ms
+       WHERE ms.printing_id = p.id AND ms.price_type = 'reference' AND ms.price IS NOT NULL
+         AND ms.outlier_flag = FALSE AND ms.grading_company IS NULL AND ms.observed_at <= ${ts(now)}
+       ORDER BY ms.observed_at DESC, ms.id DESC LIMIT 1)
+    ) q
+    ORDER BY q.rank
+    LIMIT 1
+  `;
+}
+
 /**
  * One bounded page of exact printings with their latest persisted score and
- * latest valid sold price. Filtering, sorting and paging run in SQL so the
+ * headline price (see headlinePriceSql). Filtering, sorting and paging run in SQL so the
  * response size is fixed by pageSize, not by catalog size.
  */
 export async function listCardExplorerPage(
@@ -401,7 +434,7 @@ export async function listCardExplorerPage(
       s.components ->> 'market_confirmed' AS market_confirmed,
       s.components ->> 'hype_unconfirmed' AS hype_unconfirmed,
       s.explanations AS explanations,
-      m.price, m.currency, m.condition, m.source_key, m.observed_at,
+      m.price, m.price_type, m.currency, m.condition, m.source_key, m.observed_at,
       count(*) OVER () AS total
     FROM tcg_printing p
     JOIN tcg_card_concept c ON c.id = p.card_id
@@ -412,18 +445,7 @@ export async function listCardExplorerPage(
       ORDER BY ss.as_of DESC, ss.created_at DESC, ss.id DESC
       LIMIT 1
     ) s ON TRUE
-    LEFT JOIN LATERAL (
-      SELECT ms.price, ms.currency, ms.condition, ms.source_key, ms.observed_at
-      FROM tcg_market_snapshot ms
-      WHERE ms.printing_id = p.id
-        AND ms.price_type = 'sold'
-        AND ms.price IS NOT NULL
-        AND ms.outlier_flag = FALSE
-        AND ms.grading_company IS NULL
-        AND ms.observed_at <= ${ts(now)}
-      ORDER BY ms.observed_at DESC, ms.id DESC
-      LIMIT 1
-    ) m ON TRUE
+    LEFT JOIN LATERAL (${headlinePriceSql(now)}) m ON TRUE
     WHERE ${where}
     ORDER BY ${orderBy(query.sort)}, p.id ASC
     LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}
@@ -442,12 +464,7 @@ export async function listCardExplorerPage(
           SELECT * FROM tcg_score_snapshot ss WHERE ss.printing_id = p.id AND ss.as_of <= ${ts(now)}
           ORDER BY ss.as_of DESC, ss.created_at DESC, ss.id DESC LIMIT 1
         ) s ON TRUE
-        LEFT JOIN LATERAL (
-          SELECT ms.price, ms.currency FROM tcg_market_snapshot ms
-          WHERE ms.printing_id = p.id AND ms.price_type = 'sold' AND ms.price IS NOT NULL
-            AND ms.outlier_flag = FALSE AND ms.grading_company IS NULL AND ms.observed_at <= ${ts(now)}
-          ORDER BY ms.observed_at DESC, ms.id DESC LIMIT 1
-        ) m ON TRUE
+        LEFT JOIN LATERAL (${headlinePriceSql(now)}) m ON TRUE
         WHERE ${where}
       `),
     );
@@ -500,7 +517,7 @@ export async function listCardExplorerPage(
               condition: String(row.condition),
               sourceKey: String(row.source_key),
               observedAt: toDate(row.observed_at),
-              quoteType: "sold",
+              quoteType: row.price_type === "sold" ? "sold" : "reference",
             },
       series,
       windowChange: windowChange(series),
@@ -554,8 +571,9 @@ export function windowChange(series: ExplorerSeriesPoint[]): number | null {
 const MAX_SERIES_POINTS = 60;
 
 /**
- * Sold history restricted to observations comparable with the headline price:
- * same currency, same condition, ungraded, not flagged as an outlier.
+ * History restricted to observations comparable with the headline price:
+ * same quote type (sold or TCGplayer market), currency and condition,
+ * ungraded, not flagged as an outlier.
  */
 async function loadComparableSeries(
   db: Database,
@@ -567,12 +585,12 @@ async function loadComparableSeries(
   if (anchors.length === 0) return out;
   const anchorIds = anchors.map((row) => String(row.printing_id));
   const result = await db.execute(sql`
-    SELECT printing_id, observed_at, price, currency, condition FROM (
-      SELECT ms.printing_id, ms.observed_at, ms.price, ms.currency, ms.condition,
-        row_number() OVER (PARTITION BY ms.printing_id, ms.currency, ms.condition ORDER BY ms.observed_at DESC, ms.id DESC) AS rn
+    SELECT printing_id, observed_at, price, price_type, currency, condition FROM (
+      SELECT ms.printing_id, ms.observed_at, ms.price, ms.price_type, ms.currency, ms.condition,
+        row_number() OVER (PARTITION BY ms.printing_id, ms.price_type, ms.currency, ms.condition ORDER BY ms.observed_at DESC, ms.id DESC) AS rn
       FROM tcg_market_snapshot ms
       WHERE ms.printing_id IN (${inList(anchorIds)})
-        AND ms.price_type = 'sold'
+        AND ms.price_type IN ('sold', 'reference')
         AND ms.price IS NOT NULL
         AND ms.outlier_flag = FALSE
         AND ms.grading_company IS NULL
@@ -586,7 +604,13 @@ async function loadComparableSeries(
   for (const row of asRows(result)) {
     const printingId = String(row.printing_id);
     const anchor = anchorById.get(printingId);
-    if (!anchor || row.currency !== anchor.currency || row.condition !== anchor.condition) continue;
+    if (
+      !anchor ||
+      row.price_type !== anchor.price_type ||
+      row.currency !== anchor.currency ||
+      row.condition !== anchor.condition
+    )
+      continue;
     const amount = toNumber(row.price);
     if (amount == null) continue;
     const list = out.get(printingId) ?? [];
@@ -958,7 +982,7 @@ export async function listExplorerFacets(db: Database, input: { game?: string } 
       ORDER BY release_date DESC NULLS LAST, name ASC LIMIT 200
     `),
     db.execute(sql`SELECT DISTINCT variant_key FROM tcg_printing WHERE status = 'active' ORDER BY variant_key LIMIT 50`),
-    db.execute(sql`SELECT DISTINCT currency FROM tcg_market_snapshot WHERE price_type = 'sold' ORDER BY currency LIMIT 20`),
+    db.execute(sql`SELECT DISTINCT currency FROM tcg_market_snapshot WHERE price_type IN ('sold', 'reference') ORDER BY currency LIMIT 20`),
   ]);
   return {
     games: asRows(games).map((row) => ({ key: String(row.game_key), label: String(row.display_name) })),

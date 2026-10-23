@@ -86,7 +86,7 @@ export default async function CardsPage({
               <tr>
                 <th scope="col">Printing</th>
                 <th scope="col">Language · printing</th>
-                <th scope="col" className="num">Last sold</th>
+                <th scope="col" className="num">Price</th>
                 <th scope="col" className="num">{windowLabel} change</th>
                 <th scope="col" className="num">Opportunity</th>
                 <th scope="col" className="num">Risk</th>
@@ -146,7 +146,8 @@ export default async function CardsPage({
       />
       <p className="subtle">
         Scores are versioned outputs of the scoring pipeline on a 0–100 scale. They are not probabilities and are not
-        investment advice. Prices are the latest valid ungraded sale; outliers are kept as evidence but excluded here.
+        investment advice. Prices are the latest valid ungraded sale from the last 30 days, otherwise the TCGplayer market
+        price from TCG Card Central; outlier sales are kept as evidence but excluded here.
       </p>
     </>
   );

@@ -90,6 +90,11 @@ export function variantText(variant: string): string {
   return variant.replaceAll("_", " ").replace(/^\w/, (char) => char.toUpperCase());
 }
 
+/** Label for a headline price: a recent sale, or TCGplayer's market price via TCG Card Central. */
+export function quoteText(quoteType: "sold" | "reference"): string {
+  return quoteType === "sold" ? "Last sold" : "TCGplayer market";
+}
+
 export function conditionText(condition: string): string {
   const map: Record<string, string> = {
     nm: "Near Mint",
@@ -137,7 +142,7 @@ export type Freshness = { label: string; tone: "good" | "warn" | "info" };
 
 /** Freshness of the headline price: missing is not fresh, stale is labeled. */
 export function priceFreshness(observedAt: Date | null | undefined, now: Date = new Date()): Freshness {
-  if (!observedAt) return { label: "No sales data", tone: "info" };
+  if (!observedAt) return { label: "No price data", tone: "info" };
   const hours = (now.getTime() - observedAt.getTime()) / 3_600_000;
   if (hours <= 24) return { label: "Fresh", tone: "good" };
   if (hours <= 24 * 7) return { label: `Updated ${formatAge(observedAt, now)}`, tone: "info" };

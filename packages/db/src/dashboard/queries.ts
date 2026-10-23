@@ -8,7 +8,13 @@ import { tcgIndexDefinition, tcgIndexLevel } from "../schema/analytics.js";
 import { tcgPrediction } from "../schema/prediction.js";
 import { creator, creatorCall } from "../schema/creator.js";
 import { tcgMarketSnapshot } from "../schema/tcg-market.js";
-import { getLatestTcgMarketSnapshot, getTcgAskSoldSpread, listTcgSoldHistory } from "../tcg/market-query.js";
+import {
+  getLatestTcgMarketSnapshot,
+  getTcgAskSoldSpread,
+  listTcgMarketSnapshots,
+  listTcgSoldHistory,
+} from "../tcg/market-query.js";
+import { HEADLINE_SOLD_MAX_AGE_DAYS } from "./explorer.js";
 import { getLatestScoreSnapshot } from "../scoring/persist.js";
 import { getMarketFeatureSnapshot } from "../analytics/features.js";
 import { listCallsByPrinting } from "../creator/query.js";
@@ -157,6 +163,9 @@ export async function listLatestOpportunities(db: Database, filter: OpportunityF
   return rows;
 }
 
+/** Days of TCGplayer market history loaded for the card page chart. */
+const REFERENCE_HISTORY_DAYS = 365;
+
 export async function getPrintingWorkspace(db: Database, printingId: string) {
   const found = await getPrintingIdentity(db, printingId);
   if (!found) {
@@ -164,10 +173,16 @@ export async function getPrintingWorkspace(db: Database, printingId: string) {
   }
   const images = await loadPrintingImages(db, [printingId]);
   const identity: PrintingIdentity = { ...found, imageUrl: images.get(printingId) ?? null };
-  const [sold, listing, reference, score, features, calls, predictions, spread, social] = await Promise.all([
+  const now = Date.now();
+  const [sold, listing, referenceHistory, score, features, calls, predictions, spread, social] = await Promise.all([
     listTcgSoldHistory(db, { printingId }),
     getLatestTcgMarketSnapshot(db, { printingId, marketType: "marketplace_listing" }),
-    getLatestTcgMarketSnapshot(db, { printingId, priceType: "reference" }),
+    listTcgMarketSnapshots(db, {
+      printingId,
+      priceType: "reference",
+      hasPrice: true,
+      from: new Date(now - REFERENCE_HISTORY_DAYS * 86_400_000),
+    }),
     getLatestScoreSnapshot(db, printingId),
     getMarketFeatureSnapshot(db, { printingId }),
     listCallsByPrinting(db, printingId),
@@ -185,7 +200,12 @@ export async function getPrintingWorkspace(db: Database, printingId: string) {
   const latestObservedSold = sold[0] ?? null;
   const latestSold =
     sold.find((row) => row.price != null && row.outlierFlag === false && row.gradingCompany == null) ?? null;
-  const now = Date.now();
+  const reference = referenceHistory[0] ?? null;
+  // A recent sale is the headline; otherwise TCG Card Central's daily TCGplayer market price.
+  const recentSold =
+    latestSold && now - latestSold.observedAt.getTime() <= HEADLINE_SOLD_MAX_AGE_DAYS * 86_400_000 ? latestSold : null;
+  const headline = recentSold ?? reference;
+  const headlineKind: "sold" | "reference" | null = recentSold ? "sold" : reference ? "reference" : null;
   const ageMinutes = (value: Date | null | undefined) =>
     value ? Math.max(0, Math.round((now - value.getTime()) / 60_000)) : null;
   const socialUpdatedAt = social[0]?.publishedAt ?? null;
@@ -194,20 +214,23 @@ export async function getPrintingWorkspace(db: Database, printingId: string) {
     sold,
     latestSold,
     latestObservedSold,
+    headline,
+    headlineKind,
     listing,
     reference,
+    referenceHistory,
     score,
     features,
     calls,
     predictions,
     spread,
     freshness: {
-      marketUpdatedMinutesAgo: ageMinutes(latestSold?.observedAt ?? listing?.observedAt),
+      marketUpdatedMinutesAgo: ageMinutes(headline?.observedAt ?? listing?.observedAt),
       socialUpdatedMinutesAgo: ageMinutes(socialUpdatedAt),
       creatorEvidenceUpdatedMinutesAgo: ageMinutes(calls[0]?.publishedAt),
       scoreAsOf: score?.asOf?.toISOString() ?? null,
       stale:
-        (ageMinutes(latestSold?.observedAt ?? listing?.observedAt) ?? 9999) > 24 * 60 ||
+        (ageMinutes(headline?.observedAt ?? listing?.observedAt) ?? 9999) > 24 * 60 ||
         score?.dataQuality === "stale",
     },
   };

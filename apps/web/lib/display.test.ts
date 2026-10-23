@@ -28,7 +28,7 @@ describe("display labels", () => {
 
   it("never calls a missing or old price fresh", () => {
     const now = new Date(start.getTime() + 30 * day);
-    expect(priceFreshness(null, now).label).toBe("No sales data");
+    expect(priceFreshness(null, now).label).toBe("No price data");
     expect(priceFreshness(new Date(now.getTime() - 2 * 3_600_000), now).tone).toBe("good");
     expect(priceFreshness(start, now).tone).toBe("warn");
   });
