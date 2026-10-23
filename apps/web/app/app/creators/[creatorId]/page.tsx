@@ -196,7 +196,7 @@ export default async function CreatorDetailPage({
                   <strong>
                     {slice.languageCode ? languageText(slice.languageCode) : "All languages"}
                     {slice.setKey ? ` · ${slice.setKey}` : ""}
-                    {slice.horizonCode ? ` · ${slice.horizonCode.replaceAll("_", " ")}` : ""}
+                    {slice.horizonCode ? ` · ${callHorizonText(slice.horizonCode)}` : ""}
                   </strong>
                   <span className="subtle">
                     {slice.successes} of {slice.sampleSize} came true

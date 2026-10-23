@@ -287,6 +287,9 @@ async function loadListings(db: Database, printingId: string, asOf: Date, condit
   }));
 }
 
+/** Sales older than this no longer make the sold series the price basis. */
+export const SOLD_BASIS_MAX_AGE_DAYS = 30;
+
 export function computeFeaturesFromSeries(input: {
   asOf: Date;
   sold: SoldPoint[];
@@ -305,7 +308,10 @@ export function computeFeaturesFromSeries(input: {
   );
   // Price features read sales when there are enough of them, otherwise the
   // daily market price. Sales counts, volume and absorption only ever read sales.
-  const priceBasis: "sold" | "reference" = sales.length < 2 && referencePoints.length >= 2 ? "reference" : "sold";
+  // Sales lead only while they are recent: two sales from months ago must not
+  // outrank a daily market price that is current.
+  const recentSales = sales.filter((point) => point.observedAt.getTime() > asOfMs - SOLD_BASIS_MAX_AGE_DAYS * 86_400_000);
+  const priceBasis: "sold" | "reference" = recentSales.length < 2 && referencePoints.length >= 2 ? "reference" : "sold";
   const included = priceBasis === "sold" ? sales : referencePoints;
   const salesConfirm = priceBasis === "sold";
   const listings = sameCurrencyOrEmpty(

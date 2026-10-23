@@ -4,6 +4,16 @@ export const RECOMMENDATION_VERSION = "recommendation.v1" as const;
 
 export const SCORE_UNCALIBRATED = true as const;
 
+/**
+ * Bumped whenever the model's inputs or wording change without a new policy
+ * version. Stored in components.model_revision; the rescore pass refreshes
+ * any latest score written by an older revision.
+ * 2: market-price basis (no sales needed, stale sales don't lead), "avoid"
+ * calls count as bearish, confirmed weak readings read sell/reduce,
+ * plain-language explanations.
+ */
+export const SCORE_MODEL_REVISION = 2;
+
 export const OPPORTUNITY_WEIGHTS_V1 = {
   price_momentum: 0.22,
   volume_momentum: 0.18,
@@ -51,6 +61,9 @@ export const RECOMMENDATION_THRESHOLDS_V1 = {
   reduce: { opportunity_max: 40, risk: 55 },
   sell: { opportunity_max: 35, risk: 65 },
   strong_sell: { opportunity_max: 30, risk: 80 },
+  // Mirror of buy (opportunity 60+) for confirmed, confident readings at any risk.
+  market_sell: { opportunity_max: 20 },
+  market_reduce: { opportunity_max: 35 },
   insufficient_confidence: 25,
   insufficient_sample: 3,
 } as const;

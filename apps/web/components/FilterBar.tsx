@@ -1,5 +1,7 @@
 import {
+  EXPLORER_MARKET_SENTIMENTS,
   EXPLORER_RECOMMENDATIONS,
+  EXPLORER_SOCIAL_SENTIMENTS,
   EXPLORER_SORTS,
   EXPLORER_VIEW_DEFINITIONS,
   EXPLORER_VIEWS,
@@ -21,6 +23,26 @@ const SORT_TEXT: Record<(typeof EXPLORER_SORTS)[number], string> = {
   price_low: "Price: low to high",
   name: "Name A–Z",
   recent: "Recently scored",
+  market_buy: "Market: strongest buy",
+  market_sell: "Market: strongest sell",
+  social_positive: "Social: most positive",
+  social_negative: "Social: most negative",
+  social_posts: "Social: most talked about",
+};
+
+const MARKET_TEXT: Record<(typeof EXPLORER_MARKET_SENTIMENTS)[number], string> = {
+  buy: "Buy or strong buy",
+  hold: "Hold or watch",
+  sell: "Sell, reduce or strong sell",
+  none: "No reading yet",
+};
+
+const SOCIAL_TEXT: Record<(typeof EXPLORER_SOCIAL_SENTIMENTS)[number], string> = {
+  positive: "Leaning positive",
+  negative: "Leaning negative",
+  neutral: "Neutral or split",
+  any: "Any posts",
+  none: "No posts",
 };
 
 const WINDOW_TEXT = { "7d": "7 days", "30d": "30 days", "90d": "90 days" } as const;
@@ -79,6 +101,28 @@ export function FilterBar({ query, facets, basePath }: { query: ExplorerQuery; f
               {facets.sets.map((set) => (
                 <option key={set.key} value={set.key}>
                   {set.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            Market sentiment
+            <select name="market" defaultValue={query.market ?? ""}>
+              <option value="">Any</option>
+              {EXPLORER_MARKET_SENTIMENTS.map((value) => (
+                <option key={value} value={value}>
+                  {MARKET_TEXT[value]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            Social sentiment
+            <select name="social" defaultValue={query.social ?? ""}>
+              <option value="">Any</option>
+              {EXPLORER_SOCIAL_SENTIMENTS.map((value) => (
+                <option key={value} value={value}>
+                  {SOCIAL_TEXT[value]}
                 </option>
               ))}
             </select>
@@ -202,6 +246,8 @@ const CLEARED: Partial<ExplorerQuery> = {
   language: undefined,
   variant: undefined,
   recommendation: undefined,
+  market: undefined,
+  social: undefined,
   minOpportunity: undefined,
   maxRisk: undefined,
   minConfidence: undefined,

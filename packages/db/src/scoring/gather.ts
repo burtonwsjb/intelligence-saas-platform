@@ -1,4 +1,4 @@
-import { and, desc, eq, lte } from "drizzle-orm";
+import { and, desc, eq, inArray, lte } from "drizzle-orm";
 import type { Database } from "../client.js";
 import { creatorAuthoritySlice, creatorCall } from "../schema/creator.js";
 import { latestTrustState } from "../creator/authority.js";
@@ -68,9 +68,12 @@ async function socialStats(db: Database, printingId: string, languageCode: strin
       language_code: languageCode,
     };
   }
-  const mentions = await db.select().from(sourceMention);
-  const relevant = mentions.filter((row) => mentionIds.includes(row.id));
-  const contents = await db.select().from(sourceContent);
+  // Read only this printing's mentions and their posts: the full tables are far too large to scan per card.
+  const relevant = await db.select().from(sourceMention).where(inArray(sourceMention.id, mentionIds));
+  const relevantContentIds = [...new Set(relevant.map((row) => row.contentId))];
+  const contents = relevantContentIds.length
+    ? await db.select().from(sourceContent).where(inArray(sourceContent.id, relevantContentIds))
+    : [];
   const contentById = new Map(contents.map((row) => [row.id, row]));
   const recent = relevant.filter((row) => {
     const published = contentById.get(row.contentId)?.publishedAt;
@@ -82,7 +85,9 @@ async function socialStats(db: Database, printingId: string, languageCode: strin
   });
   const contentIds = [...new Set(recent.map((row) => row.contentId))];
   const accounts = [...new Set(contentIds.map((id) => contentById.get(id)?.accountId).filter(Boolean))];
-  const engagementRows = await db.select().from(sourceEngagementSnapshot);
+  const engagementRows = contentIds.length
+    ? await db.select().from(sourceEngagementSnapshot).where(inArray(sourceEngagementSnapshot.contentId, contentIds))
+    : [];
   const engagement = engagementRows
     .filter((row) => contentIds.includes(row.contentId) && row.observedAt.getTime() <= asOf.getTime())
     .reduce((sum, row) => sum + Number(row.views ?? 0) + Number(row.likes ?? 0) + Number(row.upvotes ?? 0), 0);

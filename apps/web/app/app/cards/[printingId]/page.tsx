@@ -1,5 +1,6 @@
 import { Badge, StatusBadge } from "@/components/Badge";
 import { CardArt } from "@/components/CardArt";
+import { callDirectionText, callHorizonText } from "@/components/CallOutcome";
 import { ChartSentimentPanel } from "@/components/ChartSentiment";
 import { EmptyState, LockedFeature } from "@/components/EmptyState";
 import { PriceTrendChart } from "@/components/PriceTrendChart";
@@ -8,7 +9,6 @@ import { ScoreRing } from "@/components/ScoreRing";
 import { SentimentVerdict } from "@/components/SentimentVerdict";
 import { SentimentDonut } from "@/components/SentimentSummary";
 import { Tabs } from "@/components/Tabs";
-import { TechnicalDetails, explanationText } from "@/components/TechnicalDetails";
 import { ANALYTICS_LOCKED_BODY, loadAppAccess, loadHiddenCreatorIds } from "@/lib/app-access";
 import { getDb } from "@/lib/auth";
 import {
@@ -24,12 +24,14 @@ import {
   providerText,
   quoteText,
   recommendationText,
+  sourceTypeText,
   variantText,
 } from "@/lib/display";
 import {
   CARD_CALL_KINDS,
   EXPLORER_WINDOWS,
   comparableSoldSeries,
+  explanationSentence,
   explorerQueryToSearch,
   getCardSentiment,
   getChartSentiment,
@@ -135,6 +137,10 @@ export default async function CardDetailPage({
         ? `Measured against ${plural(priceBasis.points, "daily TCGplayer market price")}; 3 needed`
         : `Measured against ${plural(priceBasis.points, "recorded sale")}; 3 needed`;
   const hypeUnconfirmed = components.hype_unconfirmed === true;
+  const measured = (kind: "opportunity" | "risk" | "confidence" | "liquidity") => {
+    const parts = components[kind];
+    return !Array.isArray(parts) || parts.some((part) => (part as { present?: unknown }).present === true);
+  };
   const headline = workspace.headline;
   const headlineSold = workspace.headlineKind === "sold";
   const series = comparableSoldSeries(headlineSold ? workspace.sold : workspace.referenceHistory, headline);
@@ -222,10 +228,11 @@ export default async function CardDetailPage({
             {score ? (
               <>
                 <div className="ring-row">
-                  <ScoreRing kind="opportunity" value={Number(score.opportunityScore)} />
-                  <ScoreRing kind="risk" value={Number(score.riskScore)} />
-                  <ScoreRing kind="confidence" value={Number(score.confidenceScore)} />
-                  <ScoreRing kind="liquidity" value={Number(score.liquidityScore)} />
+                  {/* A score with no measured inputs is the neutral midpoint, not a reading: show it as missing. */}
+                  <ScoreRing kind="opportunity" value={measured("opportunity") && score.recommendation !== "insufficient_data" ? Number(score.opportunityScore) : null} />
+                  <ScoreRing kind="risk" value={measured("risk") ? Number(score.riskScore) : null} />
+                  <ScoreRing kind="confidence" value={measured("confidence") ? Number(score.confidenceScore) : null} />
+                  <ScoreRing kind="liquidity" value={measured("liquidity") ? Number(score.liquidityScore) : null} />
                 </div>
                 <dl className="kv" style={{ marginTop: "var(--space-5)" }}>
                   <dt>Recommendation</dt>
@@ -242,7 +249,7 @@ export default async function CardDetailPage({
                   <dd>{dataQualityText(score.dataQuality).label}</dd>
                   <dt>Scored</dt>
                   <dd>
-                    {formatDate(score.asOf)} ({formatAge(score.asOf)}) · version {score.scoreVersion}
+                    {formatDate(score.asOf)} ({formatAge(score.asOf)})
                   </dd>
                 </dl>
               </>
@@ -261,13 +268,10 @@ export default async function CardDetailPage({
               ) : (
                 <ul className="drivers">
                   {drivers.map((item, index) => (
-                    <li key={index}>{explanationText(item)}</li>
+                    <li key={index}>{explanationSentence(item)}</li>
                   ))}
                 </ul>
               )}
-              <TechnicalDetails title="Score components (technical)">
-                <pre className="json-block">{JSON.stringify(components, null, 2)}</pre>
-              </TechnicalDetails>
             </section>
           ) : null}
           <ForecastPanel
@@ -358,11 +362,6 @@ export default async function CardDetailPage({
                 flagged as an outlier and is not used as the headline price.
               </p>
             ) : null}
-            {workspace.features ? (
-              <TechnicalDetails title="Market features (technical)">
-                <pre className="json-block">{JSON.stringify(workspace.features.features, null, 2)}</pre>
-              </TechnicalDetails>
-            ) : null}
           </section>
         </>
       ) : null}
@@ -423,7 +422,7 @@ async function SentimentPanel({
     <div className="panel-grid">
       <section className="panel">
         <div className="section-head" style={{ marginTop: 0 }}>
-          <h2>Market sentiment</h2>
+          <h2>Social sentiment</h2>
           <nav className="segmented" aria-label="Sentiment window">
             {EXPLORER_WINDOWS.map((w) => (
               <Link key={w} href={windowHref(w)} aria-current={w === window ? "page" : undefined} scroll={false}>
@@ -494,14 +493,14 @@ async function CreatorsPanel({
                   </a>
                 ) : null}
                 <span className="subtle">
-                  {formatDate(call.publishedAt)} · horizon {call.horizonCode.replaceAll("_", " ")}
+                  {formatDate(call.publishedAt)} · {callHorizonText(call.horizonCode)}
                   {call.priceAtCall && call.priceCurrency ? ` · price at call ${formatMoney(call.priceAtCall, call.priceCurrency)}` : ""}
                 </span>
               </span>
               <span className="badge-row">
                 {call.grade ? <Badge>{call.grade}</Badge> : null}
-                <Badge tone={call.direction === "bullish" ? "info" : call.direction === "bearish" ? "warn" : undefined}>
-                  {call.direction.replaceAll("_", " ")}
+                <Badge tone={call.direction === "bullish" ? "info" : call.direction === "bearish" || call.direction === "avoid" ? "warn" : undefined}>
+                  {callDirectionText(call.direction)}
                 </Badge>
               </span>
             </li>
@@ -531,10 +530,10 @@ async function EvidencePanel({ printingId, page, pageHref }: { printingId: strin
                   {item.title ?? "Untitled source"}
                 </a>
                 <span className="subtle">
-                  {item.sourceType} · {item.accountName ?? "unknown account"} · {formatDate(item.publishedAt)}
+                  {sourceTypeText(item.sourceType)} · {item.accountName ?? "Unknown account"} · {formatDate(item.publishedAt)}
                 </span>
               </span>
-              <Badge>{item.sentiment === "unknown" ? "unclassified" : item.sentiment}</Badge>
+              <Badge>{item.sentiment === "unknown" ? "Not classified" : item.sentiment.charAt(0).toUpperCase() + item.sentiment.slice(1)}</Badge>
             </li>
           ))}
         </ul>

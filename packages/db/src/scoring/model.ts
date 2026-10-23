@@ -6,6 +6,7 @@ import {
   RECOMMENDATION_VERSION,
   RISK_WEIGHTS_V1,
   SCORE_POLICY_KEY,
+  SCORE_MODEL_REVISION,
   SCORE_POLICY_VERSION,
   SCORE_UNCALIBRATED,
   SOCIAL_STRONG_BUY_CAP,
@@ -151,7 +152,8 @@ function combine(
 export function creatorConsensus(votes: CreatorVote[], languageCode: string) {
   const usable = votes.filter((vote) => vote.languageCode == null || vote.languageCode === languageCode);
   const weighted = usable.map((vote) => {
-    const sign = vote.direction === "bullish" ? 1 : vote.direction === "bearish" ? -1 : 0;
+    // "avoid" is a call not to buy: it counts against the card like "bearish".
+    const sign = vote.direction === "bullish" ? 1 : vote.direction === "bearish" || vote.direction === "avoid" ? -1 : 0;
     return { ...vote, sign, w: vote.authorityWeight };
   });
   const totalW = weighted.reduce((sum, vote) => sum + vote.w, 0);
@@ -177,6 +179,18 @@ export function creatorConsensus(votes: CreatorVote[], languageCode: string) {
     total_weight: totalW,
     n: weighted.length,
   };
+}
+
+/** Mean creator direction (-1..1) inside this band reads as split, not as a lean. */
+const CONSENSUS_NEUTRAL_BAND = 0.15;
+const VOLATILITY_ELEVATED = 0.08;
+const PRICE_MOMENTUM_SCALE = 0.3;
+
+export function creatorConsensusText(mean: number, n: number): string {
+  const calls = `${n} creator call${n === 1 ? "" : "s"}`;
+  if (mean >= CONSENSUS_NEUTRAL_BAND) return `${calls} lean bullish, weighted by each creator's track record`;
+  if (mean <= -CONSENSUS_NEUTRAL_BAND) return `${calls} lean bearish, weighted by each creator's track record`;
+  return `${calls}, split or neutral overall`;
 }
 
 export function socialMomentum(social: SocialStats | null) {
@@ -249,6 +263,16 @@ export function recommend(input: {
   if (input.opportunity <= t.reduce.opportunity_max && input.risk >= t.reduce.risk) {
     return { label: "reduce", reasons: ["thresholds.reduce"] };
   }
+  // A weak reading backed by a current market price is a sell-side reading
+  // even when risk is low (a steadily falling card is not a "watch").
+  if (input.marketConfirmed && input.confidence >= t.buy.confidence) {
+    if (input.opportunity <= t.market_sell.opportunity_max) {
+      return { label: "sell", reasons: ["thresholds.market_sell"] };
+    }
+    if (input.opportunity <= t.market_reduce.opportunity_max) {
+      return { label: "reduce", reasons: ["thresholds.market_reduce"] };
+    }
+  }
   if (input.opportunity >= t.hold_min_opportunity) {
     return { label: "hold", reasons: ["thresholds.hold"] };
   }
@@ -278,9 +302,13 @@ export function scoreFromInputs(input: ScoreInputs) {
   const hypeUnconfirmed = Boolean(social.present && (social.score ?? 0) >= 65 && !marketConfirmed);
 
   const opportunityParts = {
-    price_momentum: metricPart(input.returns?.["30d"] ?? input.returns?.["7d"], (value) => signedToScore(value, 0.2)),
+    // ±30% maps to 0/100, so ordinary monthly moves in cards spread out instead of pinning at the ends.
+    price_momentum: metricPart(input.returns?.["30d"] ?? input.returns?.["7d"], (value) => signedToScore(value, PRICE_MOMENTUM_SCALE)),
     volume_momentum: metricPart(input.volumeMomentum, (value) => signedToScore(value, 1)),
-    sales_velocity: metricPart(input.salesVelocity?.sales_per_day_30d, (value) => positiveToScore(value, 1)),
+    // A market-price series has no sale counts: zero recorded sales is unknown demand, not no demand.
+    sales_velocity: referenceBasis
+      ? { present: false as const, score: null as number | null, raw: null as number | null, skipped_reason: "market_price_basis" }
+      : metricPart(input.salesVelocity?.sales_per_day_30d, (value) => positiveToScore(value, 1)),
     relative_strength: metricPart(input.relativeStrength, (value) => signedToScore(value, 0.15)),
     supply_absorption: metricPart(input.supply?.absorption_ratio, (value) => positiveToScore(value, 1)),
     creator_consensus: consensus.present
@@ -386,58 +414,69 @@ export function scoreFromInputs(input: ScoreInputs) {
   });
 
   const explanations: ExplanationLine[] = [];
-  const ret7 = input.returns?.["7d"];
-  if (ret7?.status === "ok" && ret7.value != null) {
+  // Customer-facing sentences: the card list shows the first one as "Why".
+  if (consensus.present) {
     explanations.push({
-      code: "price_return_7d",
-      text: `price ${ret7.value >= 0 ? "+" : ""}${(ret7.value * 100).toFixed(1)}% over 7d`,
-      refs: ["features.v1.returns.7d"],
+      code: "creator_consensus",
+      text: creatorConsensusText(consensus.raw!, consensus.n),
+      refs: ["authority.v2"],
+    });
+  }
+  const priceReturn = input.returns?.["30d"]?.status === "ok" ? { days: 30, metric: input.returns["30d"] } : input.returns?.["7d"]?.status === "ok" ? { days: 7, metric: input.returns["7d"] } : null;
+  if (priceReturn && priceReturn.metric.value != null) {
+    const pct = priceReturn.metric.value * 100;
+    explanations.push({
+      code: priceReturn.days === 30 ? "price_return_30d" : "price_return_7d",
+      text:
+        Math.abs(pct) < 0.05
+          ? `${referenceBasis ? "Market price" : "Sold price"} flat over ${priceReturn.days} days`
+          : `${referenceBasis ? "Market price" : "Sold price"} ${pct > 0 ? "up" : "down"} ${Math.abs(pct).toFixed(1)}% over ${priceReturn.days} days`,
+      refs: [`features.v1.returns.${priceReturn.days}d`],
     });
   }
   if (input.volumeMomentum?.status === "ok" && input.volumeMomentum.value != null) {
+    const pct = input.volumeMomentum.value * 100;
     explanations.push({
       code: "volume_momentum",
-      text: `sales volume ${(input.volumeMomentum.value * 100).toFixed(0)}% vs prior window`,
+      text: `Sales ${pct >= 0 ? "up" : "down"} ${Math.abs(pct).toFixed(0)}% on the week before`,
       refs: ["features.v1.volume_momentum"],
     });
   }
-  if (input.supply?.listing_change != null) {
+  if (input.supply?.listing_change != null && input.supply.listing_change !== 0) {
+    const change = input.supply.listing_change;
     explanations.push({
       code: "listings",
-      text: `active listings ${input.supply.listing_change >= 0 ? "+" : ""}${input.supply.listing_change}`,
+      text: `${Math.abs(change)} ${change > 0 ? "more" : "fewer"} copies listed for sale`,
       refs: ["features.v1.supply"],
     });
   }
   if (input.relativeStrength?.status === "ok" && input.relativeStrength.value != null) {
+    const pct = input.relativeStrength.value * 100;
     explanations.push({
       code: "relative_strength",
-      text: `relative strength ${(input.relativeStrength.value * 100).toFixed(1)}% vs benchmark`,
+      text: `${pct >= 0 ? "Beating" : "Trailing"} similar cards by ${Math.abs(pct).toFixed(1)}%`,
       refs: ["features.v1.relative_strength"],
-    });
-  }
-  if (consensus.present) {
-    explanations.push({
-      code: "creator_consensus",
-      text: `authority-weighted creator consensus ${consensus.raw! >= 0 ? "bullish" : "bearish"} (n=${consensus.n})`,
-      refs: ["authority.v2"],
     });
   }
   explanations.push({
     code: "liquidity",
-    text: `liquidity ${liquidity.total >= 60 ? "strong" : liquidity.total >= 40 ? "moderate" : "weak"}`,
+    text: !liquidity.components.some((part) => part.present)
+      ? "No recent sales or listings recorded, so how easily it sells is unknown"
+      : `${liquidity.total >= 60 ? "Sells easily" : liquidity.total >= 40 ? "Sells at a moderate pace" : "Sells slowly"}`,
     refs: ["score.v1.liquidity"],
   });
-  if (input.volatility?.status === "ok") {
+  // Volatility is a 30-day standard deviation of returns: only call it out when it is large.
+  if (input.volatility?.status === "ok" && (input.volatility.value ?? 0) >= VOLATILITY_ELEVATED) {
     explanations.push({
       code: "volatility",
-      text: "volatility elevated",
+      text: "Price swings a lot",
       refs: ["features.v1.volatility"],
     });
   }
   if (hypeUnconfirmed) {
     explanations.push({
       code: "hype_unconfirmed",
-      text: "social activity without a current market price; Strong Buy blocked",
+      text: "Lots of social talk without a current market price to back it, so Strong buy is blocked",
       refs: ["phase09.social", "score.v1.hype_gate"],
     });
   }
@@ -470,6 +509,7 @@ export function scoreFromInputs(input: ScoreInputs) {
       liquidity: liquidity.components,
       market_confirmed: marketConfirmed,
       price_basis: input.priceBasis ?? "sold",
+      model_revision: SCORE_MODEL_REVISION,
       price_points: input.sampleSize,
       hype_unconfirmed: hypeUnconfirmed,
       creator_consensus: consensus,

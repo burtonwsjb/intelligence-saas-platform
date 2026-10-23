@@ -25,6 +25,11 @@ export const EXPLORER_SORTS = [
   "price_low",
   "name",
   "recent",
+  "market_buy",
+  "market_sell",
+  "social_positive",
+  "social_negative",
+  "social_posts",
 ] as const;
 export type ExplorerSort = (typeof EXPLORER_SORTS)[number];
 
@@ -34,6 +39,20 @@ export const EXPLORER_WINDOW_DAYS: Record<ExplorerWindow, number> = { "7d": 7, "
 
 export const EXPLORER_MODES = ["grid", "table"] as const;
 export type ExplorerMode = (typeof EXPLORER_MODES)[number];
+
+/** Market sentiment: the buy/sell reading of the latest score, grouped. */
+export const EXPLORER_MARKET_SENTIMENTS = ["buy", "hold", "sell", "none"] as const;
+export type ExplorerMarketSentiment = (typeof EXPLORER_MARKET_SENTIMENTS)[number];
+
+/** Social sentiment: which way the window's posts lean, accuracy weighted. */
+export const EXPLORER_SOCIAL_SENTIMENTS = ["positive", "negative", "neutral", "any", "none"] as const;
+export type ExplorerSocialSentiment = (typeof EXPLORER_SOCIAL_SENTIMENTS)[number];
+
+const MARKET_SENTIMENT_RECOMMENDATIONS: Record<Exclude<ExplorerMarketSentiment, "none">, string[]> = {
+  buy: ["strong_buy", "buy"],
+  hold: ["hold", "watch"],
+  sell: ["strong_sell", "sell", "reduce"],
+};
 
 export const EXPLORER_RECOMMENDATIONS = [
   "strong_buy",
@@ -75,6 +94,8 @@ export type ExplorerQuery = {
   language?: string;
   variant?: string;
   recommendation?: string;
+  market?: ExplorerMarketSentiment;
+  social?: ExplorerSocialSentiment;
   minOpportunity?: number;
   maxRisk?: number;
   minConfidence?: number;
@@ -127,6 +148,11 @@ function oneOf<T extends string>(value: string | string[] | undefined, allowed: 
   return raw && (allowed as readonly string[]).includes(raw) ? (raw as T) : fallback;
 }
 
+function optionalOneOf<T extends string>(value: string | string[] | undefined, allowed: readonly T[]): T | undefined {
+  const raw = first(value);
+  return raw && (allowed as readonly string[]).includes(raw) ? (raw as T) : undefined;
+}
+
 /** Validates URL search params into a bounded explorer query. Invalid values are dropped, never guessed. */
 export function parseExplorerQuery(raw: RawParams): ExplorerQuery {
   const q = first(raw.q);
@@ -149,6 +175,8 @@ export function parseExplorerQuery(raw: RawParams): ExplorerQuery {
       recommendation && (EXPLORER_RECOMMENDATIONS as readonly string[]).includes(recommendation)
         ? recommendation
         : undefined,
+    market: optionalOneOf(raw.market, EXPLORER_MARKET_SENTIMENTS),
+    social: optionalOneOf(raw.social, EXPLORER_SOCIAL_SENTIMENTS),
     minOpportunity: bounded(raw.minOpportunity, 0, 100),
     maxRisk: bounded(raw.maxRisk, 0, 100),
     minConfidence: bounded(raw.minConfidence, 0, 100),
@@ -178,6 +206,8 @@ export function explorerQueryToSearch(query: ExplorerQuery, overrides: Partial<E
     "language",
     "variant",
     "recommendation",
+    "market",
+    "social",
     "minOpportunity",
     "maxRisk",
     "minConfidence",
@@ -225,6 +255,8 @@ export type ExplorerScore = {
   dataQuality: string;
   marketConfirmed: boolean | null;
   hypeUnconfirmed: boolean;
+  /** False when no opportunity input was present: the stored 50 is the neutral midpoint, not a measurement. */
+  opportunityMeasured: boolean;
   why: string | null;
 };
 
@@ -322,6 +354,16 @@ function viewPredicate(view: ExplorerView): SQL {
   }
 }
 
+/** Position of the latest score's reading on the sell (0) to buy (4) scale; NULL without a reading. */
+const MARKET_STEP = sql.raw(`(CASE s.recommendation
+  WHEN 'strong_buy' THEN 4 WHEN 'buy' THEN 3 WHEN 'hold' THEN 2 WHEN 'watch' THEN 2
+  WHEN 'reduce' THEN 1 WHEN 'sell' THEN 1 WHEN 'strong_sell' THEN 0 END)`);
+
+/** Whether the query reads per-printing social sentiment (alias so). */
+function needsSocial(query: ExplorerQuery): boolean {
+  return query.social != null || query.sort.startsWith("social_");
+}
+
 function orderBy(sort: ExplorerSort): SQL {
   switch (sort) {
     case "risk_low":
@@ -338,6 +380,16 @@ function orderBy(sort: ExplorerSort): SQL {
       return sql`c.canonical_name ASC, st.name ASC, p.collector_number_normalized ASC`;
     case "recent":
       return sql`s.as_of DESC NULLS LAST`;
+    case "market_buy":
+      return sql`${MARKET_STEP} DESC NULLS LAST, s.opportunity_score DESC NULLS LAST`;
+    case "market_sell":
+      return sql`${MARKET_STEP} ASC NULLS LAST, s.opportunity_score ASC NULLS LAST`;
+    case "social_positive":
+      return sql`so.net DESC NULLS LAST, so.posts DESC NULLS LAST`;
+    case "social_negative":
+      return sql`so.net ASC NULLS LAST, so.posts DESC NULLS LAST`;
+    case "social_posts":
+      return sql`so.posts DESC NULLS LAST, so.net DESC NULLS LAST`;
     default:
       // Unscored cards follow in catalog order; priced ones first so the page isn't a wall of "No price".
       return sql`s.opportunity_score DESC NULLS LAST, s.confidence_score DESC NULLS LAST, (m.price IS NULL) ASC`;
@@ -351,6 +403,16 @@ function filterClauses(query: ExplorerQuery): SQL[] {
   if (query.set) clauses.push(sql`st.canonical_set_key = ${query.set}`);
   if (query.variant) clauses.push(sql`p.variant_key = ${query.variant}`);
   if (query.recommendation) clauses.push(sql`s.recommendation = ${query.recommendation}`);
+  if (query.market === "none") {
+    clauses.push(sql`(s.recommendation IS NULL OR s.recommendation = 'insufficient_data')`);
+  } else if (query.market) {
+    clauses.push(sql`s.recommendation IN (${inList(MARKET_SENTIMENT_RECOMMENDATIONS[query.market])})`);
+  }
+  if (query.social === "positive") clauses.push(sql`so.net > 0`);
+  if (query.social === "negative") clauses.push(sql`so.net < 0`);
+  if (query.social === "neutral") clauses.push(sql`so.posts > 0 AND so.net = 0`);
+  if (query.social === "any") clauses.push(sql`so.posts > 0`);
+  if (query.social === "none") clauses.push(sql`so.posts IS NULL`);
   if (query.minOpportunity != null) clauses.push(sql`s.opportunity_score >= ${query.minOpportunity}`);
   if (query.maxRisk != null) clauses.push(sql`s.risk_score <= ${query.maxRisk}`);
   if (query.minConfidence != null) clauses.push(sql`s.confidence_score >= ${query.minConfidence}`);
@@ -424,6 +486,9 @@ export async function listCardExplorerPage(
   const now = options.now ?? new Date();
   const from = new Date(now.getTime() - EXPLORER_WINDOW_DAYS[query.window] * 86_400_000);
   const where = sql.join(filterClauses(query), sql` AND `);
+  const socialJoin = needsSocial(query)
+    ? sql`LEFT JOIN (${socialAggregateSql({ from, to: now }, options.hiddenCreatorIds ?? [])}) so ON so.printing_id = p.id`
+    : sql``;
   const result = await db.execute(sql`
     SELECT
       p.id AS printing_id, p.game_key, c.canonical_name AS card_name, st.name AS set_name,
@@ -433,6 +498,7 @@ export async function listCardExplorerPage(
       s.liquidity_score, s.recommendation, s.data_quality,
       s.components ->> 'market_confirmed' AS market_confirmed,
       s.components ->> 'hype_unconfirmed' AS hype_unconfirmed,
+      COALESCE(s.components @? '$.opportunity[*] ? (@.present == true)', FALSE) AS opportunity_measured,
       s.explanations AS explanations,
       m.price, m.price_type, m.currency, m.condition, m.source_key, m.observed_at,
       count(*) OVER () AS total
@@ -446,6 +512,7 @@ export async function listCardExplorerPage(
       LIMIT 1
     ) s ON TRUE
     LEFT JOIN LATERAL (${headlinePriceSql(now)}) m ON TRUE
+    ${socialJoin}
     WHERE ${where}
     ORDER BY ${orderBy(query.sort)}, p.id ASC
     LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}
@@ -465,6 +532,7 @@ export async function listCardExplorerPage(
           ORDER BY ss.as_of DESC, ss.created_at DESC, ss.id DESC LIMIT 1
         ) s ON TRUE
         LEFT JOIN LATERAL (${headlinePriceSql(now)}) m ON TRUE
+        ${socialJoin}
         WHERE ${where}
       `),
     );
@@ -506,6 +574,7 @@ export async function listCardExplorerPage(
               dataQuality: String(row.data_quality),
               marketConfirmed: asBool(row.market_confirmed),
               hypeUnconfirmed: asBool(row.hype_unconfirmed) === true,
+              opportunityMeasured: asBool(row.opportunity_measured) === true,
               why: primaryDriver(row.explanations),
             },
       price:
@@ -536,19 +605,74 @@ export async function listCardExplorerPage(
 
 const DRIVER_SKIP = new Set(["recommendation", "liquidity"]);
 
-/** The first evidence-backed driver line from a persisted score explanation list. */
+/** The first evidence-backed driver line from a persisted score explanation list, as a plain sentence. */
 export function primaryDriver(explanations: unknown): string | null {
   const list = typeof explanations === "string" ? safeJson(explanations) : explanations;
   if (!Array.isArray(list)) return null;
-  for (const item of list) {
-    if (item && typeof item === "object" && "text" in item) {
-      const code = "code" in item ? String((item as { code: unknown }).code) : "";
-      if (!DRIVER_SKIP.has(code)) {
-        return String((item as { text: unknown }).text);
-      }
+  // Creator calls lead when the score has them: they are what the reading is about.
+  const ordered = [
+    ...list.filter((item) => explanationCode(item) === "creator_consensus"),
+    ...list.filter((item) => explanationCode(item) !== "creator_consensus"),
+  ];
+  for (const item of ordered) {
+    if (item && typeof item === "object" && "text" in item && !DRIVER_SKIP.has(explanationCode(item))) {
+      return explanationSentence(item);
     }
   }
   return null;
+}
+
+function explanationCode(item: unknown): string {
+  return item && typeof item === "object" && "code" in item ? String((item as { code: unknown }).code) : "";
+}
+
+function signedPct(raw: string): { up: boolean; text: string } {
+  const value = Number(raw.replace(/[+%]/g, ""));
+  return { up: value >= 0, text: `${Math.abs(value).toFixed(1)}%` };
+}
+
+/**
+ * A score explanation line as a customer-facing sentence. Scores written
+ * before model revision 2 stored terse internal wording ("authority-weighted
+ * creator consensus bullish (n=6)", "liquidity weak"); those are rewritten
+ * here so old snapshots never show code-like text.
+ */
+export function explanationSentence(item: unknown): string {
+  if (typeof item === "string") return item;
+  if (!item || typeof item !== "object" || !("text" in item)) return "";
+  const text = String((item as { text: unknown }).text);
+  const code = explanationCode(item);
+  let match: RegExpMatchArray | null;
+  if ((match = text.match(/^authority-weighted creator consensus (bullish|bearish) \(n=(\d+)\)$/))) {
+    // Legacy lines read "bullish" for a perfectly split vote too, so only the bearish side keeps its lean.
+    const n = Number(match[2]);
+    const calls = `${n} creator call${n === 1 ? "" : "s"}`;
+    return match[1] === "bearish" ? `${calls} lean bearish` : `${calls} on this card`;
+  }
+  if ((match = text.match(/^price ([+-]?[\d.]+)% over (\d+)d$/))) {
+    const pct = signedPct(match[1]!);
+    return `Price ${pct.up ? "up" : "down"} ${pct.text} over ${match[2]} days`;
+  }
+  if ((match = text.match(/^sales volume (-?[\d.]+)% vs prior window$/))) {
+    const pct = signedPct(match[1]!);
+    return `Sales ${pct.up ? "up" : "down"} ${pct.text} on the week before`;
+  }
+  if ((match = text.match(/^active listings ([+-]?\d+)$/))) {
+    const n = Number(match[1]);
+    return n === 0 ? "Copies listed for sale unchanged" : `${Math.abs(n)} ${n > 0 ? "more" : "fewer"} copies listed for sale`;
+  }
+  if ((match = text.match(/^relative strength (-?[\d.]+)% vs benchmark$/))) {
+    const pct = signedPct(match[1]!);
+    return `${pct.up ? "Beating" : "Trailing"} similar cards by ${pct.text}`;
+  }
+  if ((match = text.match(/^liquidity (strong|moderate|weak)$/))) {
+    return { strong: "Sells easily", moderate: "Sells at a moderate pace", weak: "Sells slowly" }[match[1] as "strong" | "moderate" | "weak"];
+  }
+  if (text === "volatility elevated") return "Price swings a lot";
+  if (code === "hype_unconfirmed" && /^social/.test(text)) {
+    return "Lots of social talk without a current market price to back it, so Strong buy is blocked";
+  }
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 function safeJson(value: string): unknown {
@@ -795,18 +919,21 @@ const MENTION_SENTIMENT = sql.raw(`COALESCE(NULLIF(sm.sentiment, 'unknown'), (
   ) calls
 ), 'unknown')`);
 
-export async function listSentimentEvidence(
-  db: Database,
-  printingIds: string[],
+/**
+ * The evidence rows behind listSentimentEvidence, as SQL: for the given
+ * printings, or for every printing when printingIds is null (the card list's
+ * social filter and sort).
+ */
+function sentimentEvidenceSql(
+  printingIds: string[] | null,
   range: { from: Date; to: Date },
-  options: { hiddenCreatorIds?: string[] } = {},
-): Promise<SentimentEvidenceRow[]> {
-  if (printingIds.length === 0) return [];
-  const hidden = options.hiddenCreatorIds ?? [];
-  const result = await db.execute(sql`
+  hidden: string[],
+): SQL {
+  const forPrintings = (column: SQL) => (printingIds ? sql`${column} IN (${inList(printingIds)})` : sql`${column} IS NOT NULL`);
+  return sql`
     WITH candidate AS (
       SELECT DISTINCT a.mention_id FROM entity_resolution_attempt a
-      WHERE a.chosen_printing_id IN (${inList(printingIds)}) AND a.mention_id IS NOT NULL
+      WHERE ${forPrintings(sql`a.chosen_printing_id`)} AND a.mention_id IS NOT NULL
     ),
     latest AS (
       SELECT DISTINCT ON (a.mention_id) a.mention_id, a.chosen_printing_id, a.status
@@ -842,7 +969,7 @@ export async function listSentimentEvidence(
       LIMIT 1
     ) authority ON TRUE
     WHERE l.status IN ('exact', 'high_confidence')
-      AND l.chosen_printing_id IN (${inList(printingIds)})
+      AND ${forPrintings(sql`l.chosen_printing_id`)}
       AND sc.published_at > ${ts(range.from)}
       AND sc.published_at <= ${ts(range.to)}
       AND sc.account_id NOT IN (SELECT source_account_id FROM excluded_account)
@@ -851,8 +978,17 @@ export async function listSentimentEvidence(
             SELECT source_account_id FROM creator_source_account WHERE creator_id IN (${inList(hidden)})
           )`
         : sql``}
-    LIMIT 5000
-  `);
+  `;
+}
+
+export async function listSentimentEvidence(
+  db: Database,
+  printingIds: string[],
+  range: { from: Date; to: Date },
+  options: { hiddenCreatorIds?: string[] } = {},
+): Promise<SentimentEvidenceRow[]> {
+  if (printingIds.length === 0) return [];
+  const result = await db.execute(sql`${sentimentEvidenceSql(printingIds, range, options.hiddenCreatorIds ?? [])} LIMIT 5000`);
   return asRows(result).map((row) => ({
     printingId: String(row.printing_id),
     contentId: String(row.content_id),
@@ -862,6 +998,40 @@ export async function listSentimentEvidence(
     rated: row.rated === true || row.rated === "t",
     publishedAt: toDate(row.published_at),
   }));
+}
+
+/**
+ * Per-printing social sentiment for the whole catalog, computed the same way
+ * as summarizeSentiment: one vote per post (disagreeing mentions in a post
+ * are "mixed", unknown posts are left out), weighted by creator track record,
+ * falling back to one vote per post when every weight is 0. Columns:
+ * printing_id, posts (classified posts) and net (positive share minus
+ * negative share, -1..1).
+ */
+function socialAggregateSql(range: { from: Date; to: Date }, hidden: string[]): SQL {
+  return sql`
+    SELECT printing_id, count(*)::int AS posts,
+      CASE
+        WHEN sum(weight) > 0 THEN (COALESCE(sum(weight) FILTER (WHERE vote = 'positive'), 0)
+          - COALESCE(sum(weight) FILTER (WHERE vote = 'negative'), 0)) / sum(weight)
+        ELSE (count(*) FILTER (WHERE vote = 'positive') - count(*) FILTER (WHERE vote = 'negative'))::numeric / count(*)
+      END AS net
+    FROM (
+      SELECT printing_id, content_id, max(weight) AS weight,
+        CASE
+          WHEN count(DISTINCT sentiment) > 1 OR bool_or(sentiment = 'mixed') THEN 'mixed'
+          ELSE max(sentiment)
+        END AS vote
+      FROM (
+        SELECT ev.printing_id, ev.content_id, ev.sentiment,
+          GREATEST(0, COALESCE(ev.authority_weight::numeric, ${SENTIMENT_BASELINE_WEIGHT})) AS weight
+        FROM (${sentimentEvidenceSql(null, range, hidden)}) ev
+        WHERE ev.sentiment IN ('positive', 'negative', 'neutral', 'mixed')
+      ) known
+      GROUP BY printing_id, content_id
+    ) post
+    GROUP BY printing_id
+  `;
 }
 
 async function loadSentimentSummaries(
