@@ -126,6 +126,10 @@ describe("TCG Card Central catalog mapping", () => {
     expect(catalogVariant("p1")).toBe("parallel");
     expect(catalogVariant("parallel")).toBe("parallel");
     expect(catalogVariant("alternate_art")).toBe("alt_art");
+    expect(catalogVariant("1st Edition Holofoil")).toBe("first_edition");
+    expect(catalogVariant("firstEdition")).toBe("first_edition");
+    expect(catalogVariant("Unlimited Holofoil")).toBe("unlimited");
+    expect(catalogVariant("Unlimited")).toBe("unlimited");
     expect(catalogVariant("1st Edition")).toBe("first_edition");
     expect(catalogVariant("manga")).toBe("special_finish");
     expect(catalogVariant("something new")).toBe("normal");
