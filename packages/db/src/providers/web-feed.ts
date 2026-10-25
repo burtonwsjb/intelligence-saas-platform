@@ -283,7 +283,13 @@ export type FeedItem = {
   author: string | null;
   /** HTML (or text) of content:encoded / content, else description / summary. Never stored. */
   html: string | null;
+  /** The episode's audio file (RSS `<enclosure>` or Atom `rel="enclosure"`), for podcast feeds. */
+  audio?: FeedAudio | null;
+  /** `itunes:duration`, in seconds. */
+  durationSeconds?: number | null;
 };
+
+export type FeedAudio = { url: string; type: string | null; bytes: number | null };
 
 export type ParsedFeed = { format: "rss" | "atom"; title: string | null; items: FeedItem[] };
 
@@ -305,6 +311,34 @@ function resolveLink(value: string | null | undefined, base: string | undefined)
   }
 }
 
+const AUDIO_EXTENSION = /\.(mp3|m4a|aac|mp4|ogg|oga|opus|wav|flac|webm)$/i;
+
+/** An enclosure that is an audio (or audio-bearing video) file at a public-looking http(s) URL. */
+function feedAudio(attrs: Record<string, string> | undefined, base: string | undefined): FeedAudio | null {
+  if (!attrs) return null;
+  const url = resolveLink(attrs.url ?? attrs.href, base);
+  if (!url || url.length > 2_000) return null;
+  const type = attrs.type?.trim().toLowerCase().slice(0, 100) || null;
+  const audioType = type != null && (type.startsWith("audio/") || type === "video/mp4" || type === "video/x-m4v");
+  if (!audioType && !AUDIO_EXTENSION.test(new URL(url).pathname)) return null;
+  const length = Number(attrs.length);
+  return { url, type, bytes: Number.isSafeInteger(length) && length > 0 ? length : null };
+}
+
+/** `itunes:duration` as seconds: "3725", "62:05" or "1:02:05". Null when unreadable. */
+export function parseFeedDuration(value: string | undefined): number | null {
+  const raw = value?.trim();
+  if (!raw) return null;
+  if (/^\d+(\.\d+)?$/.test(raw)) {
+    const seconds = Math.round(Number(raw));
+    return seconds > 0 && seconds < 86_400 ? seconds : null;
+  }
+  const parts = raw.split(":");
+  if (parts.length < 2 || parts.length > 3 || !parts.every((part) => /^\d{1,3}(\.\d+)?$/.test(part))) return null;
+  const seconds = Math.round(parts.reduce((total, part) => total * 60 + Number(part), 0));
+  return seconds > 0 && seconds < 86_400 ? seconds : null;
+}
+
 function rssItem(item: XmlElement, base: string | undefined): FeedItem {
   const encoded = xmlText(child(item, "content:encoded"));
   const description = xmlText(child(item, "description"));
@@ -317,8 +351,10 @@ function rssItem(item: XmlElement, base: string | undefined): FeedItem {
     link,
     title: clean(htmlToText(xmlText(child(item, "title")), 1_000), 500),
     publishedAt: parseDate(xmlText(child(item, "pubdate", "dc:date", "published", "updated"))),
-    author: clean(xmlText(child(item, "dc:creator", "author")), 200),
-    html: encoded.trim() ? encoded : description.trim() ? description : null,
+    author: clean(xmlText(child(item, "dc:creator", "author", "itunes:author")), 200),
+    html: encoded.trim() ? encoded : description.trim() ? description : xmlText(child(item, "itunes:summary")).trim() || null,
+    audio: feedAudio(child(item, "enclosure")?.attrs, base),
+    durationSeconds: parseFeedDuration(xmlText(child(item, "itunes:duration"))),
   };
 }
 
@@ -382,6 +418,11 @@ export function parseFeed(xml: string, baseUrl?: string): ParsedFeed | null {
         publishedAt: parseDate(xmlText(child(entry, "published", "updated", "issued"))),
         author: clean(xmlText(child(child(entry, "author") ?? entry, "name")), 200),
         html: atomBody(child(entry, "content")) ?? atomBody(child(entry, "summary")),
+        audio: feedAudio(
+          elements(entry).find((element) => element.name === "link" && element.attrs.rel === "enclosure")?.attrs,
+          baseUrl,
+        ),
+        durationSeconds: null,
       })),
     };
   }
@@ -818,6 +859,8 @@ export class WebFeedClient {
 export type WebFeedSiteInput = {
   siteUrl: string;
   feedUrl: string | null;
+  /** Newest items kept from the feed (default WEB_FEED_MAX_ITEMS). Podcast feeds keep more for the backfill. */
+  maxItems?: number;
   /** Validators from the last successful read of `feedUrl`. */
   etag?: string | null;
   lastModified?: string | null;
@@ -945,7 +988,7 @@ async function readWebFeedUnsafe(client: WebFeedClient, site: WebFeedSiteInput):
     .filter((item) => item.link || item.id)
     .map((item) => ({ ...item, publishedAt: item.publishedAt && item.publishedAt.getTime() <= now ? item.publishedAt : null }))
     .sort((a, b) => (b.publishedAt?.getTime() ?? 0) - (a.publishedAt?.getTime() ?? 0))
-    .slice(0, WEB_FEED_MAX_ITEMS);
+    .slice(0, Math.max(1, site.maxItems ?? WEB_FEED_MAX_ITEMS));
 
   const posts: WebFeedPost[] = [];
   let articleFetches = 0;

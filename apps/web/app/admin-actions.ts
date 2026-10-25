@@ -29,6 +29,9 @@ import {
   closeInterruptedScheduledRun,
   updateWorkerResources,
   registerWebFeedSite,
+  registerPodcastFeed,
+  setPodcastFeedState,
+  PodcastFeedError,
   requestInfluencerSeed,
   setWebFeedSiteState,
   WebFeedSiteError,
@@ -330,6 +333,48 @@ export async function setWebFeedSiteStateAction(formData: FormData) {
     throw error;
   }
   redirect("/admin/sources#websites");
+}
+
+/** Registers a podcast RSS feed as a creator source (platform operators only). */
+export async function registerPodcastFeedAction(formData: FormData) {
+  const operator = await requireGrantedOperator();
+  if (!operator.adminDb) {
+    redirect("/admin/sources?error=config");
+  }
+  try {
+    await registerPodcastFeed(operator.adminDb, {
+      feedUrl: String(formData.get("feedUrl") ?? ""),
+      displayName: String(formData.get("displayName") ?? "") || null,
+      actorUserId: operator.session.user.id,
+    });
+  } catch (error) {
+    if (error instanceof PodcastFeedError) {
+      redirect("/admin/sources?error=podcast_invalid#podcasts");
+    }
+    throw error;
+  }
+  redirect("/admin/sources?podcast=added#podcasts");
+}
+
+/** Pauses or resumes a registered podcast (platform operators only). */
+export async function setPodcastFeedStateAction(formData: FormData) {
+  const operator = await requireGrantedOperator();
+  if (!operator.adminDb) {
+    redirect("/admin/sources?error=config");
+  }
+  try {
+    await setPodcastFeedState(operator.adminDb, {
+      sourceAccountId: String(formData.get("sourceAccountId") ?? ""),
+      state: String(formData.get("state") ?? "") === "paused" ? "paused" : "active",
+      actorUserId: operator.session.user.id,
+    });
+  } catch (error) {
+    if (error instanceof PodcastFeedError) {
+      redirect("/admin/sources?error=rejected#podcasts");
+    }
+    throw error;
+  }
+  redirect("/admin/sources#podcasts");
 }
 
 export async function setDiscoveryTopicEnabledAction(formData: FormData) {

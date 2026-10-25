@@ -25,6 +25,7 @@ import { extractCreatorCallsFromContent } from "../creator/ingest.js";
 import { getProviderRuntime } from "../providers/runtime.js";
 import {
   chunkTranscriptCues,
+  type TranscriptCue,
   type TranscriptFetcher,
   type TranscriptResult,
   type TranscriptWindow,
@@ -134,6 +135,73 @@ export function planTranscriptSegments(
     planned.push({ id: segmentId, startRef, endRef, excerpt, startMs: window.startMs, endMs: window.endMs, mentions });
   }
   return planned;
+}
+
+export type StoredTranscript = { windows: number; segments: number; mentions: number; callsCreated: number };
+
+/**
+ * Stores the card-naming windows of a transcript as segments and mentions
+ * (see the file comment for what is kept), then extracts the content's creator
+ * calls again. Shared by the YouTube backfill and the local Whisper queue
+ * (source/local-transcripts.ts). Runs inside the caller's platform transaction.
+ */
+export async function storeTranscriptMentions(
+  tx: Database,
+  input: {
+    contentId: string;
+    contentTitle: string | null;
+    transcript: { lang: string; cues: TranscriptCue[]; trackKind: string };
+    provider: string;
+    index?: CardNameIndex;
+  },
+): Promise<StoredTranscript> {
+  const { contentId, transcript } = input;
+  const index = input.index ?? (await loadCardNameIndex(tx));
+  const windows = chunkTranscriptCues(transcript.cues, TRANSCRIPT_WINDOW_MS);
+  const planned = planTranscriptSegments(contentId, windows, index);
+  const { mentions: mentionCount } = await storeCardMentionSegments(tx, {
+    contentId,
+    contentTitle: input.contentTitle,
+    extractionVersion: TRANSCRIPT_EXTRACTOR_VERSION,
+    hintsKey: "transcript",
+    segments: planned.map((segment) => ({
+      id: segment.id,
+      kind: "timestamp_range" as const,
+      startRef: segment.startRef,
+      endRef: segment.endRef,
+      excerpt: segment.excerpt,
+      metadata: {
+        source: "transcript",
+        transcript_provider: input.provider,
+        transcript_lang: transcript.lang,
+        track_kind: transcript.trackKind,
+        window_start_ms: segment.startMs,
+        window_end_ms: segment.endMs,
+        extractor_version: TRANSCRIPT_EXTRACTOR_VERSION,
+      },
+      mentions: segment.mentions.map((mention) => ({
+        id: mention.id,
+        rawEntityText: mention.rawEntityText,
+        normalized: mention.normalized,
+        hints: {
+          card_name: mention.name,
+          matched_text: mention.matchedText,
+          collector_number: mention.collectorNumber,
+          rarity: mention.rarity,
+          set_key: mention.set?.key ?? null,
+          set_name: mention.set?.name ?? null,
+          game_key: mention.gameKey,
+          offset_ms: mention.offsetMs,
+        },
+      })),
+    })),
+  });
+  let callsCreated = 0;
+  if (mentionCount > 0) {
+    const calls = await extractCreatorCallsFromContent(tx, contentId);
+    callsCreated = calls.filter((row) => row.status === "processed").length;
+  }
+  return { windows: windows.length, segments: planned.length, mentions: mentionCount, callsCreated };
 }
 
 type Claim = { claimed: true } | { claimed: false; outcome: "already_checked" | "budget_exhausted" | "not_eligible" };
@@ -282,54 +350,15 @@ export async function ingestTranscriptForContent(
 
   const transcript = result;
   try {
-    const stored = await withPlatformContext(db, async (tx) => {
-      const index = options.index ?? (await loadCardNameIndex(tx));
-      const windows = chunkTranscriptCues(transcript.cues, TRANSCRIPT_WINDOW_MS);
-      const planned = planTranscriptSegments(contentId, windows, index);
-      const { mentions: mentionCount } = await storeCardMentionSegments(tx, {
+    const stored = await withPlatformContext(db, async (tx) =>
+      storeTranscriptMentions(tx, {
         contentId,
         contentTitle: content!.title,
-        extractionVersion: TRANSCRIPT_EXTRACTOR_VERSION,
-        hintsKey: "transcript",
-        segments: planned.map((segment) => ({
-          id: segment.id,
-          kind: "timestamp_range" as const,
-          startRef: segment.startRef,
-          endRef: segment.endRef,
-          excerpt: segment.excerpt,
-          metadata: {
-            source: "transcript",
-            transcript_provider: fetcher.provider,
-            transcript_lang: transcript.lang,
-            track_kind: transcript.trackKind,
-            window_start_ms: segment.startMs,
-            window_end_ms: segment.endMs,
-            extractor_version: TRANSCRIPT_EXTRACTOR_VERSION,
-          },
-          mentions: segment.mentions.map((mention) => ({
-            id: mention.id,
-            rawEntityText: mention.rawEntityText,
-            normalized: mention.normalized,
-            hints: {
-              card_name: mention.name,
-              matched_text: mention.matchedText,
-              collector_number: mention.collectorNumber,
-              rarity: mention.rarity,
-              set_key: mention.set?.key ?? null,
-              set_name: mention.set?.name ?? null,
-              game_key: mention.gameKey,
-              offset_ms: mention.offsetMs,
-            },
-          })),
-        })),
-      });
-      let callsCreated = 0;
-      if (mentionCount > 0) {
-        const calls = await extractCreatorCallsFromContent(tx, contentId);
-        callsCreated = calls.filter((row) => row.status === "processed").length;
-      }
-      return { windows: windows.length, segments: planned.length, mentions: mentionCount, callsCreated };
-    });
+        transcript,
+        provider: fetcher.provider,
+        index: options.index,
+      }),
+    );
     const outcome = stored.segments > 0 ? "ingested" : "no_mentions";
     await finishTranscriptCheck(db, {
       contentId,

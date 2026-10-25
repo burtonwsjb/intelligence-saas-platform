@@ -33,6 +33,7 @@ import { resolveRequestId } from "./request-id.js";
 import { allowApiRequest } from "./rate-limit.js";
 import { commercialOpenApi } from "./openapi.js";
 import { registerCommercialRoutes } from "./commercial.js";
+import { registerLocalTranscriptRoutes } from "./local-transcripts.js";
 
 export function createApiApp(options?: {
   db?: import("@isp/db").Database;
@@ -148,6 +149,8 @@ export function createApiApp(options?: {
   });
 
   app.get("/v1/openapi.json", (c) => c.json(commercialOpenApi()));
+
+  registerLocalTranscriptRoutes(app, { db: options?.db, env });
 
   app.use("/v1/events", async (c, next) => {
     const headerLen = Number(c.req.header("content-length") ?? Number.NaN);
