@@ -1,0 +1,8 @@
+{
+  "api_url": "https://isp-staging-api-production.up.railway.app",
+  "token": "the LOCAL_TRANSCRIBER_TOKEN value set on Sentiment's API service",
+  "model": "large-v3-turbo",
+  "language": "en",
+  "window_start": "03:00",
+  "window_end": "07:00"
+}

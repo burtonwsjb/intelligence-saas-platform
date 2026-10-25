@@ -9,6 +9,7 @@ import {
   discoverFeedLinks,
   htmlToText,
   parseFeed,
+  parseFeedDuration,
   parseRobotsTxt,
   parseXml,
   readWebFeed,
@@ -85,6 +86,31 @@ describe("parseFeed", () => {
     expect(textParagraphs(htmlToText(first!.html!))).toEqual(["Prices are wild.", "I think Charizard ex is overpriced, sell now."]);
     expect(second!.link).toBe("https://atom.example.org/posts/summary-only");
     expect(htmlToText(second!.html!)).toBe("Keep an eye on Greninja ex.");
+  });
+
+  it("reads podcast enclosures and itunes durations, skipping items without audio", () => {
+    const feed = parseFeed(fixture("podcast.xml"), "https://feeds.example.com/packtalk.xml")!;
+    expect(feed.items.map((item) => item.audio?.url ?? null)).toEqual([
+      "https://media.example.com/packtalk/ep52.mp3?src=rss",
+      "https://media.example.com/packtalk/ep51.m4a",
+      null,
+      "https://media.example.com/packtalk/ep1.mp3",
+    ]);
+    expect(feed.items[0]).toMatchObject({
+      id: "packtalk-52",
+      audio: { type: "audio/mpeg", bytes: 48123456 },
+      durationSeconds: 3725,
+    });
+    expect(feed.items[1]).toMatchObject({ audio: { bytes: null }, durationSeconds: 2725 });
+    expect(feed.items[1]!.html).toBe("Listener questions about storage and grading.");
+    // A non-audio enclosure is not an episode file.
+    const image = parseFeed(
+      '<rss><channel><item><guid>x</guid><enclosure url="https://e.com/a.jpg" type="image/jpeg"/></item></channel></rss>',
+    )!;
+    expect(image.items[0]!.audio).toBeNull();
+    expect([parseFeedDuration("62:05"), parseFeedDuration("90"), parseFeedDuration("1:2:3:4"), parseFeedDuration("soon")]).toEqual([
+      3725, 90, null, null,
+    ]);
   });
 
   it("returns null for documents that are not feeds", () => {

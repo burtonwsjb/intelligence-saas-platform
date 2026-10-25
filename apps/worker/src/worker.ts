@@ -28,6 +28,7 @@ import {
   syncTccPriceHistory,
   retryUnboundDetectedMentions,
   traceSourcePost,
+  syncPodcastFeeds,
   syncWebFeeds,
   transcriptProviderConfig,
   transcriptRequestBudget,
@@ -42,6 +43,7 @@ import {
   type WebBackfillReport,
   type MentionRetryReport,
   type AssetCallRescanReport,
+  type PodcastFeedSyncReport,
   type WebFeedSyncReport,
   type YoutubeBackfillReport,
 } from "@isp/db";
@@ -203,6 +205,7 @@ export async function runMarketWork(db: Database, env: NodeJS.ProcessEnv = proce
   await runSetCatalogSync(db);
   await runTranscriptBackfill(db, env);
   await runWebFeedSync(db, env);
+  await runPodcastFeedSync(db, env);
   await runYoutubeUploadsBackfill(db, env);
   await runWebSitemapBackfill(db, env);
   await runMentionRetry(db);
@@ -360,6 +363,45 @@ export async function runWebFeedSync(
     return report;
   } catch (error) {
     logLoopFailure("worker.web_feed_sync_failed", "web_feed_sync", error);
+    return null;
+  }
+}
+
+/**
+ * Reads the podcast feeds an operator registered: stores new episodes (with
+ * their audio URLs, for the owner's local Whisper helper) and turns card names
+ * in show notes into mentions and calls. Shares PROVIDER_WEB_FEED_MODE=live
+ * and the web_feed controls; at most PODCAST_FEED_REQUESTS_PER_DAY requests.
+ * Never downloads audio. Logs counts only.
+ */
+export async function runPodcastFeedSync(
+  db: Database,
+  env: NodeJS.ProcessEnv = process.env,
+  options: { transport?: WebFeedTransport; lookup?: WebFeedLookup } = {},
+): Promise<PodcastFeedSyncReport | null> {
+  if (resolveProviderMode("web_feed", env) !== "live") {
+    return null;
+  }
+  try {
+    const report = await syncPodcastFeeds(db, { env, transport: options.transport, lookup: options.lookup });
+    if (report.status === "skipped" && report.reason === "nothing_due") return report;
+    logQueueEvent(report.status === "stopped" || report.failed > 0 ? "warn" : "info", "worker.podcast_feed_sync", {
+      status: report.status,
+      reason: report.reason,
+      feeds: report.feeds,
+      checked: report.checked,
+      not_modified: report.notModified,
+      skipped: report.skipped,
+      failed: report.failed,
+      requests: report.requests,
+      episodes: report.episodes,
+      new_episodes: report.newEpisodes,
+      mentions: report.mentions,
+      calls_created: report.callsCreated,
+    });
+    return report;
+  } catch (error) {
+    logLoopFailure("worker.podcast_feed_sync_failed", "podcast_feed_sync", error);
     return null;
   }
 }

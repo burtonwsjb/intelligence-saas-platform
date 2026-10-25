@@ -5,6 +5,7 @@ import {
   collectSystemHealth,
   listAdminProviders,
   listInfluencerSeedStatus,
+  listPodcastFeeds,
   listWebBackfillProgress,
   listWebFeedSites,
   listYoutubeBackfillProgress,
@@ -12,11 +13,13 @@ import {
 import { requireGrantedOperator } from "@/lib/platform-admin";
 import { getDb } from "@/lib/auth";
 import {
+  registerPodcastFeedAction,
   registerWebFeedSiteAction,
   requestInfluencerSeedAction,
   retryProviderJobAction,
   setProviderEnabledAction,
   setProviderPausedAction,
+  setPodcastFeedStateAction,
   setWebFeedSiteStateAction,
   triggerProviderSyncAction,
 } from "@/app/admin-actions";
@@ -27,15 +30,23 @@ export const dynamic = "force-dynamic";
 export default async function AdminSourcesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; website?: string; seed?: string; queued?: string; sites?: string }>;
+  searchParams: Promise<{
+    error?: string;
+    website?: string;
+    podcast?: string;
+    seed?: string;
+    queued?: string;
+    sites?: string;
+  }>;
 }) {
   const operator = await requireGrantedOperator();
   const query = await searchParams;
   const db = operator.adminDb ?? getDb();
-  const [health, providers, websites, seedRows, youtubeBackfill, webBackfill] = await Promise.all([
+  const [health, providers, websites, podcasts, seedRows, youtubeBackfill, webBackfill] = await Promise.all([
     collectSystemHealth(db),
     listAdminProviders(db),
     listWebFeedSites(db),
+    listPodcastFeeds(db),
     listInfluencerSeedStatus(db),
     listYoutubeBackfillProgress(db),
     listWebBackfillProgress(db),
@@ -59,12 +70,15 @@ export default async function AdminSourcesPage({
         <p className="form-error">
           Website rejected: platforms and stores (YouTube, Reddit, marketplaces) are covered by their own providers.
         </p>
+      ) : query.error === "podcast_invalid" ? (
+        <p className="form-error">Podcast rejected: use the public http(s) address of the podcast&apos;s RSS feed.</p>
       ) : query.error === "seed_unconfirmed" ? (
         <p className="form-error">Type seed to confirm registering the influencer seed list.</p>
       ) : query.error ? (
         <p className="form-error">Source control was rejected.</p>
       ) : null}
       {query.website === "added" ? <p role="status">Website registered. The next hourly feed run reads it.</p> : null}
+      {query.podcast === "added" ? <p role="status">Podcast registered. The next hourly feed run reads it.</p> : null}
       {query.seed === "requested" ? (
         <p role="status">
           Seed list registered: {Number(query.queued ?? 0)} new YouTube channels queued for lookup, {Number(query.sites ?? 0)}{" "}
@@ -150,6 +164,42 @@ export default async function AdminSourcesPage({
             <input type="hidden" name="sourceAccountId" value={site.sourceAccountId} />
             <input type="hidden" name="state" value={site.state === "paused" ? "active" : "paused"} />
             <button type="submit">{site.state === "paused" ? "Resume" : "Pause"}</button>
+          </form>
+        </section>
+      ))}
+      <h2 id="podcasts">Podcasts</h2>
+      <p className="muted">
+        Registered podcast feeds are read by the web_feed provider (live mode only). Each episode from the last
+        PODCAST_BACKFILL_DAYS days (default 365) is stored with its audio link and waits for the local Whisper helper,
+        which downloads the episode file the podcast publishes, transcribes it at night and sends back the text. Card
+        names in show notes and transcripts become mentions and calls; only short excerpts around card names are kept.
+      </p>
+      <form className="inline-form" action={registerPodcastFeedAction}>
+        <label>
+          RSS feed URL
+          <input name="feedUrl" placeholder="https://feeds.example.com/show.xml" required />
+        </label>
+        <label>
+          Display name (optional)
+          <input name="displayName" />
+        </label>
+        <button type="submit">Add podcast</button>
+      </form>
+      {podcasts.length === 0 ? <p className="muted">No podcasts registered yet.</p> : null}
+      {podcasts.map((podcast) => (
+        <section key={podcast.sourceAccountId}>
+          <p>
+            {podcast.displayName ?? podcast.feedUrl} · {podcast.state ?? "unknown"} · episodes {podcast.episodes} ·
+            transcribed {podcast.transcribed} · waiting {podcast.waiting}
+          </p>
+          <p className="muted">
+            feed {podcast.feedUrl ?? "—"} · last check {podcast.lastCheckAt?.toISOString() ?? "not yet"} ·{" "}
+            {podcast.lastStatus ?? "—"} · outcome {podcast.lastOutcome ?? "—"} · error {podcast.lastErrorClass ?? "—"}
+          </p>
+          <form className="inline-form" action={setPodcastFeedStateAction}>
+            <input type="hidden" name="sourceAccountId" value={podcast.sourceAccountId} />
+            <input type="hidden" name="state" value={podcast.state === "paused" ? "active" : "paused"} />
+            <button type="submit">{podcast.state === "paused" ? "Resume" : "Pause"}</button>
           </form>
         </section>
       ))}
