@@ -4,6 +4,7 @@ import { Worker } from "bullmq";
 import { UnrecoverableError } from "bullmq";
 import {
   applyProviderModeFromEnv,
+  chartCoverageReport,
   chartSentimentBatchSize,
   createDbConnection,
   createDbFromWorkerEnv,
@@ -190,8 +191,8 @@ export async function runTccCatalogImport(
  * set, transcript card mentions for new YouTube videos (when a transcript
  * provider is configured), posts from registered influencer websites (when
  * PROVIDER_WEB_FEED_MODE=live), the 12-month YouTube and website backfills
- * (when their *_BACKFILL_DAYS are set), TCC price history for calls without
- * prices and the chart universe, scoring of calls that have come due, then a
+ * (when their *_BACKFILL_DAYS are set), a Chart Sentiment coverage count, TCC
+ * price history for calls without prices and the chart universe, scoring of calls that have come due, then a
  * batch of Chart Sentiment. Every step is bounded and catches its own errors.
  * Postgres and HTTP only: no Redis, so the scheduled free-only worker runs it
  * after each batch as well.
@@ -207,6 +208,7 @@ export async function runMarketWork(db: Database, env: NodeJS.ProcessEnv = proce
   await runMentionRetry(db);
   await runAssetCallRescan(db);
   await runPostTrace(db, env);
+  await runChartCoverage(db);
   await runPriceHistory(db, env);
   await runCallScoring(db);
   await runCardRescore(db, env);
@@ -570,8 +572,37 @@ export async function runCardRescore(
 }
 
 /**
+ * Logs how many printings have a Chart Sentiment reading, and why the English
+ * Pokemon / One Piece ones without one have none, before this run's price
+ * history step. Database only; skipped until migration 0033 is applied.
+ */
+export async function runChartCoverage(db: Database) {
+  try {
+    const report = await withPlatformContext(db, (scoped) => chartCoverageReport(scoped));
+    if (!report) return null;
+    logQueueEvent("info", "worker.chart_coverage", {
+      universe: report.universe,
+      computed: report.computed,
+      missing: report.missing,
+      missing_never_asked: report.missingNeverAsked,
+      missing_pending: report.missingPending,
+      missing_not_found: report.missingNotFound,
+      missing_unavailable: report.missingUnavailable,
+      missing_ok: report.missingOk,
+      missing_other: report.missingOther,
+      all_printings: report.allPrintings,
+      all_computed: report.allComputed,
+    });
+    return report;
+  } catch (error) {
+    logLoopFailure("worker.chart_coverage_failed", "chart_coverage", error);
+    return null;
+  }
+}
+
+/**
  * Chart Sentiment: scores up to CHART_SENTIMENT_BATCH_SIZE printings (default
- * 200, 0 = off) whose chart was not computed in the last 20 hours, from the
+ * 600, 0 = off) whose chart was not computed in the last 20 hours, from the
  * market rows already stored, and refreshes the pattern database's measured
  * hit rates. Database-only. Skips (logged) until migration 0033 is applied;
  * an advisory lock keeps two replicas from scoring the same batch.

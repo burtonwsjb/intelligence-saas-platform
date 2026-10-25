@@ -23,7 +23,7 @@ import {
 } from "./score.js";
 import { buildChartSeries, MAX_GAP_DAYS, MAX_SERIES_DAYS, type ChartInputRow } from "./series.js";
 
-export const DEFAULT_CHART_SENTIMENT_BATCH_SIZE = 200;
+export const DEFAULT_CHART_SENTIMENT_BATCH_SIZE = 600;
 export const CHART_SENTIMENT_MAX_BATCH_SIZE = 2_000;
 /** A printing is recomputed at most this often, so the hourly job works through the catalog about once a day. */
 export const CHART_SENTIMENT_RECOMPUTE_HOURS = 20;
@@ -273,6 +273,80 @@ export async function runChartSentimentBatch(
   }
   if (report.printings > 0) report.patternsUpdated = await refreshChartPatternStats(db, asOf);
   return report;
+}
+
+export type ChartCoverageReport = {
+  /** English Pokemon and One Piece printings: the games TCC serves daily history for. */
+  universe: number;
+  computed: number;
+  missing: number;
+  /** Of `missing`, by their last price history answer (provider_sync_run checkpoint). */
+  missingNeverAsked: number;
+  missingPending: number;
+  missingNotFound: number;
+  missingUnavailable: number;
+  missingOk: number;
+  missingOther: number;
+  /** Every printing of every game and language, and those with a reading. */
+  allPrintings: number;
+  allComputed: number;
+};
+
+/**
+ * How many printings have a Chart Sentiment reading and, for the English
+ * Pokemon / One Piece printings without one, what their last price history
+ * answer was. Logged by the worker every run so coverage can be followed
+ * without database access. Database only.
+ */
+export async function chartCoverageReport(db: Database): Promise<ChartCoverageReport | null> {
+  if (!(await chartTablesExist(db))) return null;
+  const rows = rowsOf<Record<string, string | number>>(
+    await db.execute(sql`
+      WITH cs AS (SELECT DISTINCT printing_id FROM chart_sentiment),
+      ch AS (
+        SELECT DISTINCT ON (checkpoint->>'printing_id') checkpoint->>'printing_id' AS printing_id, checkpoint->>'status' AS status
+        FROM provider_sync_run
+        WHERE provider_key = 'tcg_card_central' AND "trigger" = 'price_history'
+        ORDER BY checkpoint->>'printing_id', completed_at DESC NULLS LAST
+      ),
+      u AS (
+        SELECT p.id, (p.game_key IN ('pokemon', 'one_piece') AND p.language_code = 'en') AS in_universe,
+          cs.printing_id IS NOT NULL AS computed, ch.printing_id IS NOT NULL AS asked, ch.status
+        FROM tcg_printing p
+        LEFT JOIN cs ON cs.printing_id = p.id
+        LEFT JOIN ch ON ch.printing_id = p.id
+      )
+      SELECT
+        count(*) FILTER (WHERE in_universe) AS universe,
+        count(*) FILTER (WHERE in_universe AND computed) AS computed,
+        count(*) FILTER (WHERE in_universe AND NOT computed) AS missing,
+        count(*) FILTER (WHERE in_universe AND NOT computed AND NOT asked) AS missing_never_asked,
+        count(*) FILTER (WHERE in_universe AND NOT computed AND status IN ('pending', 'deferred')) AS missing_pending,
+        count(*) FILTER (WHERE in_universe AND NOT computed AND status = 'not_found') AS missing_not_found,
+        count(*) FILTER (WHERE in_universe AND NOT computed AND status = 'unavailable') AS missing_unavailable,
+        count(*) FILTER (WHERE in_universe AND NOT computed AND status = 'ok') AS missing_ok,
+        count(*) FILTER (WHERE in_universe AND NOT computed AND asked
+          AND status NOT IN ('pending', 'deferred', 'not_found', 'unavailable', 'ok')) AS missing_other,
+        count(*) AS all_printings,
+        count(*) FILTER (WHERE computed) AS all_computed
+      FROM u
+    `),
+  );
+  const row = rows[0] ?? {};
+  const n = (key: string) => Number(row[key] ?? 0);
+  return {
+    universe: n("universe"),
+    computed: n("computed"),
+    missing: n("missing"),
+    missingNeverAsked: n("missing_never_asked"),
+    missingPending: n("missing_pending"),
+    missingNotFound: n("missing_not_found"),
+    missingUnavailable: n("missing_unavailable"),
+    missingOk: n("missing_ok"),
+    missingOther: n("missing_other"),
+    allPrintings: n("all_printings"),
+    allComputed: n("all_computed"),
+  };
 }
 
 export type ChartSentimentSignalView = ChartSignal & { explanation: string; horizonDays: number };

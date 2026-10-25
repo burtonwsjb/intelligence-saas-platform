@@ -91,7 +91,19 @@ const VARIANT_ALIASES: Record<string, string> = {
   promotional: "promo",
   "1st_edition": "first_edition",
   first_edition: "first_edition",
+  firstedition: "first_edition",
   unlimited: "unlimited",
+  // WotC-era finishes as TCGplayer names them: TCC prices "first_edition" under
+  // "1st Edition" / "1st Edition Holofoil" and "unlimited" under "Unlimited" /
+  // "Unlimited Holofoil", whichever one the card has.
+  "1st_edition_holofoil": "first_edition",
+  "1st_edition_holo": "first_edition",
+  "1st_edition_normal": "first_edition",
+  first_edition_holofoil: "first_edition",
+  first_edition_holo: "first_edition",
+  unlimited_holofoil: "unlimited",
+  unlimited_holo: "unlimited",
+  unlimited_normal: "unlimited",
   serialized: "serialized",
   numbered: "serialized",
   box_topper: "special_finish",

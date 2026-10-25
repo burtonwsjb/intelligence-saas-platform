@@ -56,21 +56,30 @@ export const TCC_PRICE_HISTORY_MAX_ITEMS_PER_RUN = 500;
 /** 30 requests a minute is the feed's limit; one every 2.5 s stays well under it. */
 export const TCC_PRICE_HISTORY_REQUEST_SPACING_MS = 2_500;
 /**
- * At most this many daily points are written per run (about 164 printings'
+ * At most this many daily points are written per run (about 270 printings'
  * first year; batched writes land 12,000 points in about a minute on
- * staging). A printing whose points would pass it is deferred whole, not
- * written in part, and asked again after TCC_PRICE_HISTORY_RETRY_MINUTES.deferred.
+ * staging, so a full run is about eight minutes). A printing whose points
+ * would pass it is deferred whole, not written in part, and asked again
+ * after TCC_PRICE_HISTORY_RETRY_MINUTES.deferred.
  */
-export const TCC_PRICE_HISTORY_MAX_POINTS_PER_RUN = 60_000;
-/** Chart universe: printings asked for history so Chart Sentiment has a series. */
-export const DEFAULT_TCC_PRICE_HISTORY_CHART_ITEMS_PER_RUN = 150;
-export const TCC_PRICE_HISTORY_MAX_CHART_ITEMS_PER_RUN = 500;
+export const TCC_PRICE_HISTORY_MAX_POINTS_PER_RUN = 100_000;
+/**
+ * Chart universe: printings asked for history so Chart Sentiment has a series.
+ * 500 an hour (ten requests) reaches a catalog of tens of thousands in days.
+ */
+export const DEFAULT_TCC_PRICE_HISTORY_CHART_ITEMS_PER_RUN = 500;
+export const TCC_PRICE_HISTORY_MAX_CHART_ITEMS_PER_RUN = 1_000;
 /** Games TCC serves history for (from TickerMint); others answer "unavailable". */
 export const TCC_PRICE_HISTORY_CHART_GAMES = ["pokemon", "one_piece"] as const;
 /** A chart printing's first request covers this many days, ending yesterday. */
 export const TCC_PRICE_HISTORY_CHART_DAYS = 365;
-/** A daily refresh asks again from this many days before the last day fetched, for late-filled days. */
-const CHART_REFRESH_OVERLAP_DAYS = 3;
+/**
+ * A chart printing that has its year is refreshed every this many days, so
+ * refreshes never crowd out printings that have no history yet.
+ */
+export const TCC_PRICE_HISTORY_CHART_REFRESH_DAYS = 3;
+/** A refresh asks again from this many days before the last day fetched, for days TCC filled late. */
+const CHART_REFRESH_OVERLAP_DAYS = 7;
 /** The start price may come from a day before or after the call (the scorer accepts up to 2 days after). */
 const START_BEFORE_DAYS = 3;
 const START_AFTER_DAYS = 2;
@@ -83,7 +92,8 @@ const DAY_MS = 86_400_000;
  * queued product within about 5-15 minutes, so "pending" (and an
  * "unavailable" that may pass) is asked again after half an hour plus up to
  * TCC_PRICE_HISTORY_RETRY_JITTER_MINUTES; a game TCC has no history source
- * for waits a week. An "ok" printing is refreshed once a day.
+ * for waits a week. "not_found" is asked again the next day, since TCC's
+ * matching keeps improving. An "ok" printing is refreshed once a day.
  */
 export const TCC_PRICE_HISTORY_RETRY_MINUTES = {
   ok: 24 * 60,
@@ -91,13 +101,46 @@ export const TCC_PRICE_HISTORY_RETRY_MINUTES = {
   unavailable: 30,
   no_source: 7 * 24 * 60,
   deferred: 30,
-  not_found: 30 * 24 * 60,
+  not_found: 24 * 60,
   failed: 24 * 60,
   invalid: 7 * 24 * 60,
 } as const;
 export const TCC_PRICE_HISTORY_RETRY_JITTER_MINUTES = 15;
 /** TCC's reason for a game it has no history source for (e.g. Yu-Gi-Oh!, Dragon Ball). */
 const NO_SOURCE_REASON = /no historical price source/i;
+
+/**
+ * Statuses whose wait is measured from the last answer (completed_at) as well
+ * as the stored next_attempt_at, whichever comes first, so shortening a wait
+ * here also frees checks saved under a longer one (the old 30-day not_found).
+ */
+const RECHECK_STATUSES = ["pending", "unavailable", "deferred", "not_found", "failed"] as const;
+
+/** When a stored check is due: the earlier of its next_attempt_at and its last answer plus today's wait. */
+export function priceHistoryCheckDueAt(check: Record<string, unknown> | null | undefined, completedAt: Date | string | null | undefined): number {
+  if (!check) return Number.NEGATIVE_INFINITY;
+  const stored = typeof check.next_attempt_at === "string" ? Date.parse(check.next_attempt_at) : NaN;
+  const status = typeof check.status === "string" ? check.status : "";
+  const reason = typeof check.reason === "string" ? check.reason : null;
+  const answered = completedAt == null ? NaN : new Date(completedAt).getTime();
+  const recheck =
+    (RECHECK_STATUSES as readonly string[]).includes(status) && Number.isFinite(answered)
+      ? answered + priceHistoryRetryMinutes(status, reason, 0) * 60_000
+      : NaN;
+  const due = [stored, recheck].filter(Number.isFinite);
+  return due.length ? Math.min(...due) : Number.NEGATIVE_INFINITY;
+}
+
+/** priceHistoryCheckDueAt in SQL over provider_sync_run (alias `r`), for the chart universe query. */
+function checkDueAtSql() {
+  const cases = RECHECK_STATUSES.map(
+    (status) => sql`WHEN ${status} THEN r.completed_at + make_interval(mins => ${TCC_PRICE_HISTORY_RETRY_MINUTES[status]})`,
+  );
+  return sql`LEAST((r.checkpoint->>'next_attempt_at')::timestamptz,
+    CASE WHEN r.checkpoint->>'status' = 'unavailable' AND r.checkpoint->>'reason' ~* ${NO_SOURCE_REASON.source}
+      THEN r.completed_at + make_interval(mins => ${TCC_PRICE_HISTORY_RETRY_MINUTES.no_source})
+    ELSE CASE r.checkpoint->>'status' ${sql.join(cases, sql` `)} END END)`;
+}
 
 /** Minutes until the next attempt for this answer; `random` in [0, 1) spreads short retries. */
 export function priceHistoryRetryMinutes(status: string, reason: string | null, random = Math.random()): number {
@@ -186,7 +229,7 @@ export function tccPriceHistoryItemsPerRun(env: NodeJS.ProcessEnv = process.env)
 
 /**
  * Chart universe printings per run (TCC_PRICE_HISTORY_CHART_ITEMS_PER_RUN,
- * default 150, 0 = off), on top of TCC_PRICE_HISTORY_ITEMS_PER_RUN.
+ * default 500, 0 = off), on top of TCC_PRICE_HISTORY_ITEMS_PER_RUN.
  */
 export function tccPriceHistoryChartItemsPerRun(env: NodeJS.ProcessEnv = process.env): number {
   const value = env.TCC_PRICE_HISTORY_CHART_ITEMS_PER_RUN;
@@ -302,18 +345,24 @@ export async function listPriceHistoryTargets(db: Database, input: { now: Date; 
 
   const ids = clipped.map((entry) => entry.printingId);
   const checks = new Map(
-    rowsOf<{ id: string; checkpoint: unknown }>(
+    rowsOf<{ id: string; checkpoint: unknown; completed_at: Date | string | null }>(
       await db.execute(sql`
-        SELECT id, checkpoint FROM provider_sync_run
+        SELECT id, checkpoint, completed_at FROM provider_sync_run
         WHERE provider_key = 'tcg_card_central' AND "trigger" = ${TCC_PRICE_HISTORY_TRIGGER}
           AND id IN (${sql.join(ids.map((id) => sql`${priceHistoryCheckId(id)}`), sql`, `)})`),
-    ).map((row) => [row.id, (typeof row.checkpoint === "string" ? JSON.parse(row.checkpoint) : row.checkpoint) as Record<string, unknown> | null]),
+    ).map((row) => [
+      row.id,
+      {
+        check: (typeof row.checkpoint === "string" ? JSON.parse(row.checkpoint) : row.checkpoint) as Record<string, unknown> | null,
+        completedAt: row.completed_at,
+      },
+    ]),
   );
   const eligible = clipped.filter(({ printingId, need }) => {
-    const check = checks.get(priceHistoryCheckId(printingId));
+    const stored = checks.get(priceHistoryCheckId(printingId));
+    const check = stored?.check;
     if (!check) return true;
-    const next = typeof check.next_attempt_at === "string" ? Date.parse(check.next_attempt_at) : NaN;
-    if (Number.isFinite(next) && next > now.getTime()) return false;
+    if (priceHistoryCheckDueAt(check, stored.completedAt) > now.getTime()) return false;
     // A range fetched successfully has nothing new until a window outside it appears.
     const from = typeof check.covered_from === "string" ? check.covered_from : null;
     const to = typeof check.covered_to === "string" ? check.covered_to : null;
@@ -372,15 +421,19 @@ function addDays(day: string, days: number) {
 
 /**
  * The chart universe: English Pokemon and One Piece printings, so Chart
- * Sentiment has a year of daily prices to read. In order: printings named in
- * creator calls or exactly resolved mentions (most recent first), then open
- * index members (the product has no watchlist or collection tables), then
- * the rest of the catalog, alternating games (Pokemon first), each by newest
- * set, set key (descending) and printing id. Printings
- * waiting for their next check, already fetched through yesterday, or in
+ * Sentiment has a year of daily prices to read. Printings without any
+ * history come before refreshes of printings that have it, so the whole
+ * catalog is reached (refreshes used to fill every run and older sets were
+ * never asked). In order: printings without history named in creator calls
+ * or exactly resolved mentions (most recent first), then open index members
+ * (the product has no watchlist or collection tables), then never asked,
+ * then asked again (pending, not found), then refreshes; within each, the
+ * catalog alternates games (Pokemon first), each by newest set, set key
+ * (descending) and printing id. Printings waiting for their next check,
+ * fetched within the last TCC_PRICE_HISTORY_CHART_REFRESH_DAYS days, or in
  * `exclude` (this run's call targets) are left out. A first request covers
- * TCC_PRICE_HISTORY_CHART_DAYS days to yesterday; later ones start a few
- * days before the last day fetched.
+ * TCC_PRICE_HISTORY_CHART_DAYS days to yesterday; later ones start a week
+ * before the last day fetched.
  */
 export async function listChartHistoryTargets(
   db: Database,
@@ -389,6 +442,8 @@ export async function listChartHistoryTargets(
   if (input.limit < 1) return [];
   const yesterday = utcDay(new Date(input.now.getTime() - DAY_MS));
   const firstDay = addDays(yesterday, -(TCC_PRICE_HISTORY_CHART_DAYS - 1));
+  // A printing fetched through this day or later is not refreshed yet.
+  const refreshBefore = addDays(yesterday, -(TCC_PRICE_HISTORY_CHART_REFRESH_DAYS - 1));
   const games = sql.join(
     TCC_PRICE_HISTORY_CHART_GAMES.map((game) => sql`${game}`),
     sql`, `,
@@ -407,11 +462,11 @@ export async function listChartHistoryTargets(
   }>(
     await db.execute(sql`
       WITH checks AS (
-        SELECT checkpoint->>'printing_id' AS printing_id,
-          checkpoint->>'next_attempt_at' AS next_attempt_at,
-          checkpoint->>'chart_to' AS chart_to
-        FROM provider_sync_run
-        WHERE provider_key = 'tcg_card_central' AND "trigger" = ${TCC_PRICE_HISTORY_TRIGGER}
+        SELECT r.checkpoint->>'printing_id' AS printing_id,
+          ${checkDueAtSql()} AS due_at,
+          r.checkpoint->>'chart_to' AS chart_to
+        FROM provider_sync_run r
+        WHERE r.provider_key = 'tcg_card_central' AND r."trigger" = ${TCC_PRICE_HISTORY_TRIGGER}
       ),
       named AS (
         SELECT printing_id, max(published_at) AS last_at FROM creator_call
@@ -434,10 +489,11 @@ export async function listChartHistoryTargets(
       LEFT JOIN checks ch ON ch.printing_id = p.id
       WHERE p.game_key IN (${games})
         AND p.language_code = 'en'
-        AND (ch.next_attempt_at IS NULL OR ch.next_attempt_at::timestamptz <= ${input.now.toISOString()}::timestamptz)
-        AND (ch.chart_to IS NULL OR ch.chart_to < ${yesterday})
+        AND (ch.due_at IS NULL OR ch.due_at <= ${input.now.toISOString()}::timestamptz)
+        AND (ch.chart_to IS NULL OR ch.chart_to < ${refreshBefore})
         ${exclude.length ? sql`AND p.id NOT IN (${sql.join(exclude.map((id) => sql`${id}`), sql`, `)})` : sql``}
-      ORDER BY CASE WHEN t.printing_id IS NOT NULL THEN 0 WHEN i.printing_id IS NOT NULL THEN 1 ELSE 2 END,
+      ORDER BY CASE WHEN ch.chart_to IS NOT NULL THEN 4 WHEN t.printing_id IS NOT NULL THEN 0
+          WHEN i.printing_id IS NOT NULL THEN 1 WHEN ch.printing_id IS NULL THEN 2 ELSE 3 END,
         t.last_at DESC NULLS LAST,
         -- The catalog alternates games (Pokemon first), each newest set first, so a game
         -- without release dates (One Piece) is not left behind the whole Pokemon catalog.

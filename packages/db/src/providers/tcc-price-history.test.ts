@@ -251,6 +251,15 @@ async function checkpointOf(client: PGlite, printingId: string) {
 
 const MINUTE = 60_000;
 
+/** Stores a price history check as an earlier run would have, answered at `completedAt`. */
+async function saveCheckRow(client: PGlite, printingId: string, checkpoint: Record<string, unknown>, completedAt: string) {
+  await client.query(
+    `INSERT INTO provider_sync_run (id, provider_key, mode, "trigger", status, completed_at, checkpoint)
+     VALUES ($1, 'tcg_card_central', 'live', 'price_history', 'completed', $2, $3::jsonb)`,
+    [priceHistoryCheckId(printingId), completedAt, JSON.stringify({ printing_id: printingId, ...checkpoint })],
+  );
+}
+
 /** Puts a printing in an open index, the chart universe's second tier. */
 async function indexMember(client: PGlite, printingId: string) {
   await client.query(
@@ -300,7 +309,7 @@ describe("price history chart universe", () => {
     expect(await listChartHistoryTargets(db, { now, limit: 0 })).toEqual([]);
   });
 
-  it("asks for a year after the call printings, retries pending in ~30 min, backs off games without a source, refreshes daily, feeds Chart Sentiment", async () => {
+  it("asks for a year after the call printings, retries pending in ~30 min, backs off games without a source, refreshes every 3 days, feeds Chart Sentiment", async () => {
     const { client, db, seeded } = await setup();
     const luffy = seeded.printings.luffyEn.id;
     const greninja = seeded.printings.greninjaEnNormal.id;
@@ -350,23 +359,35 @@ describe("price history chart universe", () => {
     const same = await listChartHistoryTargets(db, { now: new Date(t1.getTime() + 60 * MINUTE), limit: 1 });
     expect(same.map((t) => t.printingId)).not.toContain(luffy);
 
-    // Next day: only the latest days are asked for, and only the new day is written.
-    const t2 = new Date(t1.getTime() + 25 * 60 * MINUTE);
+    // Nor two days later: a printing with its year is refreshed every 3 days.
+    const twoDays = await listChartHistoryTargets(db, { now: new Date(t1.getTime() + 2 * 24 * 60 * MINUTE), limit: 1 });
+    expect(twoDays.map((t) => t.printingId)).not.toContain(luffy);
+
+    // Three days later: only the last week is asked for, and only the new days are written.
+    // Printings never asked come first, so the run takes them all; only Luffy has prices.
+    const t2 = new Date(t1.getTime() + 3 * 24 * 60 * MINUTE);
+    const due = await listChartHistoryTargets(db, { now: t2, limit: 100 });
+    expect(due.at(-1)).toMatchObject({ printingId: luffy, needFrom: "2026-02-21", needTo: "2026-03-03" });
     const refresh = await collectTccPriceHistory(db, {
       ...base,
-      chartItems: 1,
+      chartItems: 100,
       now: t2,
-      transport: perItemTcc(() => ({ status: "ok", product_id: 501, points: dailyPoints("2025-02-27", "2026-03-01").slice(-5) }), sent),
+      transport: perItemTcc(
+        (item) =>
+          item.game === "one_piece" && item.card_number === "OP01-001"
+            ? { status: "ok", product_id: 501, points: dailyPoints("2025-02-27", "2026-03-03").slice(-11) }
+            : { status: "not_found", reason: "card not found in set", points: [] },
+        sent,
+      ),
     });
-    expect(sent[3]).toMatchObject({ from: "2026-02-25", to: "2026-03-01" });
-    expect(refresh).toMatchObject({ requests: 1, ok: 1, points: 5, written: 1 });
-    expect(await checkpointOf(client, luffy)).toMatchObject({ chart_to: "2026-03-01", covered_from: "2025-03-01", covered_to: "2026-03-01" });
+    expect(refresh).toMatchObject({ requests: 1, ok: 1, points: 11, written: 3 });
+    expect(await checkpointOf(client, luffy)).toMatchObject({ chart_to: "2026-03-03", covered_from: "2025-03-01", covered_to: "2026-03-03" });
 
     // Chart Sentiment picks the printing up and reads the whole year into its raw segment.
-    const chart = await runChartSentimentBatch(db, { asOf: new Date("2026-03-02T12:00:00Z"), batchSize: 10 });
+    const chart = await runChartSentimentBatch(db, { asOf: new Date("2026-03-04T12:00:00Z"), batchSize: 10 });
     expect(chart).toMatchObject({ considered: 1, printings: 1 });
     const stored = (await getChartSentiment(db, [luffy])).get(luffy)!;
-    expect(stored.raw).toMatchObject({ segment: "raw", priceType: "reference", currency: "USD", points: 366, dataThrough: "2026-03-01" });
+    expect(stored.raw).toMatchObject({ segment: "raw", priceType: "reference", currency: "USD", points: 368, dataThrough: "2026-03-03" });
     expect(stored.raw!.label).not.toBe("insufficient_history");
   }, 90_000);
 
@@ -401,6 +422,25 @@ describe("price history chart universe", () => {
     expect(later.map((t) => t.printingId)).toEqual([luffy]);
   }, 90_000);
 
+  it("asks printings without history before refreshes, and re-asks not_found saved under the old 30-day wait after a day", async () => {
+    const { client, db, seeded } = await setup();
+    const p = seeded.printings;
+    const now = new Date("2026-03-10T09:00:00Z");
+    // The called Greninja has its year, fetched four days ago: due for a refresh, but last.
+    await saveCheckRow(client, p.greninjaEnNormal.id, { status: "ok", chart_to: "2026-03-05", next_attempt_at: "2026-03-07T09:00:00.000Z" }, "2026-03-06T09:00:00Z");
+    // Luffy was answered not_found two days ago under the old 30-day wait.
+    await saveCheckRow(client, p.luffyEn.id, { status: "not_found", reason: "card not found in set", chart_to: null, next_attempt_at: "2026-04-07T09:00:00.000Z" }, "2026-03-08T09:00:00Z");
+    // The promo was answered not_found an hour ago: not due yet.
+    await saveCheckRow(client, p.charizardPromo.id, { status: "not_found", reason: "set not found", chart_to: null, next_attempt_at: "2026-04-09T08:00:00.000Z" }, "2026-03-10T08:00:00Z");
+    const all = await listChartHistoryTargets(db, { now, limit: 100 });
+    const ids = all.map((t) => t.printingId);
+    expect(ids).not.toContain(p.charizardPromo.id);
+    expect(ids.at(-1)).toBe(p.greninjaEnNormal.id);
+    // Never asked printings come first, then the not_found retry, then the refresh.
+    expect(ids.at(-2)).toBe(p.luffyEn.id);
+    expect(all.at(-1)).toMatchObject({ needFrom: "2026-02-26", needTo: "2026-03-09" });
+  }, 90_000);
+
   it("times retries by answer", () => {
     expect(priceHistoryRetryMinutes("pending", "history backfill queued", 0)).toBe(30);
     expect(priceHistoryRetryMinutes("pending", null, 0.9999)).toBe(45);
@@ -408,16 +448,17 @@ describe("price history chart universe", () => {
     expect(priceHistoryRetryMinutes("unavailable", "No historical price source for this game yet", 0.5)).toBe(7 * 24 * 60);
     expect(priceHistoryRetryMinutes("deferred", "points_cap", 0)).toBe(30);
     expect(priceHistoryRetryMinutes("ok", null, 0.5)).toBe(24 * 60);
-    expect(priceHistoryRetryMinutes("not_found", "set not found", 0.5)).toBe(30 * 24 * 60);
+    expect(priceHistoryRetryMinutes("not_found", "set not found", 0.5)).toBe(24 * 60);
     expect(priceHistoryRetryMinutes("invalid", null)).toBe(7 * 24 * 60);
     expect(priceHistoryRetryMinutes("something_else", null)).toBe(24 * 60);
   });
 
   it("reads the chart universe size from env", () => {
-    expect(tccPriceHistoryChartItemsPerRun({})).toBe(150);
+    expect(tccPriceHistoryChartItemsPerRun({})).toBe(500);
     expect(tccPriceHistoryChartItemsPerRun({ TCC_PRICE_HISTORY_CHART_ITEMS_PER_RUN: "0" })).toBe(0);
     expect(tccPriceHistoryChartItemsPerRun({ TCC_PRICE_HISTORY_CHART_ITEMS_PER_RUN: "40" })).toBe(40);
-    expect(() => tccPriceHistoryChartItemsPerRun({ TCC_PRICE_HISTORY_CHART_ITEMS_PER_RUN: "501" })).toThrow();
+    expect(tccPriceHistoryChartItemsPerRun({ TCC_PRICE_HISTORY_CHART_ITEMS_PER_RUN: "1000" })).toBe(1000);
+    expect(() => tccPriceHistoryChartItemsPerRun({ TCC_PRICE_HISTORY_CHART_ITEMS_PER_RUN: "1001" })).toThrow();
     expect(() => tccPriceHistoryChartItemsPerRun({ TCC_PRICE_HISTORY_CHART_ITEMS_PER_RUN: "-1" })).toThrow();
   });
 });

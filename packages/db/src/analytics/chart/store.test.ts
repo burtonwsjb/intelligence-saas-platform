@@ -5,7 +5,7 @@ import type { Database } from "../../client.js";
 import { readMigrationSql } from "../../migrations.js";
 import { seedTcgIdentityFixtures } from "../../tcg/fixtures.js";
 import { CHART_PATTERNS } from "./patterns.js";
-import { chartSentimentBatchSize, getChartSentiment, listChartPatterns, runChartSentimentBatch } from "./store.js";
+import { chartCoverageReport, chartSentimentBatchSize, getChartSentiment, listChartPatterns, runChartSentimentBatch } from "./store.js";
 
 describe("chart sentiment storage", () => {
   let client: PGlite;
@@ -88,10 +88,28 @@ describe("chart sentiment storage", () => {
   });
 
   it("reads the batch size from env and turns off at 0", async () => {
-    expect(chartSentimentBatchSize({})).toBe(200);
+    expect(chartSentimentBatchSize({})).toBe(600);
     expect(chartSentimentBatchSize({ CHART_SENTIMENT_BATCH_SIZE: "0" })).toBe(0);
     expect(() => chartSentimentBatchSize({ CHART_SENTIMENT_BATCH_SIZE: "-1" })).toThrow();
     expect(await runChartSentimentBatch(db, { batchSize: 0 })).toMatchObject({ status: "skipped", reason: "disabled" });
+  });
+
+  it("counts printings with and without a reading, and why those without have none", async () => {
+    await client.query(
+      `INSERT INTO provider_sync_run (id, provider_key, mode, "trigger", status, completed_at, checkpoint)
+       SELECT 'pph_fixture_' || p.id, 'tcg_card_central', 'live', 'price_history', 'completed', now(),
+         jsonb_build_object('printing_id', p.id, 'status', 'not_found')
+       FROM tcg_printing p WHERE p.game_key = 'one_piece' AND p.language_code = 'en'`,
+    );
+    const report = (await chartCoverageReport(db))!;
+    // Only English Greninja is in the universe and scored; Japanese Greninja is scored but outside it.
+    expect(report.computed).toBe(1);
+    expect(report.allComputed).toBe(2);
+    expect(report.universe).toBeGreaterThan(2);
+    expect(report.missing).toBe(report.universe - 1);
+    expect(report.missingNotFound).toBeGreaterThan(0);
+    expect(report.missingNeverAsked + report.missingNotFound).toBe(report.missing);
+    expect(report.allPrintings).toBeGreaterThan(report.universe);
   });
 
   it("skips and reads empty before migration 0033 is applied", async () => {
