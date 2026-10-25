@@ -19,7 +19,8 @@ export function PriceTrendChart({
   caption?: string;
 }) {
   const geometry = timeSeriesGeometry(points);
-  const format = (value: number) => (currency ? formatMoney(value, currency) : value.toFixed(2));
+  // Axis ticks are interpolated floats (41.2345678912…); formatMoney rejects more than 8 decimals, so fix them first.
+  const format = (value: number) => (currency ? formatMoney(value.toFixed(8), currency) : value.toFixed(2));
   if (!geometry || points.length < 2) {
     return (
       <div className="empty-state">

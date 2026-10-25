@@ -1,3 +1,4 @@
+import { callDirectionText, callHorizonText } from "@/components/CallOutcome";
 import { CardTile } from "@/components/CardTile";
 import { CompactStat } from "@/components/CompactStat";
 import { EmptyState } from "@/components/EmptyState";
@@ -55,8 +56,8 @@ export default async function OverviewPage() {
     ...calls.map((call) => ({
       id: `c-${call.id}`,
       at: call.publishedAt,
-      title: `${call.creatorName ?? "A creator"} made a ${call.direction.replaceAll("_", " ")} call`,
-      body: `Horizon ${call.horizonCode.replaceAll("_", " ")}`,
+      title: `${call.creatorName ?? "A creator"}: ${callDirectionText(call.direction).toLowerCase()}`,
+      body: `Judged ${callHorizonText(call.horizonCode)}`,
       href: call.printingId ? `/app/cards/${encodeURIComponent(call.printingId)}?tab=creators` : `/app/creators/${encodeURIComponent(call.creatorId)}`,
     })),
   ]

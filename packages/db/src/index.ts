@@ -631,10 +631,18 @@ export { CHART_CATALOG_VERSION, CHART_PATTERNS, CHART_THRESHOLDS } from "./analy
 export { CHART_METHOD_VERSION, CHART_SCORE_RULES, confidenceLabel } from "./analytics/chart/score.js";
 export {
   SCORE_POLICY_KEY,
+  SCORE_MODEL_REVISION,
   SCORE_POLICY_VERSION,
   SCORE_UNCALIBRATED,
 } from "./scoring/weights.js";
-export { creatorConsensus, recommend, scoreFromInputs } from "./scoring/model.js";
+export { creatorConsensus, creatorConsensusText, recommend, scoreFromInputs } from "./scoring/model.js";
+export {
+  CARD_RESCORE_MAX_BATCH_SIZE,
+  DEFAULT_CARD_RESCORE_BATCH_SIZE,
+  cardRescoreBatchSize,
+  runCardRescoreBatch,
+  type CardRescoreReport,
+} from "./scoring/rescore.js";
 export {
   assertMissingWeightRedistribution,
   assertPolicyWeightsSumToOne,
@@ -852,7 +860,9 @@ export {
   EXPLORER_MAX_PAGE_SIZE,
   EXPLORER_MODES,
   EXPLORER_PAGE_SIZES,
+  EXPLORER_MARKET_SENTIMENTS,
   EXPLORER_RECOMMENDATIONS,
+  EXPLORER_SOCIAL_SENTIMENTS,
   EXPLORER_SORTS,
   EXPLORER_VIEW_DEFINITIONS,
   EXPLORER_VIEWS,
@@ -883,6 +893,7 @@ export {
   scoredPriceBasis,
   parseExplorerQuery,
   primaryDriver,
+  explanationSentence,
   sentimentLabel,
   summarizeSentiment,
   windowChange,

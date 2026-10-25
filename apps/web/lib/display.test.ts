@@ -9,16 +9,18 @@ import {
   priceFreshness,
   providerText,
   recommendationText,
+  socialText,
   timeSeriesGeometry,
   verdictStep,
 } from "./display";
+import { formatMoney } from "@isp/shared";
 
 const day = 86_400_000;
 const start = new Date("2026-09-01T00:00:00Z");
 
 describe("display labels", () => {
   it("renders human-readable recommendation and change text", () => {
-    expect(recommendationText("insufficient_data")).toBe("Not enough data");
+    expect(recommendationText("insufficient_data")).toBe("No reading yet");
     expect(recommendationText(null)).toBe("No recommendation");
     expect(formatChange(0.1234)).toEqual({ text: "+12.3%", direction: "up" });
     expect(formatChange(-0.05)).toEqual({ text: "−5.0%", direction: "down" });
@@ -84,5 +86,28 @@ describe("chart geometry", () => {
     expect(verdictStep("strong_buy")).toBe(4);
     expect(verdictStep("insufficient_data")).toBeNull();
     expect(verdictStep(null)).toBeNull();
+  });
+});
+
+describe("card list wording", () => {
+  it("formats interpolated chart ticks as money once they are fixed to 8 decimals", () => {
+    const geometry = timeSeriesGeometry([
+      { observedAt: new Date("2026-10-01T00:00:00Z"), amount: 36.11 },
+      { observedAt: new Date("2026-10-15T00:00:00Z"), amount: 41.07 },
+      { observedAt: new Date("2026-10-22T00:00:00Z"), amount: 33.29 },
+    ])!;
+    for (const tick of geometry.yTicks) {
+      expect(formatMoney(tick.value.toFixed(8), "USD")).toMatch(/^\$\d+\.\d{2}$/);
+    }
+  });
+
+  it("reads one or two posts as an early lean, not a verdict", () => {
+    const summary = {
+      label: "too_few" as const,
+      classified: 2,
+      weighted: { positive: 0.1, negative: 0.05, neutral: 0, mixed: 0 },
+    };
+    expect(socialText(summary)).toBe("leans positive (2 posts)");
+    expect(socialText({ ...summary, label: "no_evidence", classified: 0 })).toBe("No social evidence");
   });
 });

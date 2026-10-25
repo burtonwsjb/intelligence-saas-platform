@@ -19,7 +19,8 @@ import {
   user,
   type Database,
 } from "../index.js";
-import { SCORE_POLICY_VERSION } from "./weights.js";
+import { SCORE_MODEL_REVISION, SCORE_POLICY_VERSION } from "./weights.js";
+import { runCardRescoreBatch } from "./rescore.js";
 import type { ScoreInputs } from "./model.js";
 
 function baseInput(overrides: Partial<ScoreInputs> = {}): ScoreInputs {
@@ -178,6 +179,46 @@ describe("opportunity scoring model", () => {
     expect(weakOnly.total_weight).toBeLessThan(consensus.total_weight);
   });
 
+  it("counts avoid calls against the card and never calls an even split bullish", () => {
+    const vote = (creatorId: string, direction: string) => ({
+      creatorId,
+      direction,
+      languageCode: "en",
+      authorityWeight: 0.3,
+      sampleSize: 20,
+      publishedAt: "2026-01-01T00:00:00.000Z",
+    });
+    expect(creatorConsensus([vote("a", "avoid")], "en").raw).toBe(-1);
+    const split = scoreFromInputs(baseInput({ creatorVotes: [vote("a", "bullish"), vote("b", "avoid")] }));
+    const line = split.explanations.find((item) => item.code === "creator_consensus");
+    expect(line?.text).toBe("2 creator calls, split or neutral overall");
+    const watching = scoreFromInputs(baseInput({ creatorVotes: [vote("a", "watch"), vote("b", "watch")] }));
+    expect(watching.explanations.find((item) => item.code === "creator_consensus")?.text).not.toMatch(/bullish/);
+    // Customer-facing lines carry no internal codes or version tags (the recommendation echo is never shown).
+    for (const item of split.explanations.filter((row) => row.code !== "recommendation")) {
+      expect(item.text).not.toMatch(/authority-weighted|n=\d|_|v1/);
+      expect(item.text.charAt(0)).toBe(item.text.charAt(0).toUpperCase());
+    }
+    expect(split.components.model_revision).toBe(SCORE_MODEL_REVISION);
+  });
+
+  it("reads a confirmed, falling card as sell-side even when risk is low", () => {
+    const falling = baseInput({
+      priceBasis: "reference",
+      salesVelocity: { sales_7d: 0, sales_30d: 0 },
+      volumeMomentum: { status: "insufficient_data", value: null },
+      supply: undefined,
+      latestSpreadRatio: null,
+      returns: { "7d": { status: "ok", value: -0.06 }, "30d": { status: "ok", value: -0.18 } },
+      relativeStrength: { status: "ok", value: -0.12 },
+    });
+    const scored = scoreFromInputs(falling);
+    expect(scored.risk).toBeLessThan(40);
+    expect(scored.opportunity).toBeLessThanOrEqual(20);
+    expect(scored.recommendation).toBe("sell");
+    expect(scored.explanations.find((item) => item.code === "price_return_30d")?.text).toBe("Market price down 18.0% over 30 days");
+  });
+
   it("does not let a weak creator sample fabricate consensus", () => {
     const scored = scoreFromInputs(
       baseInput({
@@ -276,5 +317,25 @@ describe("persisted scores and decision records", () => {
       projectScoreToDecision(scoped, { organizationId: "org_score", scoreId: first.id }),
     );
     expect(replay?.id).toBe(link?.id);
+  });
+
+  it("rescores priced cards whose latest score is missing, then leaves current ones alone", async () => {
+    const client = new PGlite();
+    await client.exec(await readMigrationSql());
+    const db = drizzle(client) as unknown as Database;
+    await seedTcgIdentityFixtures(db);
+    for (const record of tcgMarketFixtureRecords()) {
+      await ingestTcgMarketRecord(db, record);
+    }
+    const asOf = new Date("2026-01-10T00:00:00.000Z");
+    const first = await runCardRescoreBatch(db, { asOf });
+    expect(first.considered).toBeGreaterThan(0);
+    expect(first.failed).toBe(0);
+    expect(first.scored).toBe(first.considered);
+    const rows = await db.select().from(tcgScoreSnapshot);
+    expect(rows.every((row) => (row.components as { model_revision?: number }).model_revision === SCORE_MODEL_REVISION)).toBe(true);
+    const second = await runCardRescoreBatch(db, { asOf });
+    expect(second.considered).toBe(0);
+    expect((await runCardRescoreBatch(db, { asOf, batchSize: 0 })).reason).toBe("disabled");
   });
 });
