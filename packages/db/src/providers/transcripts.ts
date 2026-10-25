@@ -29,11 +29,15 @@ import { ProviderHttpError, createFetchTransport, type HttpResponse, type HttpTr
 
 export type TranscriptCue = { text: string; offsetMs: number; durationMs: number };
 
-export type TranscriptResult =
+export type TranscriptResult = (
   | { status: "ok"; lang: string; cues: TranscriptCue[]; trackKind: "manual" | "asr" | "unknown" }
   | { status: "unavailable"; reason?: string }
   | { status: "rate_limited"; reason: string }
-  | { status: "error"; reason: string };
+  | { status: "error"; reason: string }
+) & {
+  /** HTTP requests the fetch actually made, when fewer than `maxRequestsPerVideo`; the budget is corrected to it. */
+  requests?: number;
+};
 
 export const TRANSCRIPT_PROVIDERS = ["youtube_captions", "supadata"] as const;
 export type TranscriptProviderKey = (typeof TRANSCRIPT_PROVIDERS)[number];
@@ -43,6 +47,8 @@ export type TranscriptFetcher = {
   /** Upper bound on HTTP requests one `fetch` call makes; the daily budget reserves this much. */
   readonly maxRequestsPerVideo: number;
   fetch(videoId: string, options?: { lang?: string }): Promise<TranscriptResult>;
+  /** Transcript of a video page URL (TikTok); only services that fetch the video themselves offer it. */
+  fetchUrl?(videoUrl: string, options?: { lang?: string }): Promise<TranscriptResult>;
 };
 
 export const TRANSCRIPT_REQUEST_TIMEOUT_MS = 15_000;
@@ -315,7 +321,7 @@ export class YoutubeCaptionFetcher implements TranscriptFetcher {
 
 export const SUPADATA_DEFAULT_BASE_URL = "https://api.supadata.ai/v1";
 
-/** Parses a Supadata transcript body defensively. Shape from memory; not hosted-validated. */
+/** Parses a Supadata transcript body (`content: [{ text, offset, duration, lang }]`, milliseconds) defensively. Not hosted-validated. */
 export function parseSupadataTranscript(body: unknown): { lang: string | null; cues: TranscriptCue[] } | null {
   const record = asRecord(body);
   if (!Array.isArray(record.content)) return null;
@@ -335,49 +341,107 @@ export function parseSupadataTranscript(body: unknown): { lang: string | null; c
   return { lang, cues };
 }
 
+/** Polls of an asynchronous Supadata job before giving up for this run (about a minute). */
+export const SUPADATA_MAX_JOB_POLLS = 12;
+export const SUPADATA_JOB_POLL_MS = 5_000;
+
 /**
- * Optional paid backup (TRANSCRIPT_PROVIDER=supadata). One request per video.
- * Fixture-tested only; the vendor contract was not verifiable from the sandbox.
+ * Paid transcript service (TRANSCRIPT_PROVIDER=supadata, SUPADATA_API_KEY).
+ * Uses Supadata's universal endpoint, GET /v1/transcript?url=…, which takes a
+ * YouTube or TikTok video URL and returns the published captions or, when
+ * there are none, a generated transcript (mode=auto). Long videos come back as
+ * 202 with a job id, polled at GET /v1/transcript/{jobId}. The vendor fetches
+ * the video; Sentiment never downloads it. Request and response shapes come
+ * from Supadata's public docs and are parsed defensively; fixture-tested only.
  */
 export class SupadataTranscriptFetcher implements TranscriptFetcher {
   readonly provider = "supadata" as const;
-  readonly maxRequestsPerVideo = 1;
+  readonly maxRequestsPerVideo = 1 + SUPADATA_MAX_JOB_POLLS;
   private readonly apiKey: string;
   private readonly baseUrl: string;
   private readonly transport: HttpTransport;
+  private readonly sleep: (ms: number) => Promise<void>;
 
-  constructor(input: { apiKey: string; baseUrl?: string; transport?: HttpTransport }) {
+  constructor(input: {
+    apiKey: string;
+    baseUrl?: string;
+    transport?: HttpTransport;
+    sleep?: (ms: number) => Promise<void>;
+  }) {
     this.apiKey = input.apiKey;
     this.baseUrl = (input.baseUrl ?? SUPADATA_DEFAULT_BASE_URL).replace(/\/+$/, "");
     this.transport = input.transport ?? createFetchTransport({ timeoutMs: TRANSCRIPT_REQUEST_TIMEOUT_MS });
+    this.sleep = input.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   }
 
   async fetch(videoId: string, options?: { lang?: string }): Promise<TranscriptResult> {
     if (!VIDEO_ID.test(videoId)) return { status: "error", reason: "invalid_video_id" };
-    const lang = options?.lang ?? "en";
-    const url = `${this.baseUrl}/youtube/transcript?videoId=${encodeURIComponent(videoId)}&lang=${encodeURIComponent(lang)}`;
+    return this.fetchUrl(`https://www.youtube.com/watch?v=${videoId}`, options);
+  }
+
+  /** Transcript of any video URL Supadata supports (YouTube, TikTok). */
+  async fetchUrl(videoUrl: string, options?: { lang?: string }): Promise<TranscriptResult> {
+    const counter = { requests: 0 };
+    const result = await this.fetchCounted(videoUrl, options?.lang ?? "en", counter);
+    return { ...result, requests: counter.requests };
+  }
+
+  private async fetchCounted(videoUrl: string, lang: string, counter: { requests: number }): Promise<TranscriptResult> {
+    const transport: HttpTransport = {
+      fetch: (url, init) => {
+        counter.requests += 1;
+        return this.transport.fetch(url, init);
+      },
+    };
+    const headers = { "x-api-key": this.apiKey, accept: "application/json" };
+    const url = `${this.baseUrl}/transcript?url=${encodeURIComponent(videoUrl)}&lang=${encodeURIComponent(lang)}&mode=auto`;
     let response: HttpResponse;
     try {
-      response = await this.transport.fetch(url, { headers: { "x-api-key": this.apiKey, accept: "application/json" } });
+      response = await transport.fetch(url, { headers });
     } catch (error) {
       return { status: "error", reason: errorReason(error) };
+    }
+    if (response.status === 202) {
+      const jobId = asRecord(safeJson(response.bodyText)).jobId;
+      if (typeof jobId !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(jobId)) return { status: "error", reason: "invalid_job" };
+      for (let poll = 0; poll < SUPADATA_MAX_JOB_POLLS; poll += 1) {
+        await this.sleep(SUPADATA_JOB_POLL_MS);
+        try {
+          response = await transport.fetch(`${this.baseUrl}/transcript/${jobId}`, { headers });
+        } catch (error) {
+          return { status: "error", reason: errorReason(error) };
+        }
+        if (response.status !== 200) break;
+        const job = asRecord(safeJson(response.bodyText));
+        if (job.status === "failed") return { status: "unavailable", reason: "job_failed" };
+        if (job.status === "completed" || (job.status == null && Array.isArray(job.content))) {
+          return this.result(job, lang);
+        }
+      }
+      if (response.status === 200) return { status: "error", reason: "job_pending" };
     }
     if (response.status === 429) return { status: "rate_limited", reason: "rate_limited" };
     if (response.status === 404 || response.status === 206) return { status: "unavailable", reason: "no_transcript" };
     if (response.status === 401 || response.status === 403) return { status: "error", reason: "auth" };
-    // 202 would be an asynchronous job for long videos; not supported, retried on a later day.
-    if (response.status === 202) return { status: "error", reason: "async_job_unsupported" };
     if (response.status !== 200) return { status: "error", reason: `http_${response.status}` };
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(response.bodyText);
-    } catch {
-      return { status: "error", reason: "invalid_payload" };
-    }
-    const transcript = parseSupadataTranscript(parsed);
+    const parsed = safeJson(response.bodyText);
+    if (parsed === undefined) return { status: "error", reason: "invalid_payload" };
+    return this.result(asRecord(parsed), lang);
+  }
+
+  private result(body: Record<string, unknown>, lang: string): TranscriptResult {
+    const transcript = parseSupadataTranscript(body);
     if (!transcript) return { status: "error", reason: "invalid_payload" };
     if (transcript.cues.length === 0) return { status: "unavailable", reason: "empty_transcript" };
     return { status: "ok", lang: transcript.lang ?? lang, cues: transcript.cues, trackKind: "unknown" };
+  }
+}
+
+function safeJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
   }
 }
 

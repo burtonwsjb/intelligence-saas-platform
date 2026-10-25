@@ -137,10 +137,12 @@ describe("SupadataTranscriptFetcher", () => {
   it("sends the key as a header, never in the URL, and parses millisecond cues defensively", async () => {
     const { transport, calls } = fakeTransport([ok(body)]);
     const result = await new SupadataTranscriptFetcher({ apiKey: "secret-key", transport }).fetch(VIDEO);
-    expect(calls[0]!.url).toBe(`https://api.supadata.ai/v1/youtube/transcript?videoId=${VIDEO}&lang=en`);
+    expect(calls[0]!.url).toBe(
+      `https://api.supadata.ai/v1/transcript?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${VIDEO}`)}&lang=en&mode=auto`,
+    );
     expect(calls[0]!.url).not.toContain("secret-key");
     expect(calls[0]!.headers["x-api-key"]).toBe("secret-key");
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       status: "ok",
       lang: "en",
       trackKind: "unknown",
@@ -162,14 +164,51 @@ describe("SupadataTranscriptFetcher", () => {
     for (const [status, expected] of cases) {
       const { transport } = fakeTransport([{ status, headers: {}, bodyText: "{}" }]);
       const result = await new SupadataTranscriptFetcher({ apiKey: "secret-key", transport }).fetch(VIDEO);
-      expect(result).toEqual(expected);
+      expect(result).toMatchObject(expected);
       expect(JSON.stringify(result)).not.toContain("secret-key");
     }
     const { transport } = fakeTransport([ok("{\"content\":\"plain text\"}")]);
-    expect(await new SupadataTranscriptFetcher({ apiKey: "k", transport }).fetch(VIDEO)).toEqual({
+    expect(await new SupadataTranscriptFetcher({ apiKey: "k", transport }).fetch(VIDEO)).toMatchObject({
       status: "error",
       reason: "invalid_payload",
     });
+  });
+});
+
+describe("SupadataTranscriptFetcher jobs and TikTok", () => {
+  const done = JSON.stringify({ status: "completed", lang: "en", content: [{ text: "buy charizard", offset: 5_000, duration: 1_000 }] });
+
+  it("polls an asynchronous job until it completes, for a TikTok URL", async () => {
+    const { transport, calls } = fakeTransport([
+      { status: 202, headers: {}, bodyText: JSON.stringify({ jobId: "job_123" }) },
+      ok(JSON.stringify({ status: "active" })),
+      ok(done),
+    ]);
+    const sleeps: number[] = [];
+    const fetcher = new SupadataTranscriptFetcher({ apiKey: "k", transport, sleep: async (ms) => void sleeps.push(ms) });
+    const result = await fetcher.fetchUrl("https://www.tiktok.com/@mitchystitchy/video/7400000000000000000");
+    expect(calls.map((call) => call.url)).toEqual([
+      `https://api.supadata.ai/v1/transcript?url=${encodeURIComponent("https://www.tiktok.com/@mitchystitchy/video/7400000000000000000")}&lang=en&mode=auto`,
+      "https://api.supadata.ai/v1/transcript/job_123",
+      "https://api.supadata.ai/v1/transcript/job_123",
+    ]);
+    expect(sleeps).toEqual([5_000, 5_000]);
+    expect(result).toMatchObject({ status: "ok", lang: "en", trackKind: "unknown", cues: [{ text: "buy charizard", offsetMs: 5_000, durationMs: 1_000 }] });
+  });
+
+  it("reports a failed job as unavailable and a slow one as retryable", async () => {
+    const failed = fakeTransport([{ status: 202, headers: {}, bodyText: '{"jobId":"j"}' }, ok('{"status":"failed"}')]);
+    expect(await new SupadataTranscriptFetcher({ apiKey: "k", transport: failed.transport, sleep: async () => {} }).fetch(VIDEO)).toMatchObject({
+      status: "unavailable",
+      reason: "job_failed",
+    });
+    const slow = fakeTransport([
+      { status: 202, headers: {}, bodyText: '{"jobId":"j"}' },
+      ...Array.from({ length: 12 }, () => ok('{"status":"queued"}')),
+    ]);
+    const fetcher = new SupadataTranscriptFetcher({ apiKey: "k", transport: slow.transport, sleep: async () => {} });
+    expect(await fetcher.fetch(VIDEO)).toMatchObject({ status: "error", reason: "job_pending" });
+    expect(slow.calls).toHaveLength(fetcher.maxRequestsPerVideo);
   });
 });
 

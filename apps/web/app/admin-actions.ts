@@ -30,6 +30,8 @@ import {
   updateWorkerResources,
   registerWebFeedSite,
   registerPodcastFeed,
+  addTikTokVideoLinks,
+  TikTokLinkError,
   setPodcastFeedState,
   PodcastFeedError,
   requestInfluencerSeed,
@@ -354,6 +356,30 @@ export async function registerPodcastFeedAction(formData: FormData) {
     throw error;
   }
   redirect("/admin/sources?podcast=added#podcasts");
+}
+
+/** Adds pasted TikTok video links as creator videos for the transcript service (platform operators only). */
+export async function addTikTokVideoLinksAction(formData: FormData) {
+  const operator = await requireGrantedOperator();
+  if (!operator.adminDb) {
+    redirect("/admin/sources?error=config");
+  }
+  let report;
+  try {
+    report = await addTikTokVideoLinks(operator.adminDb, {
+      links: String(formData.get("links") ?? ""),
+      displayName: String(formData.get("displayName") ?? "") || null,
+      actorUserId: operator.session.user.id,
+    });
+  } catch (error) {
+    if (error instanceof TikTokLinkError) {
+      redirect(`/admin/sources?error=tiktok_${error.code}#tiktok`);
+    }
+    throw error;
+  }
+  redirect(
+    `/admin/sources?tiktok=added&added=${report.added}&duplicates=${report.duplicates}&rejected=${report.rejected.length}#tiktok`,
+  );
 }
 
 /** Pauses or resumes a registered podcast (platform operators only). */

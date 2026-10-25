@@ -6,6 +6,7 @@ import {
   listAdminProviders,
   listInfluencerSeedStatus,
   listPodcastFeeds,
+  listTikTokAccounts,
   listWebBackfillProgress,
   listWebFeedSites,
   listYoutubeBackfillProgress,
@@ -13,6 +14,7 @@ import {
 import { requireGrantedOperator } from "@/lib/platform-admin";
 import { getDb } from "@/lib/auth";
 import {
+  addTikTokVideoLinksAction,
   registerPodcastFeedAction,
   registerWebFeedSiteAction,
   requestInfluencerSeedAction,
@@ -34,6 +36,10 @@ export default async function AdminSourcesPage({
     error?: string;
     website?: string;
     podcast?: string;
+    tiktok?: string;
+    added?: string;
+    duplicates?: string;
+    rejected?: string;
     seed?: string;
     queued?: string;
     sites?: string;
@@ -42,11 +48,12 @@ export default async function AdminSourcesPage({
   const operator = await requireGrantedOperator();
   const query = await searchParams;
   const db = operator.adminDb ?? getDb();
-  const [health, providers, websites, podcasts, seedRows, youtubeBackfill, webBackfill] = await Promise.all([
+  const [health, providers, websites, podcasts, tiktokAccounts, seedRows, youtubeBackfill, webBackfill] = await Promise.all([
     collectSystemHealth(db),
     listAdminProviders(db),
     listWebFeedSites(db),
     listPodcastFeeds(db),
+    listTikTokAccounts(db),
     listInfluencerSeedStatus(db),
     listYoutubeBackfillProgress(db),
     listWebBackfillProgress(db),
@@ -72,6 +79,10 @@ export default async function AdminSourcesPage({
         </p>
       ) : query.error === "podcast_invalid" ? (
         <p className="form-error">Podcast rejected: use the public http(s) address of the podcast&apos;s RSS feed.</p>
+      ) : query.error === "tiktok_migration_missing" ? (
+        <p className="form-error">TikTok needs database update 0039_tiktok_source before links can be added.</p>
+      ) : query.error?.startsWith("tiktok_") ? (
+        <p className="form-error">Paste between 1 and 100 TikTok video links (tiktok.com/@name/video/…).</p>
       ) : query.error === "seed_unconfirmed" ? (
         <p className="form-error">Type seed to confirm registering the influencer seed list.</p>
       ) : query.error ? (
@@ -79,6 +90,12 @@ export default async function AdminSourcesPage({
       ) : null}
       {query.website === "added" ? <p role="status">Website registered. The next hourly feed run reads it.</p> : null}
       {query.podcast === "added" ? <p role="status">Podcast registered. The next hourly feed run reads it.</p> : null}
+      {query.tiktok === "added" ? (
+        <p role="status">
+          TikTok links: {Number(query.added ?? 0)} added, {Number(query.duplicates ?? 0)} already there,{" "}
+          {Number(query.rejected ?? 0)} not recognized as video links.
+        </p>
+      ) : null}
       {query.seed === "requested" ? (
         <p role="status">
           Seed list registered: {Number(query.queued ?? 0)} new YouTube channels queued for lookup, {Number(query.sites ?? 0)}{" "}
@@ -203,6 +220,33 @@ export default async function AdminSourcesPage({
           </form>
         </section>
       ))}
+      <h2 id="tiktok">TikTok creators</h2>
+      <p className="muted">
+        Paste TikTok video links (tiktok.com/@name/video/…). Each becomes a video of that creator; the transcript service
+        (TRANSCRIPT_PROVIDER=supadata) fetches its transcript in the hourly transcript run, TikTok links first, and card
+        names in it become calls. Sentiment never downloads TikTok videos and does not list a creator&apos;s videos on
+        its own. Needs database update 0039_tiktok_source.
+      </p>
+      <form className="inline-form" action={addTikTokVideoLinksAction}>
+        <label>
+          Video links (one per line)
+          <textarea name="links" rows={4} required placeholder="https://www.tiktok.com/@creator/video/7400000000000000000" />
+        </label>
+        <label>
+          Display name (optional)
+          <input name="displayName" />
+        </label>
+        <button type="submit">Add videos</button>
+      </form>
+      {tiktokAccounts.length === 0 ? <p className="muted">No TikTok creators yet.</p> : null}
+      <ul>
+        {tiktokAccounts.map((account) => (
+          <li key={account.sourceAccountId}>
+            {account.displayName ?? `@${account.handle}`} · @{account.handle} · videos {account.videos} · transcripts
+            checked {account.transcribed} · calls {account.calls}
+          </li>
+        ))}
+      </ul>
       <h2 id="influencer-seed">Influencer seed list</h2>
       <p className="muted">
         {POKEMON_INFLUENCER_SEEDS.length} Pokemon influencers ({POKEMON_INFLUENCER_SEED_VERSION}). Registering is
