@@ -13,6 +13,7 @@ import {
   seedTcgIdentityFixtures,
   type Database,
 } from "../index.js";
+import { recordPrintingDemand } from "../tcg/printing-demand.js";
 import { creatorCallSourceFixtures } from "../creator/fixtures.js";
 import {
   TCC_PRICE_HISTORY_PATH,
@@ -307,6 +308,13 @@ describe("price history chart universe", () => {
     const without = await listChartHistoryTargets(db, { now, limit: 1, exclude: new Set([p.greninjaEnNormal.id]) });
     expect(without.map((t) => t.printingId)).toEqual([p.charizardPromo.id]);
     expect(await listChartHistoryTargets(db, { now, limit: 0 })).toEqual([]);
+
+    // A card someone just scanned on tcgcardcentral.com goes ahead of everything; one asked
+    // about two days ago is no longer "just asked" and keeps its place.
+    await recordPrintingDemand(db, [p.luffyEn.id], new Date("2026-03-01T08:30:00Z"));
+    await recordPrintingDemand(db, [pikachuSv3.id], new Date("2026-02-27T08:00:00Z"));
+    const scanned = await listChartHistoryTargets(db, { now, limit: 4 });
+    expect(scanned.map((t) => t.printingId)).toEqual([p.luffyEn.id, p.greninjaEnNormal.id, p.charizardPromo.id, pikachuSv3.id]);
   });
 
   it("asks for a year after the call printings, retries pending in ~30 min, backs off games without a source, refreshes every 3 days, feeds Chart Sentiment", async () => {

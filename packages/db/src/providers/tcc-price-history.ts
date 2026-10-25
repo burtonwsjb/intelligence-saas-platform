@@ -80,6 +80,10 @@ export const TCC_PRICE_HISTORY_CHART_DAYS = 365;
 export const TCC_PRICE_HISTORY_CHART_REFRESH_DAYS = 3;
 /** A refresh asks again from this many days before the last day fetched, for days TCC filled late. */
 const CHART_REFRESH_OVERLAP_DAYS = 7;
+/** Chart printings per run kept for cards someone just asked about on tcgcardcentral.com. */
+export const TCC_PRICE_HISTORY_REQUESTED_PER_RUN = 150;
+/** A request this recent makes a printing "just asked about". */
+const REQUESTED_HOURS = 24;
 /** The start price may come from a day before or after the call (the scorer accepts up to 2 days after). */
 const START_BEFORE_DAYS = 3;
 const START_AFTER_DAYS = 2;
@@ -424,11 +428,14 @@ function addDays(day: string, days: number) {
  * Sentiment has a year of daily prices to read. Printings without any
  * history come before refreshes of printings that have it, so the whole
  * catalog is reached (refreshes used to fill every run and older sets were
- * never asked). In order: printings without history named in creator calls
- * or exactly resolved mentions (most recent first), then open index members
+ * never asked). In order: up to TCC_PRICE_HISTORY_REQUESTED_PER_RUN printings
+ * tcgcardcentral.com asked Sentiment about in the last day (scans, card pages,
+ * collections; most recent first), then printings without history named in
+ * creator calls or exactly resolved mentions (most recent first), then open
+ * index members
  * (the product has no watchlist or collection tables), then never asked,
  * then asked again (pending, not found), then refreshes; within each, the
- * catalog alternates games (Pokemon first), each by newest set, set key
+ * most requested printings over 30 days come first, then the catalog alternates games (Pokemon first), each by newest set, set key
  * (descending) and printing id. Printings waiting for their next check,
  * fetched within the last TCC_PRICE_HISTORY_CHART_REFRESH_DAYS days, or in
  * `exclude` (this run's call targets) are left out. A first request covers
@@ -449,6 +456,19 @@ export async function listChartHistoryTargets(
     sql`, `,
   );
   const exclude = [...(input.exclude ?? [])];
+  const requestedSince = new Date(input.now.getTime() - REQUESTED_HOURS * 3_600_000).toISOString();
+  // tcg_printing_demand arrives with migration 0038; before it, nothing counts as requested.
+  const demandPresent = rowsOf<{ present: boolean }>(
+    await db.execute(sql`select to_regclass('public.tcg_printing_demand') is not null as present`),
+  )[0]?.present === true;
+  const demand = demandPresent
+    ? sql`
+        SELECT printing_id, max(last_requested_at) AS last_requested_at, sum(requests) AS requests_30d
+        FROM tcg_printing_demand
+        WHERE day >= (${input.now.toISOString()}::timestamptz AT TIME ZONE 'UTC')::date - 30
+          AND last_requested_at <= ${input.now.toISOString()}::timestamptz
+        GROUP BY printing_id`
+    : sql`SELECT NULL::text AS printing_id, NULL::timestamptz AS last_requested_at, NULL::bigint AS requests_30d WHERE false`;
   const rows = rowsOf<{
     printing_id: string;
     game: string;
@@ -477,28 +497,44 @@ export async function listChartHistoryTargets(
         GROUP BY chosen_printing_id
       ),
       talked AS (SELECT printing_id, max(last_at) AS last_at FROM named GROUP BY printing_id),
-      indexed AS (SELECT DISTINCT printing_id FROM tcg_index_membership WHERE effective_to IS NULL)
+      indexed AS (SELECT DISTINCT printing_id FROM tcg_index_membership WHERE effective_to IS NULL),
+      demand AS (${demand}),
+      candidates AS (
       SELECT p.id AS printing_id, p.game_key AS game, s.canonical_set_key AS set_key, s.name AS set_name,
         p.collector_number, cc.canonical_name AS card_name, p.language_code AS language, p.variant_key AS variant,
-        ch.chart_to
+        ch.chart_to, ch.printing_id AS checked, t.printing_id AS talked, t.last_at AS talked_at,
+        i.printing_id AS indexed, d.last_requested_at, COALESCE(d.requests_30d, 0) AS requests_30d,
+        s.release_date, p.game_key
       FROM tcg_printing p
       JOIN tcg_set s ON s.id = p.set_id
       JOIN tcg_card_concept cc ON cc.id = p.card_id
       LEFT JOIN talked t ON t.printing_id = p.id
       LEFT JOIN indexed i ON i.printing_id = p.id
       LEFT JOIN checks ch ON ch.printing_id = p.id
+      LEFT JOIN demand d ON d.printing_id = p.id
       WHERE p.game_key IN (${games})
         AND p.language_code = 'en'
         AND (ch.due_at IS NULL OR ch.due_at <= ${input.now.toISOString()}::timestamptz)
         AND (ch.chart_to IS NULL OR ch.chart_to < ${refreshBefore})
         ${exclude.length ? sql`AND p.id NOT IN (${sql.join(exclude.map((id) => sql`${id}`), sql`, `)})` : sql``}
-      ORDER BY CASE WHEN ch.chart_to IS NOT NULL THEN 4 WHEN t.printing_id IS NOT NULL THEN 0
-          WHEN i.printing_id IS NOT NULL THEN 1 WHEN ch.printing_id IS NULL THEN 2 ELSE 3 END,
-        t.last_at DESC NULLS LAST,
+      ),
+      ranked AS (
+        SELECT *, CASE WHEN last_requested_at >= ${requestedSince}::timestamptz
+          THEN row_number() OVER (PARTITION BY last_requested_at >= ${requestedSince}::timestamptz ORDER BY last_requested_at DESC, printing_id) END AS requested_rank
+        FROM candidates
+      )
+      SELECT printing_id, game, set_key, set_name, collector_number, card_name, language, variant, chart_to
+      FROM ranked
+      ORDER BY CASE WHEN requested_rank <= ${TCC_PRICE_HISTORY_REQUESTED_PER_RUN} THEN -1
+          WHEN chart_to IS NOT NULL THEN 4 WHEN talked IS NOT NULL THEN 0
+          WHEN indexed IS NOT NULL THEN 1 WHEN checked IS NULL THEN 2 ELSE 3 END,
+        requested_rank ASC NULLS LAST,
+        talked_at DESC NULLS LAST,
+        requests_30d DESC,
         -- The catalog alternates games (Pokemon first), each newest set first, so a game
         -- without release dates (One Piece) is not left behind the whole Pokemon catalog.
-        row_number() OVER (PARTITION BY p.game_key ORDER BY s.release_date DESC NULLS LAST, s.canonical_set_key DESC, p.id ASC),
-        CASE p.game_key WHEN 'pokemon' THEN 0 ELSE 1 END, p.id ASC
+        row_number() OVER (PARTITION BY game_key ORDER BY release_date DESC NULLS LAST, set_key DESC, printing_id ASC),
+        CASE game_key WHEN 'pokemon' THEN 0 ELSE 1 END, printing_id ASC
       LIMIT ${input.limit}`),
   );
   return rows.map((row) => {
