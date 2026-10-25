@@ -82,7 +82,9 @@ class RunTest(unittest.TestCase):
             def do_POST(self):
                 body = json.loads(self.rfile.read(int(self.headers["content-length"])) or b"{}")
                 assert self.headers["authorization"] == "Bearer " + "t" * 40
-                if self.path.endswith("/claim"):
+                if self.path.endswith("/tiktok/claim"):
+                    reply = {"profiles": []}
+                elif self.path.endswith("/claim"):
                     reply = {"jobs": [queue.pop()] if queue else []}
                 else:
                     submitted.append((self.path, body))
@@ -120,6 +122,89 @@ class RunTest(unittest.TestCase):
         self.assertEqual(body["cues"][0]["text"], "I would buy Charizard ex 006")
         # The audio was on disk while transcribing and is gone afterwards.
         self.assertFalse(seen_audio[0].exists())
+
+
+class TikTokListingTest(unittest.TestCase):
+    """Free TikTok listing: yt-dlp in metadata-only mode, results sent to Sentiment."""
+
+    def test_command_never_downloads(self):
+        settings = sw.Settings(api_url="https://api.example.com", token="t" * 40)
+        command = sw.ytdlp_list_command(settings, "https://www.tiktok.com/@mitchy_stitchy", 60)
+        self.assertEqual(command[1:3], ["-m", "yt_dlp"])
+        self.assertIn("--skip-download", command)
+        self.assertIn("--dump-json", command)
+        self.assertEqual(command[command.index("--playlist-end") + 1], "60")
+        self.assertEqual(command[-3:], ["--impersonate", "chrome", "https://www.tiktok.com/@mitchy_stitchy"])
+
+    def test_parses_dump_json_lines(self):
+        stdout = "\n".join([
+            json.dumps({"id": "7700684124884962591", "description": "Who agrees? #pokemon", "timestamp": 1792955261, "duration": 172, "title": "x"}),
+            "WARNING: something",
+            json.dumps({"id": "not-a-tiktok-id", "description": "skip"}),
+            json.dumps({"id": "7700589527026502942", "title": "only a title"}),
+            "{broken json",
+        ])
+        self.assertEqual(sw.parse_ytdlp_listing(stdout), [
+            {"id": "7700684124884962591", "caption": "Who agrees? #pokemon", "timestamp": 1792955261, "duration": 172},
+            {"id": "7700589527026502942", "caption": "only a title", "timestamp": None, "duration": None},
+        ])
+
+    def test_lists_each_claimed_profile_and_reports_failures(self):
+        class FakeApi:
+            def __init__(self):
+                self.batches = [[
+                    {"source_account_id": "sac_1", "handle": "mitchy_stitchy", "profile_url": "https://www.tiktok.com/@mitchy_stitchy", "max_videos": 300},
+                    {"source_account_id": "sac_2", "handle": "gone", "profile_url": "https://www.tiktok.com/@gone", "max_videos": 60},
+                ]]
+                self.sent = []
+
+            def claim_tiktok(self):
+                return self.batches.pop() if self.batches else []
+
+            def submit_tiktok(self, account, body):
+                self.sent.append((account, body))
+                return 200, {"kept": 1, "skipped": 0}
+
+        calls = []
+
+        def runner(command, **kwargs):
+            calls.append(command)
+            if command[-1].endswith("@gone"):
+                return SimpleNamespace(returncode=1, stdout="", stderr="ERROR: Unable to extract secondary user ID")
+            line = json.dumps({"id": "7700684124884962591", "description": "#pokemon", "timestamp": 1792955261})
+            return SimpleNamespace(returncode=0, stdout=line + "\n", stderr="")
+
+        sw.LOG_PATH = Path(tempfile.gettempdir()) / "sentiment-whisper-test.log"
+        api = FakeApi()
+        settings = sw.Settings(api_url="https://api.example.com", token="t" * 40)
+        deadline = datetime.now(timezone.utc) + sw.timedelta(hours=1)
+        self.assertEqual(sw.list_tiktok_profiles(api, settings, deadline, runner=runner), 1)
+        self.assertEqual(calls[0][calls[0].index("--playlist-end") + 1], "300")
+        self.assertEqual(api.sent[0], ("sac_1", {"status": "ok", "videos": [
+            {"id": "7700684124884962591", "caption": "#pokemon", "timestamp": 1792955261, "duration": None}
+        ], "tool": "yt-dlp"}))
+        self.assertEqual(api.sent[1], ("sac_2", {"status": "error", "reason": "ytdlp_exit_1", "tool": "yt-dlp"}))
+
+    def test_missing_ytdlp_stops_listing(self):
+        class FakeApi:
+            sent = []
+
+            def claim_tiktok(self):
+                return [{"source_account_id": "sac_1", "handle": "a", "profile_url": "https://www.tiktok.com/@a"}]
+
+            def submit_tiktok(self, account, body):
+                self.sent.append(body)
+                return 200, {}
+
+        def runner(command, **kwargs):
+            return SimpleNamespace(returncode=1, stdout="", stderr="No module named yt_dlp")
+
+        sw.LOG_PATH = Path(tempfile.gettempdir()) / "sentiment-whisper-test.log"
+        api = FakeApi()
+        settings = sw.Settings(api_url="https://api.example.com", token="t" * 40)
+        deadline = datetime.now(timezone.utc) + sw.timedelta(hours=1)
+        self.assertEqual(sw.list_tiktok_profiles(api, settings, deadline, runner=runner), 0)
+        self.assertEqual(api.sent, [{"status": "error", "reason": "ytdlp_missing", "tool": "yt-dlp"}])
 
 
 if __name__ == "__main__":

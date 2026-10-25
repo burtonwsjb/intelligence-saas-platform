@@ -13,7 +13,6 @@ import {
   runTranscriptBackfill,
   runWebFeedSync,
   runPodcastFeedSync,
-  runTikTokProfileSync,
   runWorkerHeartbeat,
   startProviderScheduleLoop,
   startWorker,
@@ -571,36 +570,6 @@ describe("podcast feed sync", () => {
     const blob = lines.join("\n");
     expect(blob).toContain("worker.podcast_feed_sync_failed");
     expect(blob).not.toContain("hunter2");
-    error.mockRestore();
-  });
-});
-
-describe("TikTok profile sync", () => {
-  it("does nothing unless PROVIDER_TIKTOK_MODE is live, and logs failures sanitized", async () => {
-    let transactions = 0;
-    const untouched = {
-      transaction: async () => {
-        transactions += 1;
-        throw new Error("unexpected");
-      },
-    };
-    expect(await runTikTokProfileSync(untouched as never, {})).toBeNull();
-    expect(await runTikTokProfileSync(untouched as never, { PROVIDER_TIKTOK_MODE: "fixture" })).toBeNull();
-    expect(transactions).toBe(0);
-
-    const lines: string[] = [];
-    const error = vi.spyOn(console, "error").mockImplementation((line) => lines.push(String(line)));
-    const failing = {
-      transaction: async () => {
-        throw new Error("Failed query postgresql://app_worker:hunter2@db.example/isp");
-      },
-    };
-    const env = { PROVIDER_TIKTOK_MODE: "live", SCRAPECREATORS_API_KEY: "sc-test" };
-    expect(await runTikTokProfileSync(failing as never, env)).toBeNull();
-    const blob = lines.join("\n");
-    expect(blob).toContain("worker.tiktok_profile_sync_failed");
-    expect(blob).not.toContain("hunter2");
-    expect(blob).not.toContain("sc-test");
     error.mockRestore();
   });
 });

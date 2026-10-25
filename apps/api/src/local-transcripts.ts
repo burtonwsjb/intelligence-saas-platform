@@ -2,11 +2,15 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import type { Context, Env, Hono } from "hono";
 import {
   LocalTranscriptValidationError,
+  TikTokListingValidationError,
   claimLocalTranscriptJobs,
+  claimTikTokProfileJobs,
   createDbFromEnv,
   localTranscriberToken,
   parseLocalTranscriptSubmission,
+  parseTikTokListingSubmission,
   submitLocalTranscript,
+  submitTikTokProfileListing,
   type Database,
 } from "@isp/db";
 import { jsonError } from "./errors.js";
@@ -29,6 +33,10 @@ function sameToken(presented: string, expected: string): boolean {
  *
  * POST /internal/local-transcripts/claim         { limit?, worker? } -> { jobs: [...] }
  * POST /internal/local-transcripts/:contentId    { status: ok, lang, cues, model } | { status: unavailable|error, reason } | { status: release }
+ *
+ * The same helper lists followed TikTok creators' videos (captions and dates only):
+ * POST /internal/local-transcripts/tiktok/claim             { limit?, worker? } -> { profiles: [...] }
+ * POST /internal/local-transcripts/tiktok/:sourceAccountId  { status: ok, videos: [{ id, caption, timestamp?, duration? }], tool? } | { status: error, reason }
  */
 export function registerLocalTranscriptRoutes<E extends Env>(
   app: Hono<E>,
@@ -66,6 +74,67 @@ export function registerLocalTranscriptRoutes<E extends Env>(
       worker: typeof body.worker === "string" ? body.worker : undefined,
     });
     return c.json({ jobs });
+  });
+
+  const readJson = async (c: Context<E>): Promise<{ ok: true; body: unknown } | { ok: false; response: Response }> => {
+    const declared = Number(c.req.header("content-length") ?? Number.NaN);
+    if (Number.isFinite(declared) && declared > LOCAL_TRANSCRIPT_MAX_BYTES) {
+      return { ok: false, response: jsonError("payload_too_large", "Body is too large.", 413) };
+    }
+    const raw = await c.req.text();
+    if (Buffer.byteLength(raw, "utf8") > LOCAL_TRANSCRIPT_MAX_BYTES) {
+      return { ok: false, response: jsonError("payload_too_large", "Body is too large.", 413) };
+    }
+    try {
+      return { ok: true, body: raw.trim() ? JSON.parse(raw) : {} };
+    } catch {
+      return { ok: false, response: jsonError("validation_error", "Body must be JSON.", 400) };
+    }
+  };
+
+  app.post("/internal/local-transcripts/tiktok/claim", async (c) => {
+    const denied = authorize(c);
+    if (denied) return denied;
+    const read = await readJson(c);
+    if (!read.ok) return read.response;
+    const body = (read.body && typeof read.body === "object" ? read.body : {}) as Record<string, unknown>;
+    const limit = Number(body.limit ?? 10);
+    const profiles = await claimTikTokProfileJobs(database(), {
+      limit: Number.isFinite(limit) ? limit : 10,
+      worker: typeof body.worker === "string" ? body.worker : undefined,
+      env,
+    });
+    return c.json({ profiles });
+  });
+
+  app.post("/internal/local-transcripts/tiktok/:sourceAccountId", async (c) => {
+    const denied = authorize(c);
+    if (denied) return denied;
+    const sourceAccountId = c.req.param("sourceAccountId");
+    if (!/^sac_[0-9a-f]{32}$/.test(sourceAccountId)) return jsonError("not_found", "Not found.", 404);
+    const read = await readJson(c);
+    if (!read.ok) return read.response;
+    let submission;
+    try {
+      submission = parseTikTokListingSubmission(read.body);
+    } catch (error) {
+      if (error instanceof TikTokListingValidationError) return jsonError("validation_error", error.message, 400);
+      throw error;
+    }
+    const report = await submitTikTokProfileListing(database(), { sourceAccountId, submission });
+    if (report.outcome === "not_claimed") {
+      return jsonError("not_claimed", "This profile is not claimed; claim it first.", 409);
+    }
+    return c.json({
+      source_account_id: report.sourceAccountId,
+      outcome: report.outcome,
+      listed: report.listed,
+      kept: report.kept,
+      skipped: report.skipped,
+      duplicates: report.duplicates,
+      mentions: report.mentions,
+      calls_created: report.callsCreated,
+    });
   });
 
   app.post("/internal/local-transcripts/:contentId", async (c) => {

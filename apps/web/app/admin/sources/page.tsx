@@ -101,7 +101,7 @@ export default async function AdminSourcesPage({
         </p>
       ) : null}
       {query.tiktok === "followed" ? (
-        <p role="status">TikTok creator followed. The next hourly run lists their videos and keeps the card ones.</p>
+        <p role="status">TikTok creator followed. Your computer lists their videos in its next nightly run and Sentiment keeps the card ones.</p>
       ) : null}
       {query.seed === "requested" ? (
         <p role="status">
@@ -229,11 +229,11 @@ export default async function AdminSourcesPage({
       ))}
       <h2 id="tiktok">TikTok creators</h2>
       <p className="muted">
-        Follow a creator by pasting their profile link. Every 12 hours the worker lists their newest videos through
-        ScrapeCreators (PROVIDER_TIKTOK_MODE=live, SCRAPECREATORS_API_KEY), reads each caption and keeps only the videos
-        about cards: a card name, or words like pokemon, booster, PSA or pulls. The first check goes back a year. Kept
-        videos get transcripts from the transcript service (TRANSCRIPT_PROVIDER=supadata) in the hourly transcript run,
-        and card names become calls. You can also paste single video links. Sentiment never downloads TikTok videos.
+        Follow a creator by pasting their profile link. Each night (3–7am Arizona) your computer lists their newest
+        videos with the free yt-dlp tool (captions and dates only, never the videos; tools/local-whisper) and Sentiment
+        keeps only the videos about cards: a card name, or words like pokemon, booster, PSA or pulls. The first listing
+        goes back a year. Kept videos get transcripts from the transcript service (TRANSCRIPT_PROVIDER=supadata) in the
+        hourly transcript run, and card names become calls. You can also paste single video links.
       </p>
       <form className="inline-form" action={followTikTokCreatorAction}>
         <label>

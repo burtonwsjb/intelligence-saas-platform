@@ -11,6 +11,11 @@ cannot finish before the window closes is handed back and picked up the next
 night. YouTube audio is never downloaded: the queue only holds podcast
 episodes.
 
+Before the episodes, it also lists the newest videos of the TikTok creators
+followed on Admin -> Sources, with the free yt-dlp tool in metadata-only mode
+(--skip-download: captions, ids and dates, never the videos), and sends them to
+Sentiment, which keeps the card videos. No paid service is used.
+
 Run with the Transcriber app's Python, which already has faster-whisper and
 CUDA:
 
@@ -26,6 +31,7 @@ import argparse
 import json
 import os
 import socket
+import subprocess
 import sys
 import tempfile
 import time
@@ -58,6 +64,9 @@ class Settings:
     window_start: str = "03:00"
     window_end: str = "07:00"
     worker: str = socket.gethostname()[:60]
+    tiktok_listing: bool = True
+    # Extra yt-dlp options, e.g. ["--cookies-from-browser", "chrome"] if TikTok starts refusing anonymous listing.
+    ytdlp_args: tuple = ("--impersonate", "chrome")
 
 
 def load_settings(path: Path) -> Settings:
@@ -69,6 +78,12 @@ def load_settings(path: Path) -> Settings:
     if len(token) < 32:
         raise SystemExit("token must be the LOCAL_TRANSCRIBER_TOKEN set on Sentiment's API (32+ characters).")
     known = {k: data[k] for k in ("model", "language", "window_start", "window_end", "worker") if k in data}
+    if "tiktok_listing" in data:
+        known["tiktok_listing"] = bool(data["tiktok_listing"])
+    if "ytdlp_args" in data:
+        if not isinstance(data["ytdlp_args"], list) or not all(isinstance(a, str) for a in data["ytdlp_args"]):
+            raise SystemExit("ytdlp_args must be a list of strings.")
+        known["ytdlp_args"] = tuple(data["ytdlp_args"])
     return Settings(api_url=api_url, token=token, **known)
 
 
@@ -149,6 +164,98 @@ class Api:
 
     def submit(self, content_id: str, body: dict) -> tuple[int, dict]:
         return self.post(f"/internal/local-transcripts/{urllib.parse.quote(content_id)}", body)
+
+    def claim_tiktok(self) -> list[dict]:
+        status, body = self.post("/internal/local-transcripts/tiktok/claim", {"limit": 10, "worker": self.settings.worker})
+        if status == 404:
+            return []  # an older Sentiment without TikTok listing
+        if status != 200:
+            raise RuntimeError(f"TikTok claim failed: HTTP {status}")
+        return body.get("profiles") or []
+
+    def submit_tiktok(self, source_account_id: str, body: dict) -> tuple[int, dict]:
+        return self.post(f"/internal/local-transcripts/tiktok/{urllib.parse.quote(source_account_id)}", body)
+
+
+TIKTOK_LIST_TIMEOUT_S = 600
+
+
+def ytdlp_list_command(settings: Settings, profile_url: str, max_videos: int) -> list[str]:
+    """yt-dlp in metadata-only mode: prints one JSON line per video, downloads nothing."""
+    return [
+        sys.executable, "-m", "yt_dlp",
+        "--skip-download", "--dump-json", "--ignore-errors", "--no-warnings", "--no-progress",
+        "--playlist-end", str(max(1, min(int(max_videos), 1000))),
+        *settings.ytdlp_args,
+        profile_url,
+    ]
+
+
+def parse_ytdlp_listing(stdout: str) -> list[dict]:
+    """The videos in yt-dlp's --dump-json output, as Sentiment's listing format."""
+    videos = []
+    for line in stdout.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            item = json.loads(line)
+        except ValueError:
+            continue
+        video_id = str(item.get("id") or "")
+        if not video_id.isdigit():
+            continue
+        videos.append({
+            "id": video_id,
+            "caption": str(item.get("description") or item.get("title") or "")[:2200],
+            "timestamp": item.get("timestamp"),
+            "duration": item.get("duration"),
+        })
+    return videos
+
+
+def list_tiktok_profiles(api: "Api", settings: Settings, deadline: datetime, runner=subprocess.run) -> int:
+    """Lists every claimed TikTok profile and sends the videos to Sentiment. Returns profiles listed."""
+    listed = 0
+    while True:
+        remaining = (deadline - datetime.now(timezone.utc) - SAFETY_MARGIN).total_seconds()
+        if remaining <= 60:
+            return listed
+        profiles = api.claim_tiktok()
+        if not profiles:
+            return listed
+        for profile in profiles:
+            remaining = (deadline - datetime.now(timezone.utc) - SAFETY_MARGIN).total_seconds()
+            account = profile["source_account_id"]
+            handle = profile.get("handle") or account
+            command = ytdlp_list_command(settings, profile["profile_url"], profile.get("max_videos", 60))
+            started = time.monotonic()
+            try:
+                done = runner(command, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                              timeout=min(TIKTOK_LIST_TIMEOUT_S, max(60, remaining)))
+            except FileNotFoundError:
+                api.submit_tiktok(account, {"status": "error", "reason": "ytdlp_missing", "tool": "yt-dlp"})
+                log("yt-dlp is not installed in this Python; TikTok listing skipped (pip install \"yt-dlp[default,curl-cffi]\")")
+                return listed
+            except subprocess.TimeoutExpired:
+                api.submit_tiktok(account, {"status": "error", "reason": "ytdlp_timeout", "tool": "yt-dlp"})
+                log(f"TikTok @{handle}: listing timed out")
+                continue
+            videos = parse_ytdlp_listing(done.stdout or "")
+            if not videos and done.returncode != 0:
+                if "No module named yt_dlp" in (done.stderr or ""):
+                    api.submit_tiktok(account, {"status": "error", "reason": "ytdlp_missing", "tool": "yt-dlp"})
+                    log("yt-dlp is not installed in this Python; TikTok listing skipped (pip install \"yt-dlp[default,curl-cffi]\")")
+                    return listed
+                api.submit_tiktok(account, {"status": "error", "reason": f"ytdlp_exit_{done.returncode}", "tool": "yt-dlp"})
+                log(f"TikTok @{handle}: yt-dlp failed (exit {done.returncode})")
+                continue
+            status, body = api.submit_tiktok(account, {"status": "ok", "videos": videos, "tool": "yt-dlp"})
+            listed += 1
+            log(
+                f"TikTok @{handle}: {len(videos)} videos read in {time.monotonic() - started:.0f}s; "
+                f"Sentiment kept {body.get('kept', '?')}, skipped {body.get('skipped', '?')} (HTTP {status})"
+            )
 
 
 class DownloadGone(Exception):
@@ -251,6 +358,11 @@ def run(settings: Settings, ignore_window: bool = False, max_jobs: int = 1000) -
     transcriber = Transcriber(settings)
     done = 0
     log(f"started; window closes {deadline.astimezone(ARIZONA):%H:%M} Arizona time")
+    if settings.tiktok_listing:
+        try:
+            list_tiktok_profiles(api, settings, deadline)
+        except Exception as error:  # listing trouble never blocks the podcast episodes
+            log(f"TikTok listing stopped: {type(error).__name__}: {error}")
     while done < max_jobs:
         remaining = deadline - datetime.now(timezone.utc) - SAFETY_MARGIN
         if remaining <= timedelta(0):

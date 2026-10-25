@@ -29,7 +29,6 @@ import {
   retryUnboundDetectedMentions,
   traceSourcePost,
   syncPodcastFeeds,
-  syncTikTokProfiles,
   syncWebFeeds,
   transcriptProviderConfig,
   transcriptRequestBudget,
@@ -45,8 +44,6 @@ import {
   type MentionRetryReport,
   type AssetCallRescanReport,
   type PodcastFeedSyncReport,
-  type TikTokProfileSyncReport,
-  type TikTokVideoLister,
   type WebFeedSyncReport,
   type YoutubeBackfillReport,
 } from "@isp/db";
@@ -193,9 +190,8 @@ export async function runTccCatalogImport(
 /**
  * The hourly market work, one step after another: the TCG Card Central card
  * catalog (with card pictures), sealed products and a set asset for any new
- * set, new card videos of followed TikTok creators (when
- * PROVIDER_TIKTOK_MODE=live), transcript card mentions for new YouTube and
- * TikTok videos (when a transcript provider is configured), posts from registered influencer websites (when
+ * set, transcript card mentions for new YouTube and TikTok videos (when a
+ * transcript provider is configured), posts from registered influencer websites (when
  * PROVIDER_WEB_FEED_MODE=live), the 12-month YouTube and website backfills
  * (when their *_BACKFILL_DAYS are set), a Chart Sentiment coverage count, TCC
  * price history for calls without prices and the chart universe, scoring of calls that have come due, then a
@@ -207,7 +203,6 @@ export async function runMarketWork(db: Database, env: NodeJS.ProcessEnv = proce
   await runTccCatalogImport(db, env);
   await runSealedCatalogSync(db);
   await runSetCatalogSync(db);
-  await runTikTokProfileSync(db, env);
   await runTranscriptBackfill(db, env);
   await runWebFeedSync(db, env);
   await runPodcastFeedSync(db, env);
@@ -407,43 +402,6 @@ export async function runPodcastFeedSync(
     return report;
   } catch (error) {
     logLoopFailure("worker.podcast_feed_sync_failed", "podcast_feed_sync", error);
-    return null;
-  }
-}
-
-/**
- * Lists followed TikTok creators' newest videos and keeps the card ones
- * (source/tiktok-ingest.ts). Runs only with PROVIDER_TIKTOK_MODE=live and
- * SCRAPECREATORS_API_KEY; bounded by TIKTOK_PROFILE_REQUESTS_PER_DAY. Runs
- * before the transcript backfill so new videos are transcribed the same hour.
- */
-export async function runTikTokProfileSync(
-  db: Database,
-  env: NodeJS.ProcessEnv = process.env,
-  options: { lister?: TikTokVideoLister } = {},
-): Promise<TikTokProfileSyncReport | null> {
-  if (resolveProviderMode("tiktok", env) !== "live") {
-    return null;
-  }
-  try {
-    const report = await syncTikTokProfiles(db, { env, lister: options.lister });
-    if (report.status === "skipped" && report.reason === "nothing_due") return report;
-    logQueueEvent(report.status === "skipped" || report.status === "stopped" || report.failed > 0 ? "warn" : "info", "worker.tiktok_profile_sync", {
-      status: report.status,
-      reason: report.reason,
-      creators: report.creators,
-      failed: report.failed,
-      requests: report.requests,
-      listed: report.listed,
-      kept: report.kept,
-      skipped: report.skipped,
-      duplicates: report.duplicates,
-      mentions: report.mentions,
-      calls_created: report.callsCreated,
-    });
-    return report;
-  } catch (error) {
-    logLoopFailure("worker.tiktok_profile_sync_failed", "tiktok_profile_sync", error);
     return null;
   }
 }

@@ -49,7 +49,7 @@ export const PROVIDER_ADAPTER_NOTES: Record<ProviderKey, string> = {
   web_feed:
     "Influencer websites an operator registers: reads each site's RSS/Atom feed (robots.txt honored, bounded requests) and turns card names in posts into creator calls. Runs in the worker's hourly step, live mode only; no credentials.",
   tiktok:
-    "TikTok creators an operator follows by profile link: lists each creator's newest videos through ScrapeCreators (captions and dates only, no media), keeps the videos whose caption is about cards, and queues them for the transcript service. Runs in the worker's hourly step, live mode only.",
+    "TikTok creators an operator follows by profile link: the owner's own computer lists each creator's newest videos during its nightly run (free yt-dlp, captions and dates only, no media); Sentiment keeps the videos whose caption is about cards and queues them for the transcript service. No paid service, no credentials. Pause here to stop all listing.",
 };
 
 export const DEFAULT_SCHEDULE_SECONDS: Record<ProviderKey, number> = {
@@ -118,7 +118,7 @@ export const PROVIDER_CREDENTIAL_VARS: Record<ProviderKey, string[]> = {
   youtube: ["YOUTUBE_API_KEY"],
   google: ["GOOGLE_SEARCH_API_KEY", "GOOGLE_SEARCH_ENGINE_ID"],
   web_feed: [],
-  tiktok: ["SCRAPECREATORS_API_KEY"],
+  tiktok: [],
 };
 
 export function providerCredentialStatus(
