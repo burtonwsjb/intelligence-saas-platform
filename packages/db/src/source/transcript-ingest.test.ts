@@ -138,6 +138,16 @@ describe("ingestTranscriptForContent", () => {
     expect(await db.select().from(creatorCall).where(eq(creatorCall.contentId, id))).toHaveLength(1);
   });
 
+  it("gives back the reserved requests a fetch did not use", async () => {
+    const { db } = await setup();
+    await ingestSourceContentRecord(db, video("AbCdEfGhIj1", "2026-09-01T00:00:00Z"));
+    const id = await contentId(db, "AbCdEfGhIj1");
+    const { fetcher } = fakeFetcher([{ ...OK, requests: 1 }]);
+    await ingestTranscriptForContent(db, id, fetcher);
+    const [check] = await db.select().from(providerSyncRun).where(eq(providerSyncRun.id, transcriptCheckId(id)));
+    expect(check).toMatchObject({ status: "completed", limitCount: 1 });
+  });
+
   it("plans the same stable segment and mention ids every time", async () => {
     const { db } = await setup();
     const index = await loadCardNameIndex(db);

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-export const SOURCE_TYPES = ["youtube", "reddit", "web", "rss", "manual"] as const;
+export const SOURCE_TYPES = ["youtube", "reddit", "web", "rss", "manual", "tiktok"] as const;
 export const SOURCE_CONTENT_TYPES = ["video", "post", "comment", "article", "manual_note"] as const;
 export const SOURCE_SEGMENT_KINDS = ["timestamp_range", "paragraph", "comment"] as const;
 export const SOURCE_LICENSE_STATUSES = ["unknown", "reference_only", "bounded_excerpt", "licensed"] as const;

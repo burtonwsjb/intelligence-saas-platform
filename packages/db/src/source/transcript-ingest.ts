@@ -212,7 +212,7 @@ type Claim = { claimed: true } | { claimed: false; outcome: "already_checked" | 
  */
 async function claimTranscriptCheck(
   db: Database,
-  input: { contentId: string; reserve: number; budget: number | null; provider: string },
+  input: { contentId: string; reserve: number; budget: number | null; provider: string; urls: boolean },
 ): Promise<Claim> {
   return withPlatformContext<Claim>(db, async (tx) => {
     const [content] = await tx
@@ -220,7 +220,9 @@ async function claimTranscriptCheck(
       .from(sourceContent)
       .where(eq(sourceContent.id, input.contentId))
       .limit(1);
-    if (!content || content.sourceType !== "youtube" || content.contentType !== "video") {
+    const eligible =
+      content?.contentType === "video" && (content.sourceType === "youtube" || (input.urls && content.sourceType === "tiktok"));
+    if (!eligible) {
       return { claimed: false, outcome: "not_eligible" };
     }
     // Serializes claims across worker replicas so the daily budget is exact.
@@ -314,6 +316,7 @@ export async function ingestTranscriptForContent(
     reserve: fetcher.maxRequestsPerVideo,
     budget: options.budget ?? null,
     provider: fetcher.provider,
+    urls: typeof fetcher.fetchUrl === "function",
   });
   if (!claim.claimed) return { ...report, outcome: claim.outcome };
 
@@ -322,9 +325,20 @@ export async function ingestTranscriptForContent(
   );
   let result: TranscriptResult;
   try {
-    result = await fetcher.fetch(content!.externalContentId, { lang: options.lang ?? "en" });
+    const lang = { lang: options.lang ?? "en" };
+    result =
+      content!.sourceType === "tiktok" && fetcher.fetchUrl
+        ? await fetcher.fetchUrl(content!.canonicalUrl, lang)
+        : await fetcher.fetch(content!.externalContentId, lang);
   } catch {
     result = { status: "error", reason: "fetcher_failed" };
+  }
+  if (typeof result.requests === "number" && result.requests >= 0 && result.requests < fetcher.maxRequestsPerVideo) {
+    // The claim reserved the worst case; give back what the fetch did not use.
+    const used = result.requests;
+    await withPlatformContext(db, (tx) =>
+      tx.update(providerSyncRun).set({ limitCount: used }).where(eq(providerSyncRun.id, transcriptCheckId(contentId))),
+    );
   }
 
   if (result.status === "unavailable") {
@@ -450,7 +464,8 @@ export async function runTranscriptBackfillBatch(
     const candidates = rowsOf<{ id: string }>(
       await tx.execute(sql`
         SELECT sc.id FROM source_content sc
-        WHERE sc.source_type = 'youtube' AND sc.content_type = 'video'
+        WHERE sc.content_type = 'video'
+          AND (sc.source_type = 'youtube' OR (${typeof fetcher.fetchUrl === "function"}::boolean AND sc.source_type = 'tiktok'))
           AND NOT EXISTS (
             SELECT 1 FROM provider_sync_run r
             WHERE r.id = ${TRANSCRIPT_CHECK_ID_PREFIX}::text || sc.id
@@ -466,7 +481,7 @@ export async function runTranscriptBackfillBatch(
               AND (SELECT te.trust_state FROM creator_trust_event te
                    WHERE te.creator_id = csa.creator_id
                    ORDER BY te.created_at DESC LIMIT 1) = 'excluded')
-        ORDER BY sc.published_at DESC, sc.id
+        ORDER BY (sc.source_type = 'tiktok') DESC, sc.published_at DESC, sc.id
         LIMIT ${maxVideos}`),
     );
     if (candidates.length === 0) return { skip: "nothing_to_check" as const };

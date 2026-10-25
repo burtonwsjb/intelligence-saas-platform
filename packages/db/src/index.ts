@@ -525,6 +525,17 @@ export {
   type PodcastFeedSyncReport,
 } from "./source/podcast-ingest.js";
 export {
+  TIKTOK_MAX_LINKS_PER_ADD,
+  TikTokLinkError,
+  addTikTokVideoLinks,
+  listTikTokAccounts,
+  parseTikTokVideoLink,
+  tiktokAccountId,
+  tiktokVideoTime,
+  type TikTokAccountRow,
+  type TikTokAddReport,
+} from "./source/tiktok-ingest.js";
+export {
   LOCAL_TRANSCRIPT_MAX_CLAIM,
   LOCAL_TRANSCRIPT_PROVIDER,
   LocalTranscriptValidationError,
