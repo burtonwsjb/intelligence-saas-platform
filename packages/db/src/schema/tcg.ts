@@ -2,8 +2,10 @@ import {
   boolean,
   date,
   index,
+  integer,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -117,6 +119,23 @@ export const tcgPrintingImage = pgTable("tcg_printing_image", {
   sourceKey: text("source_key").notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+/** Requests from tcgcardcentral.com for a printing (scans, card pages, collections), per UTC day. */
+export const tcgPrintingDemand = pgTable(
+  "tcg_printing_demand",
+  {
+    printingId: text("printing_id")
+      .notNull()
+      .references(() => tcgPrinting.id),
+    day: date("day").notNull(),
+    requests: integer("requests").default(0).notNull(),
+    lastRequestedAt: timestamp("last_requested_at", { withTimezone: true }).notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.printingId, table.day] }),
+    dayIdx: index("tcg_printing_demand_day_idx").on(table.day),
+  }),
+);
 
 export const tcgPrintingIdentifier = pgTable(
   "tcg_printing_identifier",

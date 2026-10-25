@@ -210,6 +210,7 @@ export {
   type CardImagePick,
   type PickedCardImage,
 } from "./tcg/card-image.js";
+export { recordPrintingDemand } from "./tcg/printing-demand.js";
 export {
   TcgMarketRevisionError,
   TcgMarketValidationError,

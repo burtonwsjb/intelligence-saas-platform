@@ -54,6 +54,7 @@ import {
   type SentimentSummary,
   type TopicCalls,
   type WebhookFetch,
+  recordPrintingDemand,
 } from "@isp/db";
 import {
   EntitlementDeniedError,
@@ -668,6 +669,8 @@ export function registerCommercialRoutes(
       if (!row) {
         return jsonError("not_found", "No printing for this TCG Card Central card in this language.", 404, requestId);
       }
+      // A scan or card page on tcgcardcentral.com: counted so the hourly rescore refreshes this card first.
+      await recordPrintingDemand(c.get("db"), [row.printing.id]);
       const hidden = await hiddenCreatorIds(c.get("db"), c.get("machine"));
       const [sentiment, calls, chart] = await Promise.all([
         getCardSentimentWithHistory(c.get("db"), row.printing.id, window, { hiddenCreatorIds: hidden }),
@@ -698,6 +701,7 @@ export function registerCommercialRoutes(
       const to = new Date();
       const range = { from: new Date(to.getTime() - EXPLORER_WINDOW_DAYS[window] * 86_400_000), to };
       const printingIds = [...new Set(printings.values())];
+      await recordPrintingDemand(c.get("db"), printingIds);
       const [evidence, charts] = await Promise.all([
         listSentimentEvidence(c.get("db"), printingIds, range, { hiddenCreatorIds: hidden }),
         getChartSentiment(c.get("db"), printingIds),
