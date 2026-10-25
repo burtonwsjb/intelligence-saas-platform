@@ -31,6 +31,8 @@ import {
   registerWebFeedSite,
   registerPodcastFeed,
   addTikTokVideoLinks,
+  followTikTokCreator,
+  setTikTokFollowState,
   TikTokLinkError,
   setPodcastFeedState,
   PodcastFeedError,
@@ -380,6 +382,48 @@ export async function addTikTokVideoLinksAction(formData: FormData) {
   redirect(
     `/admin/sources?tiktok=added&added=${report.added}&duplicates=${report.duplicates}&rejected=${report.rejected.length}#tiktok`,
   );
+}
+
+/** Follows a TikTok creator by profile link: the worker lists their videos and keeps the card ones (platform operators only). */
+export async function followTikTokCreatorAction(formData: FormData) {
+  const operator = await requireGrantedOperator();
+  if (!operator.adminDb) {
+    redirect("/admin/sources?error=config");
+  }
+  try {
+    await followTikTokCreator(operator.adminDb, {
+      profile: String(formData.get("profile") ?? ""),
+      displayName: String(formData.get("displayName") ?? "") || null,
+      actorUserId: operator.session.user.id,
+    });
+  } catch (error) {
+    if (error instanceof TikTokLinkError) {
+      redirect(`/admin/sources?error=tiktok_${error.code}#tiktok`);
+    }
+    throw error;
+  }
+  redirect("/admin/sources?tiktok=followed#tiktok");
+}
+
+/** Pauses or resumes a followed TikTok creator (platform operators only). */
+export async function setTikTokFollowStateAction(formData: FormData) {
+  const operator = await requireGrantedOperator();
+  if (!operator.adminDb) {
+    redirect("/admin/sources?error=config");
+  }
+  try {
+    await setTikTokFollowState(operator.adminDb, {
+      sourceAccountId: String(formData.get("sourceAccountId") ?? ""),
+      state: String(formData.get("state") ?? "") === "paused" ? "paused" : "active",
+      actorUserId: operator.session.user.id,
+    });
+  } catch (error) {
+    if (error instanceof TikTokLinkError) {
+      redirect("/admin/sources?error=rejected#tiktok");
+    }
+    throw error;
+  }
+  redirect("/admin/sources#tiktok");
 }
 
 /** Pauses or resumes a registered podcast (platform operators only). */

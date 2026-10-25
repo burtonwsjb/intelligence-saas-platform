@@ -20,6 +20,7 @@ export const PROVIDER_KEYS = [
   "youtube",
   "google",
   "web_feed",
+  "tiktok",
 ] as const;
 export type ProviderKey = (typeof PROVIDER_KEYS)[number];
 

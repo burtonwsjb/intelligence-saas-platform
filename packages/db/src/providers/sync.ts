@@ -45,6 +45,7 @@ import { ProviderHttpError, type HttpTransport } from "./transport.js";
 import { intelligenceQuarantine } from "../schema/provider.js";
 import { safePayloadSummary } from "./safe.js";
 import { syncWebFeeds } from "../source/web-feed-ingest.js";
+import { syncTikTokProfiles } from "../source/tiktok-ingest.js";
 
 export class ProviderSyncError extends Error {
   readonly errorClass: string;
@@ -122,6 +123,12 @@ export async function syncProvider(db: Database, input: ProviderSyncInput) {
     const status = report.status === "skipped" ? ("skipped" as const) : ("completed" as const);
     return { status, reason: report.reason, received: report.newPosts, quarantined: 0 };
   }
+  // Followed TikTok creators are checked by their own bounded batch (also the worker's hourly step).
+  if (input.providerKey === "tiktok") {
+    const report = await syncTikTokProfiles(db, { env: input.env, transport: input.transport });
+    const status = report.status === "skipped" ? ("skipped" as const) : ("completed" as const);
+    return { status, reason: report.reason, received: report.kept, quarantined: 0 };
+  }
   // Social discovery manages short independent transactions so HTTP failures do
   // not roll back request reservations. Market normalization keeps its existing scope.
   if (!isDiscoveryProviderKey(input.providerKey)) return withPlatformContext(db, (tx) => syncProviderInTransaction(tx, input));
@@ -186,7 +193,8 @@ async function syncProviderInTransaction(
   if (
     !isProviderKey(input.providerKey) ||
     isDiscoveryProviderKey(input.providerKey) ||
-    input.providerKey === "web_feed"
+    input.providerKey === "web_feed" ||
+    input.providerKey === "tiktok"
   ) {
     throw new ProviderSyncError("Unknown provider.", "invalid_provider");
   }
@@ -321,8 +329,8 @@ export async function enqueueDueProviderSyncs(db: Database, env: NodeJS.ProcessE
   const due: string[] = [];
   const now = new Date();
   for (const row of rows) {
-    // Website feeds are read by the worker's hourly step, not the sync queue.
-    if (row.providerKey === "web_feed") {
+    // Website feeds and TikTok profiles are read by the worker's hourly step, not the sync queue.
+    if (row.providerKey === "web_feed" || row.providerKey === "tiktok") {
       continue;
     }
     const decision = decideProviderSyncDue(row, now);
