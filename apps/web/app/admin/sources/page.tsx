@@ -15,6 +15,7 @@ import { requireGrantedOperator } from "@/lib/platform-admin";
 import { getDb } from "@/lib/auth";
 import {
   addTikTokVideoLinksAction,
+  followTikTokCreatorAction,
   registerPodcastFeedAction,
   registerWebFeedSiteAction,
   requestInfluencerSeedAction,
@@ -22,6 +23,7 @@ import {
   setProviderEnabledAction,
   setProviderPausedAction,
   setPodcastFeedStateAction,
+  setTikTokFollowStateAction,
   setWebFeedSiteStateAction,
   triggerProviderSyncAction,
 } from "@/app/admin-actions";
@@ -81,6 +83,8 @@ export default async function AdminSourcesPage({
         <p className="form-error">Podcast rejected: use the public http(s) address of the podcast&apos;s RSS feed.</p>
       ) : query.error === "tiktok_migration_missing" ? (
         <p className="form-error">TikTok needs database update 0039_tiktok_source before links can be added.</p>
+      ) : query.error === "tiktok_invalid_profile" ? (
+        <p className="form-error">Paste a TikTok profile link, like https://www.tiktok.com/@creator.</p>
       ) : query.error?.startsWith("tiktok_") ? (
         <p className="form-error">Paste between 1 and 100 TikTok video links (tiktok.com/@name/video/…).</p>
       ) : query.error === "seed_unconfirmed" ? (
@@ -95,6 +99,9 @@ export default async function AdminSourcesPage({
           TikTok links: {Number(query.added ?? 0)} added, {Number(query.duplicates ?? 0)} already there,{" "}
           {Number(query.rejected ?? 0)} not recognized as video links.
         </p>
+      ) : null}
+      {query.tiktok === "followed" ? (
+        <p role="status">TikTok creator followed. The next hourly run lists their videos and keeps the card ones.</p>
       ) : null}
       {query.seed === "requested" ? (
         <p role="status">
@@ -222,15 +229,27 @@ export default async function AdminSourcesPage({
       ))}
       <h2 id="tiktok">TikTok creators</h2>
       <p className="muted">
-        Paste TikTok video links (tiktok.com/@name/video/…). Each becomes a video of that creator; the transcript service
-        (TRANSCRIPT_PROVIDER=supadata) fetches its transcript in the hourly transcript run, TikTok links first, and card
-        names in it become calls. Sentiment never downloads TikTok videos and does not list a creator&apos;s videos on
-        its own. Needs database update 0039_tiktok_source.
+        Follow a creator by pasting their profile link. Every 12 hours the worker lists their newest videos through
+        ScrapeCreators (PROVIDER_TIKTOK_MODE=live, SCRAPECREATORS_API_KEY), reads each caption and keeps only the videos
+        about cards: a card name, or words like pokemon, booster, PSA or pulls. The first check goes back a year. Kept
+        videos get transcripts from the transcript service (TRANSCRIPT_PROVIDER=supadata) in the hourly transcript run,
+        and card names become calls. You can also paste single video links. Sentiment never downloads TikTok videos.
       </p>
+      <form className="inline-form" action={followTikTokCreatorAction}>
+        <label>
+          Profile link
+          <input name="profile" required placeholder="https://www.tiktok.com/@creator" />
+        </label>
+        <label>
+          Display name (optional)
+          <input name="displayName" />
+        </label>
+        <button type="submit">Follow creator</button>
+      </form>
       <form className="inline-form" action={addTikTokVideoLinksAction}>
         <label>
-          Video links (one per line)
-          <textarea name="links" rows={4} required placeholder="https://www.tiktok.com/@creator/video/7400000000000000000" />
+          Single video links (one per line)
+          <textarea name="links" rows={3} required placeholder="https://www.tiktok.com/@creator/video/7400000000000000000" />
         </label>
         <label>
           Display name (optional)
@@ -239,14 +258,36 @@ export default async function AdminSourcesPage({
         <button type="submit">Add videos</button>
       </form>
       {tiktokAccounts.length === 0 ? <p className="muted">No TikTok creators yet.</p> : null}
-      <ul>
-        {tiktokAccounts.map((account) => (
-          <li key={account.sourceAccountId}>
-            {account.displayName ?? `@${account.handle}`} · @{account.handle} · videos {account.videos} · transcripts
-            checked {account.transcribed} · calls {account.calls}
-          </li>
-        ))}
-      </ul>
+      {tiktokAccounts.map((account) => (
+        <section key={account.sourceAccountId}>
+          <h3>
+            {account.displayName ?? `@${account.handle}`} · @{account.handle}
+          </h3>
+          <p className="muted">
+            {account.followState ? (account.followState === "paused" ? "Paused" : "Followed") : "Pasted links only"} ·
+            videos {account.videos} · transcripts checked {account.transcribed} · calls {account.calls}
+            {account.lastCheckAt
+              ? ` · last check ${account.lastCheckAt.toISOString().slice(0, 16).replace("T", " ")} UTC ${account.lastStatus ?? ""}${
+                  account.lastErrorClass ? ` (${account.lastErrorClass})` : ""
+                }${account.lastKept != null ? `, kept ${account.lastKept}, skipped ${account.lastSkipped ?? 0}` : ""}`
+              : account.followState
+                ? " · not checked yet"
+                : ""}
+          </p>
+          {account.followState ? (
+            <form className="inline-form" action={setTikTokFollowStateAction}>
+              <input type="hidden" name="sourceAccountId" value={account.sourceAccountId} />
+              <input type="hidden" name="state" value={account.followState === "paused" ? "active" : "paused"} />
+              <button type="submit">{account.followState === "paused" ? "Resume" : "Pause"}</button>
+            </form>
+          ) : (
+            <form className="inline-form" action={followTikTokCreatorAction}>
+              <input type="hidden" name="profile" value={account.handle} />
+              <button type="submit">Follow this creator</button>
+            </form>
+          )}
+        </section>
+      ))}
       <h2 id="influencer-seed">Influencer seed list</h2>
       <p className="muted">
         {POKEMON_INFLUENCER_SEEDS.length} Pokemon influencers ({POKEMON_INFLUENCER_SEED_VERSION}). Registering is

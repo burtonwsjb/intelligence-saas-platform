@@ -40,6 +40,7 @@ export function sourceTypeText(type: string): string {
     web: "Website post",
     web_feed: "Website post",
     web_article: "Website post",
+    tiktok: "TikTok video",
     transcript: "Video transcript",
   };
   return map[type] ?? type.replaceAll("_", " ").replace(/^\w/, (char) => char.toUpperCase());

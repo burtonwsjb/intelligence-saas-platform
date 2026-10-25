@@ -22,6 +22,7 @@ export const PROVIDER_ENV_MODE: Record<ProviderKey, string> = {
   youtube: "PROVIDER_YOUTUBE_MODE",
   google: "PROVIDER_GOOGLE_MODE",
   web_feed: "PROVIDER_WEB_FEED_MODE",
+  tiktok: "PROVIDER_TIKTOK_MODE",
 };
 
 export const PROVIDER_TYPE_BY_KEY: Record<ProviderKey, ProviderType> = {
@@ -32,6 +33,7 @@ export const PROVIDER_TYPE_BY_KEY: Record<ProviderKey, ProviderType> = {
   youtube: "social",
   google: "social",
   web_feed: "social",
+  tiktok: "social",
 };
 
 export const PROVIDER_ADAPTER_NOTES: Record<ProviderKey, string> = {
@@ -46,6 +48,8 @@ export const PROVIDER_ADAPTER_NOTES: Record<ProviderKey, string> = {
     "Programmable Search finds web articles for a topic; each website becomes a creator. Marketplaces and social sites covered elsewhere are skipped.",
   web_feed:
     "Influencer websites an operator registers: reads each site's RSS/Atom feed (robots.txt honored, bounded requests) and turns card names in posts into creator calls. Runs in the worker's hourly step, live mode only; no credentials.",
+  tiktok:
+    "TikTok creators an operator follows by profile link: lists each creator's newest videos through ScrapeCreators (captions and dates only, no media), keeps the videos whose caption is about cards, and queues them for the transcript service. Runs in the worker's hourly step, live mode only.",
 };
 
 export const DEFAULT_SCHEDULE_SECONDS: Record<ProviderKey, number> = {
@@ -56,6 +60,7 @@ export const DEFAULT_SCHEDULE_SECONDS: Record<ProviderKey, number> = {
   youtube: 1800,
   google: 3600,
   web_feed: 3600,
+  tiktok: 3600,
 };
 
 export function isProviderKey(value: string): value is ProviderKey {
@@ -113,6 +118,7 @@ export const PROVIDER_CREDENTIAL_VARS: Record<ProviderKey, string[]> = {
   youtube: ["YOUTUBE_API_KEY"],
   google: ["GOOGLE_SEARCH_API_KEY", "GOOGLE_SEARCH_ENGINE_ID"],
   web_feed: [],
+  tiktok: ["SCRAPECREATORS_API_KEY"],
 };
 
 export function providerCredentialStatus(
