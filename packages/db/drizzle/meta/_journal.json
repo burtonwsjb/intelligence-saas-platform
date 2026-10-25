@@ -260,6 +260,13 @@
       "when": 36,
       "tag": "0037_printing_image",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 37,
+      "tag": "0038_printing_demand",
+      "breakpoints": true
     }
   ]
 }

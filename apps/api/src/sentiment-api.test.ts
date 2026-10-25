@@ -193,6 +193,9 @@ describe("sentiment API for cards and products", () => {
     expect(batchChart.raw.insufficient_history).toBeUndefined();
     expect(batchChart.graded.map((row) => row.segment)).toEqual(["psa10"]);
     expect((await app.request("/v1/tcc/sentiment", { headers: auth })).status).toBe(400);
+    // The card page and the batch (scans, collections) each count one request for the card that day.
+    const demand = await client.query<{ requests: number }>("SELECT requests FROM tcg_printing_demand");
+    expect(demand.rows.map((row) => Number(row.requests))).toEqual([2]);
 
     // Hiding the creator removes their posts from this workspace's sentiment.
     await client.exec(`

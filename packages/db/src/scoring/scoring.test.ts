@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import {
   creatorConsensus,
   projectScoreToDecision,
@@ -21,6 +21,7 @@ import {
 } from "../index.js";
 import { SCORE_MODEL_REVISION, SCORE_POLICY_VERSION } from "./weights.js";
 import { runCardRescoreBatch } from "./rescore.js";
+import { recordPrintingDemand } from "../tcg/printing-demand.js";
 import type { ScoreInputs } from "./model.js";
 
 function baseInput(overrides: Partial<ScoreInputs> = {}): ScoreInputs {
@@ -337,5 +338,65 @@ describe("persisted scores and decision records", () => {
     const second = await runCardRescoreBatch(db, { asOf });
     expect(second.considered).toBe(0);
     expect((await runCardRescoreBatch(db, { asOf, batchSize: 0 })).reason).toBe("disabled");
+  });
+  it("rescores cards tcgcardcentral.com just asked about first, then the most requested", async () => {
+    const client = new PGlite();
+    await client.exec(await readMigrationSql());
+    const db = drizzle(client) as unknown as Database;
+    await seedTcgIdentityFixtures(db);
+    for (const record of tcgMarketFixtureRecords()) {
+      await ingestTcgMarketRecord(db, record);
+    }
+    const asOf = new Date("2026-01-10T00:00:00.000Z");
+    const first = await runCardRescoreBatch(db, { asOf });
+    expect(first.requested).toBe(0);
+    const printingIds = [...new Set((await db.select().from(tcgScoreSnapshot)).map((row) => row.printingId))].sort();
+    expect(printingIds.length).toBeGreaterThan(2);
+    // Score snapshots are immutable; move them three hours before asOf, as if the last run was then.
+    await client.exec(`SET session_replication_role = replica;
+      UPDATE tcg_score_snapshot SET created_at = '2026-01-09T21:00:00Z';
+      UPDATE tcg_market_snapshot SET created_at = '2026-01-09T20:00:00Z';
+      SET session_replication_role = DEFAULT;`);
+    expect((await runCardRescoreBatch(db, { asOf })).considered).toBe(0);
+
+    const scanned = printingIds[printingIds.length - 1]!;
+    await recordPrintingDemand(db, [scanned], new Date("2026-01-09T23:00:00.000Z"));
+    await recordPrintingDemand(db, [scanned, scanned], new Date("2026-01-09T23:30:00.000Z"));
+    const days = await db.execute(sql`select requests from tcg_printing_demand where printing_id = ${scanned}`);
+    const dayRows = (Array.isArray(days) ? days : (days as { rows: unknown[] }).rows) as { requests: number }[];
+    expect(dayRows.map((row) => Number(row.requests))).toEqual([2]);
+    // Each run scores as of its own time; a second score at the same asOf would be the same snapshot.
+    const later = new Date("2026-01-10T00:05:00.000Z");
+    const picked = await runCardRescoreBatch(db, { asOf: later, batchSize: 1 });
+    expect(picked).toMatchObject({ considered: 1, requested: 1, scored: 1, failed: 0 });
+    const latest = await db.select().from(tcgScoreSnapshot).where(eq(tcgScoreSnapshot.printingId, scanned));
+    expect(latest.length).toBe(2);
+
+    // A card asked about before its score is not "just requested", but its 30-day count still puts it ahead.
+    await client.exec(`SET session_replication_role = replica;
+      UPDATE tcg_score_snapshot SET created_at = '2026-01-08T00:00:00Z' WHERE printing_id <> '${scanned}';
+      SET session_replication_role = DEFAULT;`);
+    // Not the first id, so plain id order would not pick it.
+    const popular = printingIds[1]!;
+    await recordPrintingDemand(db, [popular, popular, popular], new Date("2026-01-07T12:00:00.000Z"));
+    const stale = await runCardRescoreBatch(db, { asOf: new Date("2026-01-10T00:10:00.000Z"), batchSize: 1 });
+    expect(stale).toMatchObject({ considered: 1, requested: 0, scored: 1 });
+    const popularScores = await db.select().from(tcgScoreSnapshot).where(eq(tcgScoreSnapshot.printingId, popular));
+    expect(popularScores.length).toBe(2);
+  });
+
+  it("keeps rescoring when the request table has not been created yet", async () => {
+    const client = new PGlite();
+    await client.exec(await readMigrationSql());
+    await client.exec(`DROP TABLE tcg_printing_demand`);
+    const db = drizzle(client) as unknown as Database;
+    await seedTcgIdentityFixtures(db);
+    for (const record of tcgMarketFixtureRecords()) {
+      await ingestTcgMarketRecord(db, record);
+    }
+    await recordPrintingDemand(db, ["prn_missing"]);
+    const report = await runCardRescoreBatch(db, { asOf: new Date("2026-01-10T00:00:00.000Z") });
+    expect(report.considered).toBeGreaterThan(0);
+    expect(report.failed).toBe(0);
   });
 });

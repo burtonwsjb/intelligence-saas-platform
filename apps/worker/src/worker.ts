@@ -545,7 +545,9 @@ export async function runCallScoring(db: Database, asOf = new Date()) {
 /**
  * Card scores: rescores up to CARD_RESCORE_BATCH_SIZE priced printings
  * (default 300, 0 = off) whose latest score is missing, from an older model
- * revision, older than their newest price, or older than 20 hours.
+ * revision, older than their newest price, older than 20 hours, or older
+ * than a request from tcgcardcentral.com. Just-requested cards go first (up
+ * to half the batch), then the backlog, then the most requested cards.
  * Database-only; an advisory lock keeps two replicas apart.
  */
 export async function runCardRescore(
@@ -561,6 +563,7 @@ export async function runCardRescore(
       status: report.status,
       reason: report.reason,
       considered: report.considered,
+      requested: report.requested,
       scored: report.scored,
       failed: report.failed,
     });
