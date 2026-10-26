@@ -9,6 +9,13 @@ publishes in its feed, transcribes it with faster-whisper (large-v3-turbo on the
 GPU), sends the timestamped text to Sentiment and deletes the audio. It stops
 taking work so it is done by 07:00, and hands back anything it could not finish.
 
+Before the episodes, it lists the newest videos of the TikTok creators followed
+on **Admin → Sources → TikTok creators**, using the free yt-dlp tool in
+metadata-only mode (`--skip-download`: captions, ids and dates, never the
+videos). Sentiment keeps the videos whose caption is about cards and gets their
+transcripts from the transcript service. Listing costs nothing; each creator is
+listed at most every 12 hours, the first time back a year.
+
 Only podcast audio is downloaded. YouTube audio is never downloaded, because that
 breaks YouTube's terms; YouTube videos need captions or a transcript service.
 
@@ -33,7 +40,18 @@ is discarded after card detection.
    powershell -ExecutionPolicy Bypass -File .\install-nightly-task.ps1
    ```
 
-   It asks for the API address and token once, saves them in
+   For TikTok listing, install yt-dlp into the Transcriber venv once:
+
+   ```powershell
+   & "$env:USERPROFILE\Documents\Business\Transcriber\venv\Scripts\python.exe" -m pip install -U "yt-dlp[default,curl-cffi]"
+   ```
+
+   Keep it current (TikTok changes often) by running the same command now and then.
+   If TikTok starts refusing anonymous listing, add
+   `"ytdlp_args": ["--impersonate", "chrome", "--cookies-from-browser", "chrome"]`
+   to `sentiment-whisper.json`; set `"tiktok_listing": false` to turn listing off.
+
+   The installer asks for the API address and token once, saves them in
    `sentiment-whisper.json` (ignored by git), and schedules the nightly task.
 
 Test one episode right away, outside the window:

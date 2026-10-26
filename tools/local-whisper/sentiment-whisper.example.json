@@ -4,5 +4,7 @@
   "model": "large-v3-turbo",
   "language": "en",
   "window_start": "03:00",
-  "window_end": "07:00"
+  "window_end": "07:00",
+  "tiktok_listing": true,
+  "ytdlp_args": ["--impersonate", "chrome"]
 }

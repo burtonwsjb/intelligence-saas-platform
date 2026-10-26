@@ -1,13 +1,14 @@
 /**
  * TikTok creators as a source. Two ways in, both on /admin/sources:
  *
- * - Follow a creator by profile link (tiktok.com/@handle). The worker lists
- *   the creator's newest videos through the listing service
- *   (providers/tiktok-videos.ts, PROVIDER_TIKTOK_MODE=live), reads each
- *   caption and keeps only the videos that are about cards: a catalog card
- *   name, or trading-card words such as "pokemon", "booster" or "psa". Other
- *   videos are counted and skipped, so the transcript service is never paid
- *   for a cooking video.
+ * - Follow a creator by profile link (tiktok.com/@handle). The owner's own
+ *   computer lists the creator's newest videos during its nightly run
+ *   (tools/local-whisper, with the free yt-dlp tool, captions and dates only,
+ *   never the videos) and sends them to /internal/local-transcripts/tiktok.
+ *   Each caption decides whether the video is kept: a catalog card name, or
+ *   trading-card words such as "pokemon", "booster" or "psa". Other videos
+ *   are counted and skipped, so the transcript service is never paid for a
+ *   cooking video. No paid listing service is used.
  * - Paste individual video links, kept as they are.
  *
  * Each kept video is a `tiktok` video of the creator's account; the
@@ -19,9 +20,10 @@
  *
  * Registry: no new table. A followed creator is a `source_account` row
  * (source_type `tiktok`) whose metadata carries `tiktok_follow` = { handle,
- * state, registered_at, registered_by, updated_at }. Each profile check is one
+ * state, registered_at, registered_by, updated_at }. Each listing is one
  * `provider_sync_run` row (provider `tiktok`, trigger `tiktok_profile`, id
- * `ptk_…`) whose checkpoint records what was kept and skipped.
+ * `ptk_…`): `started` when the computer claims the profile, then `completed`
+ * with what was kept and skipped, or `failed`.
  *
  * Needs migration 0039_tiktok_source (the `tiktok` source platform); until it
  * runs, adding links fails with TikTokLinkError("migration_missing").
@@ -31,19 +33,11 @@
  */
 import { createHash } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
-import { isHostedRuntime } from "@isp/shared";
 import type { Database } from "../client.js";
 import { ensureCreatorForSourceAccount, extractCreatorCallsFromContent } from "../creator/ingest.js";
 import { insertBreakGlassAudit } from "../platform/audit.js";
-import { SOURCE_NORMALIZER_VERSION, resolveProviderMode } from "../providers/catalog.js";
-import {
-  ensureProviderRuntimeRows,
-  getProviderRuntime,
-  releaseProviderLease,
-  tryAcquireProviderLease,
-} from "../providers/runtime.js";
-import { createTikTokVideoListerFromEnv, type TikTokListedVideo, type TikTokVideoLister } from "../providers/tiktok-videos.js";
-import type { HttpTransport } from "../providers/transport.js";
+import { SOURCE_NORMALIZER_VERSION } from "../providers/catalog.js";
+import { ensureProviderRuntimeRows, getProviderRuntime } from "../providers/runtime.js";
 import { withPlatformContext } from "../rls.js";
 import { providerSyncRun } from "../schema/provider.js";
 import { sourceAccount, sourceIngest } from "../schema/source.js";
@@ -59,10 +53,10 @@ export const TIKTOK_PROFILE_TRIGGER = "tiktok_profile";
 export const TIKTOK_PROFILE_RUN_ID_PREFIX = "ptk_";
 export const TIKTOK_PROFILE_MAX_PER_RUN = 10;
 export const TIKTOK_PROFILE_INTERVAL_HOURS = 12;
-/** Pages read on a creator's first check (the backfill) and on later checks. */
-export const TIKTOK_FIRST_CHECK_MAX_PAGES = 10;
-export const TIKTOK_LATER_CHECK_MAX_PAGES = 3;
-export const DEFAULT_TIKTOK_PROFILE_REQUESTS_PER_DAY = 60;
+/** Videos read from the top of a profile on a creator's first listing (the backfill) and on later ones. */
+export const TIKTOK_FIRST_CHECK_MAX_VIDEOS = 300;
+export const TIKTOK_LATER_CHECK_MAX_VIDEOS = 60;
+export const TIKTOK_MAX_LISTED_VIDEOS = 1_000;
 export const DEFAULT_TIKTOK_BACKFILL_DAYS = 365;
 const MAX_SKIPPED_SAMPLES = 5;
 
@@ -462,7 +456,7 @@ export async function setTikTokFollowState(
 }
 
 // ---------------------------------------------------------------------------
-// Checking followed profiles
+// Listing followed profiles on the owner's computer
 
 function boundedInteger(value: string | undefined, fallback: number, max: number, label: string) {
   if (value == null || value.trim() === "") return fallback;
@@ -473,116 +467,51 @@ function boundedInteger(value: string | undefined, fallback: number, max: number
   return parsed;
 }
 
-/** TIKTOK_PROFILE_REQUESTS_PER_DAY (listing pages, default 60) and TIKTOK_BACKFILL_DAYS (default 365). */
+/** TIKTOK_BACKFILL_DAYS: how far back a creator's first listing reads (default 365). */
 export function tiktokProfileConfig(env: NodeJS.ProcessEnv) {
   return {
-    budget: boundedInteger(env.TIKTOK_PROFILE_REQUESTS_PER_DAY, DEFAULT_TIKTOK_PROFILE_REQUESTS_PER_DAY, 10_000, "TikTok profile request budget"),
     backfillDays: boundedInteger(env.TIKTOK_BACKFILL_DAYS, DEFAULT_TIKTOK_BACKFILL_DAYS, 3_650, "TikTok backfill window"),
   };
 }
 
-export type TikTokProfileSyncReport = {
-  status: "completed" | "skipped" | "stopped";
-  reason: string | null;
-  creators: number;
-  failed: number;
-  requests: number;
-  listed: number;
-  kept: number;
-  skipped: number;
-  duplicates: number;
-  mentions: number;
-  callsCreated: number;
+export type TikTokProfileJob = {
+  source_account_id: string;
+  handle: string;
+  profile_url: string;
+  /** Only videos uploaded after this time are wanted. */
+  since: string;
+  /** Most videos to read from the top of the profile. */
+  max_videos: number;
+  first_check: boolean;
 };
 
-function emptyReport(): TikTokProfileSyncReport {
-  return {
-    status: "completed",
-    reason: null,
-    creators: 0,
-    failed: 0,
-    requests: 0,
-    listed: 0,
-    kept: 0,
-    skipped: 0,
-    duplicates: 0,
-    mentions: 0,
-    callsCreated: 0,
-  };
-}
-
-async function claimProfileCheck(
-  db: Database,
-  input: { accountId: string; handle: string; reserve: number; budget: number; intervalHours: number },
-): Promise<{ claimed: true; runId: string } | { claimed: false; reason: "budget_exhausted" | "already_checked" }> {
-  return withPlatformContext(db, async (tx) => {
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtext('tiktok_profile.sync.v1'))`);
-    const used = rowsOf<{ used: number | string | null }>(
-      await tx.execute(sql`
-        SELECT COALESCE(SUM(limit_count), 0) AS used FROM provider_sync_run
-        WHERE provider_key = 'tiktok' AND "trigger" = ${TIKTOK_PROFILE_TRIGGER}
-          AND (started_at AT TIME ZONE 'America/Los_Angeles')::date = (now() AT TIME ZONE 'America/Los_Angeles')::date`),
-    );
-    if (Number(used[0]?.used ?? 0) + input.reserve > input.budget) return { claimed: false, reason: "budget_exhausted" };
-    const recent = rowsOf<{ found: boolean }>(
-      await tx.execute(sql`
-        SELECT EXISTS (
-          SELECT 1 FROM provider_sync_run
-          WHERE provider_key = 'tiktok' AND "trigger" = ${TIKTOK_PROFILE_TRIGGER}
-            AND checkpoint->>'account_id' = ${input.accountId}
-            AND started_at > now() - (${input.intervalHours}::float8 * interval '1 hour')
-        ) AS found`),
-    );
-    if (recent[0]?.found) return { claimed: false, reason: "already_checked" };
-    const runId = `${TIKTOK_PROFILE_RUN_ID_PREFIX}${createHash("sha256")
-      .update(`${input.accountId}|${new Date().toISOString()}|${Math.random()}`)
-      .digest("hex")
-      .slice(0, 32)}`;
-    await tx.insert(providerSyncRun).values({
-      id: runId,
-      providerKey: "tiktok",
-      mode: "live",
-      trigger: TIKTOK_PROFILE_TRIGGER,
-      status: "started",
-      limitCount: input.reserve,
-      checkpoint: { account_id: input.accountId, handle: input.handle },
-    });
-    return { claimed: true, runId };
-  });
+function cleanWorker(value: string | undefined): string {
+  return (value ?? "").replace(/[^A-Za-z0-9 ._-]/g, "").trim().slice(0, 60) || "unknown";
 }
 
 /**
- * Checks the followed, active creators that are due (not checked within
- * `intervalHours`), oldest check first, at most `maxCreators`, within the
- * daily page `budget`. The first check of a creator reads back to
- * `backfillDays`; later checks stop at the newest video already seen. Each
- * listed video's caption decides whether it is kept (decideTikTokVideo).
- * Creators an operator excluded are skipped.
+ * Hands the owner's computer the followed, active creators whose profile is
+ * due (not listed within TIKTOK_PROFILE_INTERVAL_HOURS), oldest check first.
+ * Each claim is a `started` run; a claim older than the interval lapses, so a
+ * computer that switched off does not hold it. Creators an operator excluded
+ * and a paused `tiktok` provider are skipped.
  */
-export async function runTikTokProfileSyncBatch(
+export async function claimTikTokProfileJobs(
   db: Database,
-  input: {
-    lister: TikTokVideoLister;
-    budget: number;
-    backfillDays?: number;
-    maxCreators?: number;
-    intervalHours?: number;
-    env?: NodeJS.ProcessEnv;
-    now?: Date;
-  },
-): Promise<TikTokProfileSyncReport> {
-  const report = emptyReport();
-  const maxCreators = Math.max(0, Math.min(input.maxCreators ?? TIKTOK_PROFILE_MAX_PER_RUN, TIKTOK_PROFILE_MAX_PER_RUN));
-  const intervalHours = Math.max(0, input.intervalHours ?? TIKTOK_PROFILE_INTERVAL_HOURS);
-  const backfillDays = input.backfillDays ?? DEFAULT_TIKTOK_BACKFILL_DAYS;
-  if (maxCreators === 0 || input.budget < 1) return { ...report, status: "skipped", reason: "no_budget" };
-
-  const setup = await withPlatformContext(db, async (tx) => {
-    await ensureProviderRuntimeRows(tx, input.env ?? process.env);
-    if ((await getProviderRuntime(tx, "tiktok"))?.paused) return { skip: "paused" as const };
-    const candidates = rowsOf<{ id: string; display_name: string | null; registration: unknown; newest_at: string | null }>(
+  input: { limit?: number; worker?: string; env?: NodeJS.ProcessEnv; now?: Date } = {},
+): Promise<TikTokProfileJob[]> {
+  const env = input.env ?? process.env;
+  const limit = Math.max(1, Math.min(Math.floor(input.limit ?? TIKTOK_PROFILE_MAX_PER_RUN), TIKTOK_PROFILE_MAX_PER_RUN));
+  const now = input.now ?? new Date();
+  const backfillFloor = new Date(now.getTime() - tiktokProfileConfig(env).backfillDays * 86_400_000);
+  const worker = cleanWorker(input.worker);
+  return withPlatformContext(db, async (tx) => {
+    await ensureProviderRuntimeRows(tx, env);
+    if ((await getProviderRuntime(tx, "tiktok"))?.paused) return [];
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext('tiktok_profile.claim.v1'))`);
+    const due = rowsOf<{ id: string; registration: unknown; newest_at: string | null }>(
       await tx.execute(sql`
-        SELECT sa.id, sa.display_name, sa.metadata->'tiktok_follow' AS registration,
+        SELECT sa.id, sa.metadata->'tiktok_follow' AS registration,
           (SELECT max(r.checkpoint->>'newest_at') FROM provider_sync_run r
             WHERE r.provider_key = 'tiktok' AND r."trigger" = ${TIKTOK_PROFILE_TRIGGER}
               AND r.status = 'completed' AND r.checkpoint->>'account_id' = sa.id) AS newest_at
@@ -595,7 +524,7 @@ export async function runTikTokProfileSyncBatch(
         ) latest ON true
         WHERE sa.source_type = 'tiktok' AND sa.status = 'active'
           AND sa.metadata->'tiktok_follow'->>'state' = 'active'
-          AND (latest.started_at IS NULL OR latest.started_at <= now() - (${intervalHours}::float8 * interval '1 hour'))
+          AND (latest.started_at IS NULL OR latest.started_at <= now() - (${TIKTOK_PROFILE_INTERVAL_HOURS}::float8 * interval '1 hour'))
           AND NOT EXISTS (
             SELECT 1 FROM creator_source_account csa
             WHERE csa.source_account_id = sa.id
@@ -603,80 +532,157 @@ export async function runTikTokProfileSyncBatch(
                    WHERE te.creator_id = csa.creator_id
                    ORDER BY te.created_at DESC LIMIT 1) = 'excluded')
         ORDER BY latest.started_at ASC NULLS FIRST, sa.id
-        LIMIT ${maxCreators}`),
+        LIMIT ${limit}`),
     );
-    if (candidates.length === 0) return { skip: "nothing_due" as const };
-    return { candidates, index: await loadCardNameIndex(tx) };
+    const jobs: TikTokProfileJob[] = [];
+    for (const row of due) {
+      const handle = asText(jsonValue(row.registration).handle);
+      if (!handle) continue;
+      const previous = row.newest_at ? new Date(row.newest_at) : null;
+      const firstCheck = !previous || Number.isNaN(previous.getTime());
+      const since = firstCheck ? backfillFloor : new Date(Math.max(previous!.getTime(), backfillFloor.getTime()));
+      const runId = `${TIKTOK_PROFILE_RUN_ID_PREFIX}${createHash("sha256")
+        .update(`${row.id}|${now.toISOString()}|${Math.random()}`)
+        .digest("hex")
+        .slice(0, 32)}`;
+      await tx.insert(providerSyncRun).values({
+        id: runId,
+        providerKey: "tiktok",
+        mode: "live",
+        trigger: TIKTOK_PROFILE_TRIGGER,
+        status: "started",
+        checkpoint: { account_id: row.id, handle, worker, since: since.toISOString(), first_check: firstCheck },
+      });
+      jobs.push({
+        source_account_id: row.id,
+        handle,
+        profile_url: `https://www.tiktok.com/@${handle}`,
+        since: since.toISOString(),
+        max_videos: firstCheck ? TIKTOK_FIRST_CHECK_MAX_VIDEOS : TIKTOK_LATER_CHECK_MAX_VIDEOS,
+        first_check: firstCheck,
+      });
+    }
+    return jobs;
   });
-  if ("skip" in setup) return { ...report, status: "skipped", reason: setup.skip ?? null };
+}
 
-  const now = input.now ?? new Date();
-  const backfillFloor = new Date(now.getTime() - backfillDays * 86_400_000);
-  for (const candidate of setup.candidates) {
-    const handle = asText(jsonValue(candidate.registration).handle);
-    if (!handle) continue;
-    const previousNewest = candidate.newest_at ? new Date(candidate.newest_at) : null;
-    const firstCheck = !previousNewest || Number.isNaN(previousNewest.getTime());
-    const maxPages = firstCheck ? TIKTOK_FIRST_CHECK_MAX_PAGES : TIKTOK_LATER_CHECK_MAX_PAGES;
-    // Later checks stop at the newest video already seen; the backfill floor always applies.
-    const stopBefore = firstCheck ? backfillFloor : new Date(Math.max(previousNewest!.getTime(), backfillFloor.getTime()));
-    const claim = await claimProfileCheck(db, {
-      accountId: candidate.id,
-      handle,
-      reserve: maxPages,
-      budget: input.budget,
-      intervalHours,
+export class TikTokListingValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "TikTokListingValidationError";
+  }
+}
+
+export type TikTokListedVideo = { videoId: string; caption: string; createdAt: Date | null; durationSeconds: number | null };
+
+export type TikTokListingSubmission =
+  | { status: "ok"; videos: TikTokListedVideo[]; tool: string | null }
+  | { status: "error"; reason: string; tool: string | null };
+
+function positiveNumber(value: unknown): number | null {
+  const n = typeof value === "string" && value.trim() !== "" ? Number(value) : value;
+  return typeof n === "number" && Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/**
+ * Validates what the helper sends back for one profile:
+ * { status: "ok", videos: [{ id, caption, timestamp?, duration? }], tool? }
+ * or { status: "error", reason, tool? }. Malformed videos are dropped, not fatal.
+ */
+export function parseTikTokListingSubmission(body: unknown): TikTokListingSubmission {
+  const root = asRecord(body);
+  const tool = asText(root.tool)?.replace(/[^A-Za-z0-9 ._:/-]/g, "").slice(0, 60) ?? null;
+  if (root.status === "error") {
+    const reason = (asText(root.reason) ?? "unknown").replace(/[^A-Za-z0-9_.:-]/g, "_").slice(0, 60);
+    return { status: "error", reason, tool };
+  }
+  if (root.status !== "ok" || !Array.isArray(root.videos)) {
+    throw new TikTokListingValidationError("Send status ok with a videos list, or status error with a reason.");
+  }
+  if (root.videos.length > TIKTOK_MAX_LISTED_VIDEOS) throw new TikTokListingValidationError("Too many videos.");
+  const videos: TikTokListedVideo[] = [];
+  for (const entry of root.videos) {
+    const item = asRecord(entry);
+    const id = String(item.id ?? "");
+    if (!VIDEO_ID.test(id)) continue;
+    const caption = typeof item.caption === "string" ? item.caption : "";
+    const timestamp = positiveNumber(item.timestamp);
+    const duration = positiveNumber(item.duration);
+    videos.push({
+      videoId: id,
+      caption: caption.replace(/\s+/g, " ").trim().slice(0, 2_200),
+      createdAt: timestamp ? new Date(timestamp * 1000) : null,
+      durationSeconds: duration ? Math.round(duration) : null,
     });
-    if (!claim.claimed) {
-      if (claim.reason === "budget_exhausted") return { ...report, status: "stopped", reason: "budget_exhausted" };
-      continue;
-    }
-    report.creators += 1;
+  }
+  return { status: "ok", videos, tool };
+}
 
-    let pages = 0;
-    let cursor: string | null = null;
-    let outcome = "read";
-    let errorClass: string | null = null;
-    let newest = firstCheck ? null : previousNewest;
+export type TikTokListingReport =
+  | { outcome: "not_claimed"; sourceAccountId: string }
+  | {
+      outcome: "listed" | "failed";
+      sourceAccountId: string;
+      listed: number;
+      kept: number;
+      skipped: number;
+      duplicates: number;
+      mentions: number;
+      callsCreated: number;
+    };
+
+/**
+ * Stores what the owner's computer found on a claimed profile: each video
+ * newer than the claim's `since` is kept or skipped by its caption
+ * (decideTikTokVideo), kept ones are stored with their caption's card
+ * mentions and calls, and the claim's run is completed with the counts.
+ */
+export async function submitTikTokProfileListing(
+  db: Database,
+  input: { sourceAccountId: string; submission: TikTokListingSubmission; now?: Date },
+): Promise<TikTokListingReport> {
+  const now = input.now ?? new Date();
+  const claim = await withPlatformContext(db, async (tx) => {
+    const [row] = rowsOf<{ id: string; checkpoint: unknown; display_name: string | null }>(
+      await tx.execute(sql`
+        SELECT r.id, r.checkpoint, sa.display_name FROM provider_sync_run r
+        JOIN source_account sa ON sa.id = r.checkpoint->>'account_id'
+        WHERE r.provider_key = 'tiktok' AND r."trigger" = ${TIKTOK_PROFILE_TRIGGER}
+          AND r.status = 'started' AND r.checkpoint->>'account_id' = ${input.sourceAccountId}
+          AND r.started_at > now() - (${TIKTOK_PROFILE_INTERVAL_HOURS}::float8 * interval '1 hour')
+        ORDER BY r.started_at DESC LIMIT 1`),
+    );
+    return row ? { runId: row.id, checkpoint: jsonValue(row.checkpoint), displayName: row.display_name } : null;
+  });
+  if (!claim) return { outcome: "not_claimed", sourceAccountId: input.sourceAccountId };
+  const handle = asText(claim.checkpoint.handle)!;
+  const since = new Date(asText(claim.checkpoint.since) ?? 0);
+  const submission = input.submission;
+
+  let kept = 0;
+  let skipped = 0;
+  let duplicates = 0;
+  let mentions = 0;
+  let callsCreated = 0;
+  let failures = 0;
+  let newest: Date | null = null;
+  const skippedSamples: string[] = [];
+  const reasons: Record<string, number> = {};
+  const listed: Array<TikTokListedVideo & { publishedAt: Date }> = [];
+  if (submission.status === "ok") {
     const seen = new Set<string>();
-    const listed: Array<TikTokListedVideo & { publishedAt: Date }> = [];
-    let reachedOld = false;
-    while (pages < maxPages && !reachedOld) {
-      const page = await input.lister.listPage(handle, cursor);
-      pages += 1;
-      if (page.status !== "ok") {
-        outcome = page.status;
-        errorClass = page.reason;
-        break;
-      }
-      for (const video of page.videos) {
-        if (seen.has(video.videoId)) continue;
-        seen.add(video.videoId);
-        const publishedAt = video.createdAt ?? tiktokVideoTime(video.videoId, now);
-        if (!publishedAt || publishedAt.getTime() > now.getTime() + 86_400_000) continue;
-        if (publishedAt.getTime() <= stopBefore.getTime()) {
-          // Pinned videos sit on top regardless of age; only an unpinned old video ends the walk.
-          if (!video.pinned) reachedOld = true;
-          continue;
-        }
-        if (video.isAd) continue;
-        listed.push({ ...video, publishedAt });
-        if (!newest || publishedAt > newest) newest = publishedAt;
-      }
-      if (!page.hasMore || !page.nextCursor || page.nextCursor === cursor) break;
-      cursor = page.nextCursor;
+    for (const video of submission.videos) {
+      if (seen.has(video.videoId)) continue;
+      seen.add(video.videoId);
+      const publishedAt = video.createdAt ?? tiktokVideoTime(video.videoId, now);
+      if (!publishedAt || publishedAt.getTime() > now.getTime() + 86_400_000) continue;
+      if (publishedAt.getTime() <= since.getTime()) continue;
+      listed.push({ ...video, publishedAt });
+      if (!newest || publishedAt > newest) newest = publishedAt;
     }
-
-    let kept = 0;
-    let skipped = 0;
-    let duplicates = 0;
-    let mentions = 0;
-    let callsCreated = 0;
-    let failures = 0;
-    const skippedSamples: string[] = [];
-    const reasons: Record<string, number> = {};
+    const index = listed.length > 0 ? await withPlatformContext(db, (tx) => loadCardNameIndex(tx)) : null;
     for (const video of listed) {
-      const decision = decideTikTokVideo(video.caption, setup.index);
+      const decision = decideTikTokVideo(video.caption, index);
       reasons[decision.reason] = (reasons[decision.reason] ?? 0) + 1;
       if (!decision.keep) {
         skipped += 1;
@@ -689,11 +695,11 @@ export async function runTikTokProfileSyncBatch(
             handle,
             videoId: video.videoId,
             publishedAt: video.publishedAt,
-            displayName: candidate.display_name,
+            displayName: claim.displayName,
             caption: video.caption,
             durationSeconds: video.durationSeconds,
             addedVia: "profile_follow",
-            index: setup.index,
+            index,
           }),
         );
         if (stored.status === "duplicate") {
@@ -707,89 +713,49 @@ export async function runTikTokProfileSyncBatch(
         failures += 1;
       }
     }
-
-    const failed = outcome !== "read" && listed.length === 0;
-    await withPlatformContext(db, async (tx) => {
-      await tx
-        .update(providerSyncRun)
-        .set({
-          status: failed ? "failed" : "completed",
-          errorClass,
-          limitCount: pages,
-          receivedCount: kept,
-          quarantinedCount: failures,
-          completedAt: new Date(),
-          checkpoint: {
-            account_id: candidate.id,
-            handle,
-            outcome,
-            first_check: firstCheck,
-            pages,
-            listed: listed.length,
-            kept,
-            skipped,
-            duplicates,
-            failures,
-            decisions: reasons,
-            skipped_samples: skippedSamples,
-            newest_at: newest?.toISOString() ?? null,
-            mentions,
-            calls_created: callsCreated,
-            extractor_version: TIKTOK_CAPTION_EXTRACTOR_VERSION,
-          },
-        })
-        .where(eq(providerSyncRun.id, claim.runId));
-    });
-    report.requests += pages;
-    report.listed += listed.length;
-    report.kept += kept;
-    report.skipped += skipped;
-    report.duplicates += duplicates;
-    report.mentions += mentions;
-    report.callsCreated += callsCreated;
-    if (failed) report.failed += 1;
-    if (outcome === "rate_limited") return { ...report, status: "stopped", reason: errorClass ?? "rate_limited" };
   }
-  return report;
-}
 
-/**
- * The worker's TikTok step: runs only with PROVIDER_TIKTOK_MODE=live and
- * SCRAPECREATORS_API_KEY, honors the tiktok provider's pause / enable
- * switches and takes its lease.
- */
-export async function syncTikTokProfiles(
-  db: Database,
-  input: { env?: NodeJS.ProcessEnv; transport?: HttpTransport; lister?: TikTokVideoLister; now?: Date } = {},
-): Promise<TikTokProfileSyncReport> {
-  const env = input.env ?? process.env;
-  const mode = resolveProviderMode("tiktok", env);
-  if (mode !== "live") {
-    return { ...emptyReport(), status: "skipped", reason: mode === "disabled" ? "disabled" : "fixture_not_supported" };
-  }
-  const lister = input.lister ?? createTikTokVideoListerFromEnv(env, input.transport);
-  if (!lister) return { ...emptyReport(), status: "skipped", reason: "missing_key" };
-  const runtime = await withPlatformContext(db, async (tx) => {
-    await ensureProviderRuntimeRows(tx, env);
-    return getProviderRuntime(tx, "tiktok");
+  const failed = submission.status === "error";
+  // A later listing starts from the newest video seen so far, never earlier.
+  const newestAt = newest && newest > since ? newest : since;
+  await withPlatformContext(db, async (tx) => {
+    await tx
+      .update(providerSyncRun)
+      .set({
+        status: failed ? "failed" : "completed",
+        errorClass: submission.status === "error" ? submission.reason : null,
+        receivedCount: kept,
+        quarantinedCount: failures,
+        completedAt: new Date(),
+        checkpoint: {
+          ...claim.checkpoint,
+          outcome: failed ? "error" : "listed",
+          tool: submission.tool,
+          listed: listed.length,
+          kept,
+          skipped,
+          duplicates,
+          failures,
+          decisions: reasons,
+          skipped_samples: skippedSamples,
+          newest_at: failed ? null : newestAt.toISOString(),
+          mentions,
+          calls_created: callsCreated,
+          extractor_version: TIKTOK_CAPTION_EXTRACTOR_VERSION,
+        },
+      })
+      .where(eq(providerSyncRun.id, claim.runId));
   });
-  if (runtime?.paused || (isHostedRuntime(env) && !runtime?.enabled)) {
-    return { ...emptyReport(), status: "skipped", reason: "paused_or_disabled" };
-  }
-  const config = tiktokProfileConfig(env);
-  const leased = await withPlatformContext(db, (tx) => tryAcquireProviderLease(tx, "tiktok", 15 * 60_000));
-  if (!leased) return { ...emptyReport(), status: "skipped", reason: "overlap" };
-  try {
-    return await runTikTokProfileSyncBatch(db, {
-      lister,
-      budget: config.budget,
-      backfillDays: config.backfillDays,
-      env,
-      now: input.now,
-    });
-  } finally {
-    await withPlatformContext(db, (tx) => releaseProviderLease(tx, "tiktok"));
-  }
+  return {
+    outcome: failed ? "failed" : "listed",
+    sourceAccountId: input.sourceAccountId,
+    listed: listed.length,
+    kept,
+    skipped,
+    duplicates,
+    mentions,
+    callsCreated,
+  };
 }
 
 // ---------------------------------------------------------------------------

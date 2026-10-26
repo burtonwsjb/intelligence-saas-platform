@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import {
+  followTikTokCreator,
   ingestPodcastEpisode,
   loadCardNameIndex,
   readMigrationSql,
@@ -81,5 +82,32 @@ describe("local transcript API", () => {
     expect((await post(app, `/internal/local-transcripts/${jobs[0]!.content_id}`, body)).status).toBe(409);
     expect((await post(app, `/internal/local-transcripts/sct_${"0".repeat(32)}`, body)).status).toBe(409);
     expect((await post(app, "/internal/local-transcripts/not-an-id", body)).status).toBe(404);
+  });
+
+  it("hands out followed TikTok profiles and keeps the card videos the computer lists", async () => {
+    const { db, app } = await setup();
+    expect((await post(app, "/internal/local-transcripts/tiktok/claim", {}, "wrong-token-wrong-token-wrong-token-00")).status).toBe(401);
+    const followed = await followTikTokCreator(db, { profile: "https://www.tiktok.com/@mitchy_stitchy", actorUserId: "user_admin" });
+    const early = await post(app, `/internal/local-transcripts/tiktok/${followed.sourceAccountId}`, { status: "ok", videos: [] });
+    expect(early.status).toBe(409);
+    const claim = await post(app, "/internal/local-transcripts/tiktok/claim", { worker: "DESKTOP" });
+    expect(claim.status).toBe(200);
+    const { profiles } = (await claim.json()) as { profiles: Array<{ source_account_id: string; profile_url: string }> };
+    expect(profiles).toMatchObject([{ source_account_id: followed.sourceAccountId, profile_url: "https://www.tiktok.com/@mitchy_stitchy" }]);
+    const recent = Math.floor(Date.now() / 1000) - 3_600;
+    const id = ((BigInt(recent) << 32n) | 5n).toString();
+    const other = ((BigInt(recent - 60) << 32n) | 6n).toString();
+    const sent = await post(app, `/internal/local-transcripts/tiktok/${followed.sourceAccountId}`, {
+      status: "ok",
+      tool: "yt-dlp",
+      videos: [
+        { id, caption: "Who agrees with the last one? #pokemon #pokemoncards", timestamp: recent, duration: 172 },
+        { id: other, caption: "my dog says hi", timestamp: recent - 60 },
+      ],
+    });
+    expect(sent.status).toBe(200);
+    expect(await sent.json()).toMatchObject({ outcome: "listed", listed: 2, kept: 1, skipped: 1 });
+    expect((await post(app, "/internal/local-transcripts/tiktok/not-an-id", { status: "ok", videos: [] })).status).toBe(404);
+    expect((await post(app, `/internal/local-transcripts/tiktok/${followed.sourceAccountId}`, { status: "maybe" })).status).toBe(400);
   });
 });
