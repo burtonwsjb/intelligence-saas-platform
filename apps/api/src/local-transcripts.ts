@@ -5,7 +5,7 @@ import {
   TikTokListingValidationError,
   claimLocalTranscriptJobs,
   claimTikTokProfileJobs,
-  createDbFromEnv,
+  createDbFromWorkerEnv,
   localTranscriberToken,
   parseLocalTranscriptSubmission,
   parseTikTokListingSubmission,
@@ -56,7 +56,10 @@ export function registerLocalTranscriptRoutes<E extends Env>(
     }
     return null;
   };
-  const database = () => options.db ?? createDbFromEnv(options.env);
+  // The helper's claims and submissions write ingest rows, which app_user can
+  // only read, so these routes use the worker's app_worker connection.
+  let workerDb: Database | undefined;
+  const database = () => options.db ?? (workerDb ??= createDbFromWorkerEnv(options.env));
 
   app.post("/internal/local-transcripts/claim", async (c) => {
     const denied = authorize(c);
