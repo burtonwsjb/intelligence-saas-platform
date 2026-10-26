@@ -433,8 +433,10 @@ function addDays(day: string, days: number) {
  * collections; most recent first), then printings without history named in
  * creator calls or exactly resolved mentions (most recent first), then open
  * index members
- * (the product has no watchlist or collection tables), then never asked,
- * then asked again (pending, not found), then refreshes; within each, the
+ * (the product has no watchlist or collection tables), then printings TCC
+ * answered "pending" (it fills them within minutes, so the answer is usually
+ * ready; behind the never-asked ones they waited days), then never asked,
+ * then not found, then refreshes; within each, the
  * most requested printings over 30 days come first, then the catalog alternates games (Pokemon first), each by newest set, set key
  * (descending) and printing id. Printings waiting for their next check,
  * fetched within the last TCC_PRICE_HISTORY_CHART_REFRESH_DAYS days, or in
@@ -483,6 +485,7 @@ export async function listChartHistoryTargets(
     await db.execute(sql`
       WITH checks AS (
         SELECT r.checkpoint->>'printing_id' AS printing_id,
+          r.checkpoint->>'status' AS status,
           ${checkDueAtSql()} AS due_at,
           r.checkpoint->>'chart_to' AS chart_to
         FROM provider_sync_run r
@@ -502,7 +505,7 @@ export async function listChartHistoryTargets(
       candidates AS (
       SELECT p.id AS printing_id, p.game_key AS game, s.canonical_set_key AS set_key, s.name AS set_name,
         p.collector_number, cc.canonical_name AS card_name, p.language_code AS language, p.variant_key AS variant,
-        ch.chart_to, ch.printing_id AS checked, t.printing_id AS talked, t.last_at AS talked_at,
+        ch.chart_to, ch.printing_id AS checked, ch.status AS check_status, t.printing_id AS talked, t.last_at AS talked_at,
         i.printing_id AS indexed, d.last_requested_at, COALESCE(d.requests_30d, 0) AS requests_30d,
         s.release_date, p.game_key
       FROM tcg_printing p
@@ -526,8 +529,9 @@ export async function listChartHistoryTargets(
       SELECT printing_id, game, set_key, set_name, collector_number, card_name, language, variant, chart_to
       FROM ranked
       ORDER BY CASE WHEN requested_rank <= ${TCC_PRICE_HISTORY_REQUESTED_PER_RUN} THEN -1
-          WHEN chart_to IS NOT NULL THEN 4 WHEN talked IS NOT NULL THEN 0
-          WHEN indexed IS NOT NULL THEN 1 WHEN checked IS NULL THEN 2 ELSE 3 END,
+          WHEN chart_to IS NOT NULL THEN 5 WHEN talked IS NOT NULL THEN 0
+          WHEN indexed IS NOT NULL THEN 1 WHEN checked IS NULL THEN 3
+          WHEN check_status = 'not_found' THEN 4 ELSE 2 END,
         requested_rank ASC NULLS LAST,
         talked_at DESC NULLS LAST,
         requests_30d DESC,

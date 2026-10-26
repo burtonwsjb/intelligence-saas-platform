@@ -430,7 +430,7 @@ describe("price history chart universe", () => {
     expect(later.map((t) => t.printingId)).toEqual([luffy]);
   }, 90_000);
 
-  it("asks printings without history before refreshes, and re-asks not_found saved under the old 30-day wait after a day", async () => {
+  it("asks pending re-asks, then never asked, then not_found (old 30-day wait gone after a day), then refreshes", async () => {
     const { client, db, seeded } = await setup();
     const p = seeded.printings;
     const now = new Date("2026-03-10T09:00:00Z");
@@ -440,9 +440,12 @@ describe("price history chart universe", () => {
     await saveCheckRow(client, p.luffyEn.id, { status: "not_found", reason: "card not found in set", chart_to: null, next_attempt_at: "2026-04-07T09:00:00.000Z" }, "2026-03-08T09:00:00Z");
     // The promo was answered not_found an hour ago: not due yet.
     await saveCheckRow(client, p.charizardPromo.id, { status: "not_found", reason: "set not found", chart_to: null, next_attempt_at: "2026-04-09T08:00:00.000Z" }, "2026-03-10T08:00:00Z");
+    // Pikachu SV1 was queued at TCC an hour ago: asked before any never-asked printing.
+    await saveCheckRow(client, p.pikachuSv1.id, { status: "pending", reason: "history backfill queued", chart_to: null, next_attempt_at: "2026-03-10T08:40:00.000Z" }, "2026-03-10T08:00:00Z");
     const all = await listChartHistoryTargets(db, { now, limit: 100 });
     const ids = all.map((t) => t.printingId);
     expect(ids).not.toContain(p.charizardPromo.id);
+    expect(ids[0]).toBe(p.pikachuSv1.id);
     expect(ids.at(-1)).toBe(p.greninjaEnNormal.id);
     // Never asked printings come first, then the not_found retry, then the refresh.
     expect(ids.at(-2)).toBe(p.luffyEn.id);
