@@ -63,6 +63,19 @@ describe("detectCardMentions", () => {
     expect(detectionKey("123")).toBeNull();
   });
 
+  it("ignores everyday words that are also single-word card names", () => {
+    const words = buildCardNameIndex({
+      cards: [
+        { name: "Will", gameKey: "pokemon" },
+        { name: "Hope", gameKey: "pokemon" },
+        { name: "Pikachu", gameKey: "pokemon" },
+      ],
+      sets: [],
+    });
+    const found = detectCardMentions("I hope this will go up, Pikachu will too", words);
+    expect(found.map((m) => m.name)).toEqual(["Pikachu"]);
+  });
+
   it("does not treat a set name as a card and matches accents, ampersands and apostrophes", () => {
     const found = detectCardMentions("Boss’s Orders and Pikachu from Scarlet and Violet", index);
     expect(found.map((row) => [row.name, row.set?.key ?? null])).toEqual([
