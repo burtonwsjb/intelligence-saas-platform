@@ -1,4 +1,5 @@
 import { collectSystemHealth, getWorkerHeartbeat, getWorkerResources, isWorkerResourceOwner } from "@isp/db";
+import { AdminHeader, Notice, StatusPill, toneFor } from "@/components/Admin";
 import { FREE_REDIS_POLICY, readQueueFailureSnapshot } from "@isp/shared";
 import { requireGrantedOperator } from "@/lib/platform-admin";
 import { getDb } from "@/lib/auth";
@@ -23,6 +24,12 @@ async function loadWorkerResources(db: Parameters<typeof getWorkerResources>[0],
 
 export const dynamic = "force-dynamic";
 
+/** "creatorCalls" -> "Creator calls". */
+function humanKey(key: string): string {
+  const words = key.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
 export default async function AdminHealthPage({
   searchParams,
 }: {
@@ -40,29 +47,29 @@ export default async function AdminHealthPage({
 
   return (
     <>
-      <h1>System health</h1>
-      <p className="muted">Operational states. Secrets are never displayed.</p>
-      <h2>Overall</h2>
-      <p>
-        <strong>{health.status}</strong>
-      </p>
-      <p className="muted">{health.guidance}</p>
+      <AdminHeader icon="health" title="Health & worker" description="Is everything running? Worker schedule, queues and each data source." />
+      <Notice tone={toneFor(health.status)}>
+        <StatusPill tone={toneFor(health.status)}>{health.status}</StatusPill>
+        <span>{health.guidance}</span>
+      </Notice>
       <h2>Catalogs</h2>
-      <ul>
+      <dl className="fact-grid wide">
         {Object.entries(health.catalogs).map(([key, value]) => (
-          <li key={key}>
-            {key}: {value}
-          </li>
+          <div key={key}>
+            <dt>{humanKey(key)}</dt>
+            <dd>{typeof value === "number" ? value.toLocaleString("en-US") : String(value)}</dd>
+          </div>
         ))}
-      </ul>
+      </dl>
       <h2>Operations</h2>
-      <ul>
+      <dl className="fact-grid wide">
         {Object.entries(health.operations).map(([key, value]) => (
-          <li key={key}>
-            {key}: {String(value)}
-          </li>
+          <div key={key}>
+            <dt>{humanKey(key)}</dt>
+            <dd>{value == null ? "—" : typeof value === "number" ? value.toLocaleString("en-US") : String(value)}</dd>
+          </div>
         ))}
-      </ul>
+      </dl>
       <h2>Worker resources</h2>
       <p className="muted">
         Hosted workers drain the database outbox in bounded batches on Phoenix time (hourly by default, quiet

@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { HeaderNav } from "@/components/HeaderNav";
+import { BrandMark } from "@/components/Icon";
+import { MarketingChrome } from "@/components/MarketingChrome";
 import { SKIP_LINK_HREF } from "@/lib/a11y";
 import "./globals.css";
 
@@ -19,15 +21,19 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <a className="skip-link" href={SKIP_LINK_HREF}>
           Skip to content
         </a>
-        <header className="shell-header">
-          <Link className="shell-brand" href="/">
-            Sentiment
-          </Link>
-          <HeaderNav />
-        </header>
+        <MarketingChrome>
+          <header className="shell-header">
+            <Link className="shell-brand" href="/">
+              <BrandMark size={28} />
+              Sentiment
+            </Link>
+            <HeaderNav />
+          </header>
+        </MarketingChrome>
         <main id="main" className="shell-main">
           {children}
         </main>
+        <MarketingChrome>
         <footer className="shell-footer">
           <nav className="shell-nav" aria-label="Legal">
             <Link href="/terms">Terms</Link>
@@ -40,6 +46,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             Shueisha, Toei Animation and Konami. Sentiment is not affiliated with or endorsed by them.
           </p>
         </footer>
+        </MarketingChrome>
       </body>
     </html>
   );

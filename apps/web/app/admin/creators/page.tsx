@@ -1,4 +1,5 @@
 import { OPERATOR_TRUST_STATES, getCreatorAuthorityProfile, listCreators } from "@isp/db";
+import { AdminHeader } from "@/components/Admin";
 import { requireGrantedOperator } from "@/lib/platform-admin";
 import { setCreatorTrustAction } from "@/app/admin-actions";
 import Link from "next/link";
@@ -29,11 +30,7 @@ export default async function AdminCreatorsPage({
 
   return (
     <>
-      <h1>Creators</h1>
-      <p className="muted">
-        Exclusion sets trust to excluded and keeps call history. This is not a delete. Future scoring skips
-        excluded creators.
-      </p>
+      <AdminHeader icon="creators" title="Influencers" description="Everyone Sentiment tracks. Excluding someone keeps their history but stops it counting in scores." />
       {query.error ? <p className="form-error">Trust update was rejected.</p> : null}
       <form className="inline-form">
         <label>

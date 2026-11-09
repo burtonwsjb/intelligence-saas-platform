@@ -28,6 +28,10 @@ import {
   triggerProviderSyncAction,
 } from "@/app/admin-actions";
 import Link from "next/link";
+import { AdminHeader, StatusPill, toneFor } from "@/components/Admin";
+import { ConfirmButton } from "@/components/ConfirmButton";
+import { Icon } from "@/components/Icon";
+import { formatAge, providerText } from "@/lib/display";
 
 export const dynamic = "force-dynamic";
 
@@ -68,11 +72,17 @@ export default async function AdminSourcesPage({
 
   return (
     <>
-      <h1>Sources</h1>
-      <p className="muted">
-        Provider runtime, credentials status (never secret values), health, and staging sync.{" "}
-        <Link href="/admin/quarantine">Quarantine</Link>
-      </p>
+      <AdminHeader
+        icon="sources"
+        title="Sources"
+        description="Where prices, videos and posts come from. Credentials are checked, never shown."
+        actions={
+          <Link className="button secondary" href="/admin/quarantine">
+            <Icon name="quarantine" size={14} />
+            Quarantine
+          </Link>
+        }
+      />
       {query.error === "website_invalid" ? (
         <p className="form-error">Website rejected: use a public http(s) address of the creator&apos;s own site.</p>
       ) : query.error === "website_platform" ? (
@@ -109,50 +119,88 @@ export default async function AdminSourcesPage({
           new websites registered.
         </p>
       ) : null}
-      {providers.map((row) => (
-        <section key={row.providerKey}>
-          <h2>{row.providerKey}</h2>
-          <p>
-            {row.providerType} · mode {row.mode} · {row.enabled ? "enabled" : "disabled"} ·{" "}
-            {row.paused ? "paused" : "active"} · credentials {row.credentialStatus} · health {row.healthStatus}
-          </p>
-          <p className="muted">
-            {PROVIDER_ADAPTER_NOTES[row.providerKey as keyof typeof PROVIDER_ADAPTER_NOTES] ?? ""}
-          </p>
-          <p className="muted">
-            last success {row.lastSuccessAt?.toISOString() ?? "—"} · last attempt {row.lastAttemptAt?.toISOString() ?? "—"} ·
-            error {row.lastErrorClass ?? "—"} · rate remaining {row.rateLimitRemaining ?? "—"} · ingested{" "}
-            {row.recordsIngested} · quarantined {row.recordsQuarantined} · cursor {row.lastSourceId ?? "—"} · schedule{" "}
-            {row.scheduleSeconds}s
-          </p>
-          <form className="inline-form" action={setProviderEnabledAction}>
-            <input type="hidden" name="providerKey" value={row.providerKey} />
-            <input type="hidden" name="enabled" value={row.enabled ? "false" : "true"} />
-            <label>
-              Reason
-              <input name="reason" required />
-            </label>
-            <button type="submit">{row.enabled ? "Disable" : "Enable"}</button>
-          </form>
-          <form className="inline-form" action={setProviderPausedAction}>
-            <input type="hidden" name="providerKey" value={row.providerKey} />
-            <input type="hidden" name="paused" value={row.paused ? "false" : "true"} />
-            <label>
-              Reason
-              <input name="reason" required />
-            </label>
-            <button type="submit">{row.paused ? "Resume" : "Pause"}</button>
-          </form>
-          <form className="inline-form" action={triggerProviderSyncAction}>
-            <input type="hidden" name="providerKey" value={row.providerKey} />
-            <label>
-              Confirm staging sync
-              <input type="checkbox" name="confirm" value="yes" required />
-            </label>
-            <button type="submit">Trigger staging sync</button>
-          </form>
-        </section>
-      ))}
+      <div className="provider-grid">
+        {providers.map((row) => {
+          const state = !row.enabled ? "disabled" : row.paused ? "paused" : row.healthStatus;
+          const name = providerText(row.providerKey);
+          return (
+            <section className="dash-card provider-card" key={row.providerKey} aria-label={name}>
+              <div className="provider-head">
+                <div>
+                  <h2>{name}</h2>
+                  <span className="subtle">
+                    {row.providerType === "market" ? "Prices" : "Social"} · {row.mode} mode · credentials {row.credentialStatus}
+                  </span>
+                </div>
+                <StatusPill tone={state === "disabled" ? "info" : toneFor(state)}>{state}</StatusPill>
+              </div>
+              <p className="provider-note">
+                {PROVIDER_ADAPTER_NOTES[row.providerKey as keyof typeof PROVIDER_ADAPTER_NOTES] ?? ""}
+              </p>
+              <dl className="provider-facts">
+                <div>
+                  <dt>Last success</dt>
+                  <dd>{row.lastSuccessAt ? formatAge(row.lastSuccessAt) : "never"}</dd>
+                </div>
+                <div>
+                  <dt>Ingested</dt>
+                  <dd>{row.recordsIngested.toLocaleString("en-US")}</dd>
+                </div>
+                <div>
+                  <dt>Quarantined</dt>
+                  <dd>{row.recordsQuarantined.toLocaleString("en-US")}</dd>
+                </div>
+                <div>
+                  <dt>Runs every</dt>
+                  <dd>{row.scheduleSeconds >= 3600 ? `${Math.round(row.scheduleSeconds / 3600)}h` : `${Math.round(row.scheduleSeconds / 60)}m`}</dd>
+                </div>
+              </dl>
+              <details className="provider-more">
+                <summary>Technical details</summary>
+                <p className="subtle">
+                  Last attempt {row.lastAttemptAt?.toISOString() ?? "—"} · error {row.lastErrorClass ?? "—"} · rate remaining{" "}
+                  {row.rateLimitRemaining ?? "—"} · cursor {row.lastSourceId ?? "—"}
+                </p>
+              </details>
+              <div className="provider-actions">
+                <form action={triggerProviderSyncAction}>
+                  <input type="hidden" name="providerKey" value={row.providerKey} />
+                  <input type="hidden" name="confirm" value="yes" />
+                  <ConfirmButton className="button small" message={`Sync ${name} now?`} pendingLabel="Queuing…">
+                    <Icon name="refresh" size={14} />
+                    Sync now
+                  </ConfirmButton>
+                </form>
+                <form action={setProviderPausedAction}>
+                  <input type="hidden" name="providerKey" value={row.providerKey} />
+                  <input type="hidden" name="paused" value={row.paused ? "false" : "true"} />
+                  <input type="hidden" name="reason" value={row.paused ? "Resumed from the Sources page" : "Paused from the Sources page"} />
+                  <ConfirmButton
+                    className="button small secondary"
+                    message={row.paused ? `Resume ${name}?` : `Pause ${name}? It stops pulling new data.`}
+                    pendingLabel="Saving…"
+                  >
+                    <Icon name={row.paused ? "play" : "pause"} size={14} />
+                    {row.paused ? "Resume" : "Pause"}
+                  </ConfirmButton>
+                </form>
+                <form action={setProviderEnabledAction}>
+                  <input type="hidden" name="providerKey" value={row.providerKey} />
+                  <input type="hidden" name="enabled" value={row.enabled ? "false" : "true"} />
+                  <input type="hidden" name="reason" value={row.enabled ? "Disabled from the Sources page" : "Enabled from the Sources page"} />
+                  <ConfirmButton
+                    className={row.enabled ? "button small danger" : "button small success"}
+                    message={row.enabled ? `Turn ${name} off completely?` : `Turn ${name} on?`}
+                    pendingLabel="Saving…"
+                  >
+                    {row.enabled ? "Turn off" : "Turn on"}
+                  </ConfirmButton>
+                </form>
+              </div>
+            </section>
+          );
+        })}
+      </div>
       <h2 id="websites">Influencer websites</h2>
       <p className="muted">
         Registered sites are read through their RSS or Atom feed by the web_feed provider (live mode only), honoring

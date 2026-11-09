@@ -1,4 +1,5 @@
 import { listPredictionsForOperator } from "@isp/db";
+import { AdminHeader } from "@/components/Admin";
 import { requireGrantedOperator } from "@/lib/platform-admin";
 
 export const dynamic = "force-dynamic";
@@ -12,11 +13,7 @@ export default async function AdminPredictionsPage() {
 
   return (
     <>
-      <h1>Prediction preview</h1>
-      <p className="muted">
-        Internal only. Customer UI stays gated on entitlement plus PREDICTIONS_CUSTOMER_VISIBLE.
-        Shadow rows are listed here and never published by this page.
-      </p>
+      <AdminHeader icon="forecast" title="Forecasts" description="Internal preview. Customers only see forecasts when the feature switch is on." />
       <div className="table-wrap">
       <table className="data-table">
         <thead>

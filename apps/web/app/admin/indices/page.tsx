@@ -1,4 +1,5 @@
 import { listOperatorIndexDefinitions } from "@isp/db";
+import { AdminHeader } from "@/components/Admin";
 import { requireGrantedOperator } from "@/lib/platform-admin";
 import { upsertIndexAction } from "@/app/admin-actions";
 
@@ -18,8 +19,7 @@ export default async function AdminIndicesPage({
 
   return (
     <>
-      <h1>Index specs</h1>
-      <p className="muted">Language-scoped definitions. Existing keys are not rewritten.</p>
+      <AdminHeader icon="indices" title="Indices" description="Market index definitions by language. Existing keys are never rewritten." />
       {query.error ? <p className="form-error">Index upsert was rejected.</p> : null}
       <form className="auth-form" action={upsertIndexAction}>
         <label>

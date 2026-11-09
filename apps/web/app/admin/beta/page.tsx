@@ -1,4 +1,5 @@
 import { BETA_COHORTS, FEATURE_FLAG_KEYS, listFeatureFlags } from "@isp/db";
+import { AdminHeader } from "@/components/Admin";
 import { requireGrantedOperator } from "@/lib/platform-admin";
 import { createBetaInviteAction, setFeatureFlagAction } from "@/app/admin-actions";
 import { readSecretFlash } from "@/lib/secret-flash";
@@ -20,18 +21,16 @@ export default async function AdminBetaPage({
 
   return (
     <>
-      <h1>Beta controls</h1>
-      <p className="muted">
-        Invites store only a token hash. Predictions stay shadow unless the platform flag is on.
-        Do not paste the one-time token into tickets or logs.
-      </p>
+      <AdminHeader icon="beta" title="Invites & features" description="Invite people to the beta and switch platform features on or off. Invite links are shown once." />
       {query.error ? <p className="form-error">Beta action was rejected.</p> : null}
       {token ? (
-        <p className="form-error">
-          One-time invite token (shown once): <code>{token}</code>
-        </p>
+        <div className="notice notice-info" role="status">
+          <span>
+            One-time invite token (shown once): <code>{token}</code>
+          </span>
+        </div>
       ) : null}
-      <h2>Invitations</h2>
+      <h2 id="invite">Invite someone</h2>
       <form className="auth-form" action={createBetaInviteAction}>
         <label>
           Email (optional)
@@ -59,17 +58,28 @@ export default async function AdminBetaPage({
           Max uses
           <input name="maxUses" type="number" min={1} max={20} defaultValue={1} />
         </label>
-        <button type="submit">Create invite</button>
+        <button type="submit">Create invite link</button>
       </form>
-      <h2>Feature flags</h2>
+      <h2>Feature switches</h2>
       <ul>
         {flags.map((flag) => (
           <li key={flag.flagKey}>
-            {flag.flagKey} · {flag.enabled ? "on" : "off"}
-            <form className="inline-form" action={setFeatureFlagAction}>
+            <span style={{ flex: 1 }}>
+              <strong>{flag.flagKey.replaceAll("_", " ").replace(/^./, (c) => c.toUpperCase())}</strong>
+              <span className="subtle"> · {flag.enabled ? "On" : "Off"}</span>
+            </span>
+            <form action={setFeatureFlagAction}>
               <input type="hidden" name="key" value={flag.flagKey} />
               <input type="hidden" name="enabled" value={flag.enabled ? "false" : "true"} />
-              <button type="submit">{flag.enabled ? "Disable" : "Enable"}</button>
+              <button
+                type="submit"
+                className={`switch${flag.enabled ? " on" : ""}`}
+                role="switch"
+                aria-checked={flag.enabled}
+                aria-label={`${flag.flagKey}: ${flag.enabled ? "on" : "off"}`}
+              >
+                <span className="switch-knob" />
+              </button>
             </form>
           </li>
         ))}

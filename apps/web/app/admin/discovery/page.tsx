@@ -1,3 +1,4 @@
+import { AdminHeader } from "@/components/Admin";
 import {
   listDiscoveredCreators,
   listDiscoveryTopics,
@@ -56,11 +57,7 @@ export default async function AdminDiscoveryPage({
 
   return (
     <>
-      <h1>Discovery</h1>
-      <p className="muted">
-        Topic search discovers YouTube channels and Reddit accounts automatically. Channel ID lists are optional seeds,
-        not required. Relevance is not the same as authority.
-      </p>
+      <AdminHeader icon="discovery" title="Discovery" description="Search YouTube and Reddit for new card influencers, then approve or reject them." />
       {query.error ? <p className="form-error">Discovery update was rejected.</p> : null}
       {query.queued === "yes" ? <p role="status">Discovery queued for the worker. Refresh to see results after processing.</p> : null}
       <h2>Recent runs</h2>

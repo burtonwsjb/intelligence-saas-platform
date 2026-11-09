@@ -1,4 +1,5 @@
 import { listBreakGlassAudit } from "@isp/db";
+import { AdminHeader } from "@/components/Admin";
 import { requireGrantedOperator } from "@/lib/platform-admin";
 
 export const dynamic = "force-dynamic";
@@ -12,10 +13,7 @@ export default async function AdminAuditPage() {
 
   return (
     <>
-      <h1>Break-glass audit</h1>
-      <p className="muted">
-        Separate from tenant audit_event. Append-only. Metadata is sanitized of secrets.
-      </p>
+      <AdminHeader icon="audit" title="Audit log" description="Every operator action, append-only. Secrets are stripped from the details." />
       <div className="table-wrap">
       <table className="data-table">
         <thead>
