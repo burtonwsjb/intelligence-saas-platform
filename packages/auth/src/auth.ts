@@ -1,6 +1,7 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
 import { organization } from "better-auth/plugins";
+import { asc, eq } from "drizzle-orm";
 import { assertHostedSecrets, isHostedRuntime } from "@isp/shared";
 import {
   account,
@@ -60,6 +61,17 @@ export function requireAuthSecret(secret: string | undefined): string {
 
 export type Auth = ReturnType<typeof createAuth>;
 
+/** The workspace the user joined first, or null before they have one. */
+export async function firstOrganizationId(db: Database, userId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ organizationId: member.organizationId })
+    .from(member)
+    .where(eq(member.userId, userId))
+    .orderBy(asc(member.createdAt), asc(member.id))
+    .limit(1);
+  return row?.organizationId ?? null;
+}
+
 export function createAuth(options: {
   db: Database;
   env: AuthEnv;
@@ -105,6 +117,21 @@ export function createAuth(options: {
       sendOnSignUp: true,
       sendVerificationEmail: async ({ user: authUser, url }) => {
         await emailDelivery.send({ to: authUser.email, url });
+      },
+    },
+    databaseHooks: {
+      session: {
+        create: {
+          // Open each new session in the user's first workspace. Without this a
+          // fresh login lands on /app with no workspace, bounces through
+          // /onboarding to pick one, then loads /app a second time.
+          before: async (newSession) => {
+            if (newSession.activeOrganizationId) return;
+            const organizationId = await firstOrganizationId(options.db, newSession.userId);
+            if (!organizationId) return;
+            return { data: { ...newSession, activeOrganizationId: organizationId } };
+          },
+        },
       },
     },
     session: {

@@ -159,6 +159,15 @@ describe("signup, verification, session, and tenant", () => {
 
     await auth.api.signOut({ headers });
     await expect(auth.api.getSession({ headers })).resolves.toBeNull();
+
+    // The next login opens straight into the workspace, with no onboarding hop.
+    const again = await auth.api.signInEmail({
+      body: { email: "owner@example.com", password: "correct-horse-battery" },
+      asResponse: true,
+    });
+    const nextSession = await auth.api.getSession({ headers: cookieHeader(again) });
+    requireSession(nextSession);
+    expect(requireActiveOrganization(nextSession)).toBe(created!.id);
   });
 
   it("does not let a user activate a foreign organization", async () => {

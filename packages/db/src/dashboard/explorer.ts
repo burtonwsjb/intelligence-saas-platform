@@ -364,36 +364,45 @@ function needsSocial(query: ExplorerQuery): boolean {
   return query.social != null || query.sort.startsWith("social_");
 }
 
-function orderBy(sort: ExplorerSort): SQL {
+/**
+ * The sort as score/catalog keys plus whether priced cards lead within ties.
+ * Only price_high/price_low sort on the price itself.
+ */
+function sortKeys(sort: ExplorerSort): { keys: SQL; pricedFirst: boolean; byPrice: boolean } {
   switch (sort) {
     case "risk_low":
-      return sql`s.risk_score ASC NULLS LAST, s.opportunity_score DESC NULLS LAST`;
+      return { keys: sql`s.risk_score ASC NULLS LAST, s.opportunity_score DESC NULLS LAST`, pricedFirst: false, byPrice: false };
     case "confidence":
-      return sql`s.confidence_score DESC NULLS LAST`;
+      return { keys: sql`s.confidence_score DESC NULLS LAST`, pricedFirst: false, byPrice: false };
     case "liquidity":
-      return sql`s.liquidity_score DESC NULLS LAST`;
+      return { keys: sql`s.liquidity_score DESC NULLS LAST`, pricedFirst: false, byPrice: false };
     case "price_high":
-      return sql`m.price DESC NULLS LAST`;
+      return { keys: sql`m.price DESC NULLS LAST`, pricedFirst: false, byPrice: true };
     case "price_low":
-      return sql`m.price ASC NULLS LAST`;
+      return { keys: sql`m.price ASC NULLS LAST`, pricedFirst: false, byPrice: true };
     case "name":
-      return sql`c.canonical_name ASC, st.name ASC, p.collector_number_normalized ASC`;
+      return { keys: sql`c.canonical_name ASC, st.name ASC, p.collector_number_normalized ASC`, pricedFirst: false, byPrice: false };
     case "recent":
-      return sql`s.as_of DESC NULLS LAST`;
+      return { keys: sql`s.as_of DESC NULLS LAST`, pricedFirst: false, byPrice: false };
     case "market_buy":
-      return sql`${MARKET_STEP} DESC NULLS LAST, s.opportunity_score DESC NULLS LAST`;
+      return { keys: sql`${MARKET_STEP} DESC NULLS LAST, s.opportunity_score DESC NULLS LAST`, pricedFirst: false, byPrice: false };
     case "market_sell":
-      return sql`${MARKET_STEP} ASC NULLS LAST, s.opportunity_score ASC NULLS LAST`;
+      return { keys: sql`${MARKET_STEP} ASC NULLS LAST, s.opportunity_score ASC NULLS LAST`, pricedFirst: false, byPrice: false };
     case "social_positive":
-      return sql`so.net DESC NULLS LAST, so.posts DESC NULLS LAST`;
+      return { keys: sql`so.net DESC NULLS LAST, so.posts DESC NULLS LAST`, pricedFirst: false, byPrice: false };
     case "social_negative":
-      return sql`so.net ASC NULLS LAST, so.posts DESC NULLS LAST`;
+      return { keys: sql`so.net ASC NULLS LAST, so.posts DESC NULLS LAST`, pricedFirst: false, byPrice: false };
     case "social_posts":
-      return sql`so.posts DESC NULLS LAST, so.net DESC NULLS LAST`;
+      return { keys: sql`so.posts DESC NULLS LAST, so.net DESC NULLS LAST`, pricedFirst: false, byPrice: false };
     default:
       // Unscored cards follow in catalog order; priced ones first so the page isn't a wall of "No price".
-      return sql`s.opportunity_score DESC NULLS LAST, s.confidence_score DESC NULLS LAST, (m.price IS NULL) ASC`;
+      return { keys: sql`s.opportunity_score DESC NULLS LAST, s.confidence_score DESC NULLS LAST`, pricedFirst: true, byPrice: false };
   }
+}
+
+function orderBy(sort: ExplorerSort): SQL {
+  const { keys, pricedFirst } = sortKeys(sort);
+  return pricedFirst ? sql`${keys}, (m.price IS NULL) ASC` : keys;
 }
 
 function filterClauses(query: ExplorerQuery): SQL[] {
@@ -446,23 +455,24 @@ export const HEADLINE_SOLD_MAX_AGE_DAYS = 30;
 /**
  * Lateral subquery for a printing's headline price: the latest valid ungraded
  * sale from the last HEADLINE_SOLD_MAX_AGE_DAYS, else the latest TCGplayer
- * market (reference) price. Each branch walks the (printing_id, observed_at)
- * index, so price sorts and filters stay cheap across the catalog.
+ * market (reference) price. The sold branch walks the partial
+ * tcg_market_snapshot_headline_sold_idx (0041), so a printing with no recent
+ * sale costs one index probe instead of a walk over its month of daily prices.
  */
-function headlinePriceSql(now: Date) {
+function headlinePriceSql(now: Date, printingId: SQL = sql`p.id`) {
   const soldFrom = new Date(now.getTime() - HEADLINE_SOLD_MAX_AGE_DAYS * 86_400_000);
   return sql`
     SELECT q.price, q.price_type, q.currency, q.condition, q.source_key, q.observed_at FROM (
       (SELECT ms.price, ms.price_type, ms.currency, ms.condition, ms.source_key, ms.observed_at, 0 AS rank
        FROM tcg_market_snapshot ms
-       WHERE ms.printing_id = p.id AND ms.price_type = 'sold' AND ms.price IS NOT NULL
+       WHERE ms.printing_id = ${printingId} AND ms.price_type = 'sold' AND ms.price IS NOT NULL
          AND ms.outlier_flag = FALSE AND ms.grading_company IS NULL
          AND ms.observed_at > ${ts(soldFrom)} AND ms.observed_at <= ${ts(now)}
        ORDER BY ms.observed_at DESC, ms.id DESC LIMIT 1)
       UNION ALL
       (SELECT ms.price, ms.price_type, ms.currency, ms.condition, ms.source_key, ms.observed_at, 1 AS rank
        FROM tcg_market_snapshot ms
-       WHERE ms.printing_id = p.id AND ms.price_type = 'reference' AND ms.price IS NOT NULL
+       WHERE ms.printing_id = ${printingId} AND ms.price_type = 'reference' AND ms.price IS NOT NULL
          AND ms.outlier_flag = FALSE AND ms.grading_company IS NULL AND ms.observed_at <= ${ts(now)}
        ORDER BY ms.observed_at DESC, ms.id DESC LIMIT 1)
     ) q
@@ -489,8 +499,9 @@ export async function listCardExplorerPage(
   const socialJoin = needsSocial(query)
     ? sql`LEFT JOIN (${socialAggregateSql({ from, to: now }, options.hiddenCreatorIds ?? [])}) so ON so.printing_id = p.id`
     : sql``;
-  const result = await db.execute(sql`
-    SELECT
+  const offset = (page - 1) * pageSize;
+  const sort = sortKeys(query.sort);
+  const scoreColumns = sql`
       p.id AS printing_id, p.game_key, c.canonical_name AS card_name, st.name AS set_name,
       st.canonical_set_key AS set_key, p.collector_number, p.language_code, p.variant_key,
       p.rarity, p.finish, p.canonical_printing_key,
@@ -499,39 +510,73 @@ export async function listCardExplorerPage(
       s.components ->> 'market_confirmed' AS market_confirmed,
       s.components ->> 'hype_unconfirmed' AS hype_unconfirmed,
       COALESCE(s.components @? '$.opportunity[*] ? (@.present == true)', FALSE) AS opportunity_measured,
-      s.explanations AS explanations,
-      m.price, m.price_type, m.currency, m.condition, m.source_key, m.observed_at,
-      count(*) OVER () AS total
+      s.explanations AS explanations`;
+  // Latest score per printing as one pass over the score table and a hash join:
+  // a per-printing lateral lookup costs ~2s across the 100k+ printing catalog.
+  const fromClause = sql`
     FROM tcg_printing p
     JOIN tcg_card_concept c ON c.id = p.card_id
     JOIN tcg_set st ON st.id = p.set_id
-    LEFT JOIN LATERAL (
-      SELECT * FROM tcg_score_snapshot ss
-      WHERE ss.printing_id = p.id AND ss.as_of <= ${ts(now)}
-      ORDER BY ss.as_of DESC, ss.created_at DESC, ss.id DESC
-      LIMIT 1
-    ) s ON TRUE
-    LEFT JOIN LATERAL (${headlinePriceSql(now)}) m ON TRUE
-    ${socialJoin}
-    WHERE ${where}
-    ORDER BY ${orderBy(query.sort)}, p.id ASC
-    LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}
-  `);
-  const raw = asRows(result);
-  let total = raw.length > 0 ? Number(raw[0]!.total) : 0;
+    LEFT JOIN (
+      SELECT DISTINCT ON (ss.printing_id) * FROM tcg_score_snapshot ss
+      WHERE ss.as_of <= ${ts(now)}
+      ORDER BY ss.printing_id, ss.as_of DESC, ss.created_at DESC, ss.id DESC
+    ) s ON s.printing_id = p.id`;
+  const pricedWhere = Boolean(query.priceCurrency) && (query.minPrice != null || query.maxPrice != null);
+  let raw: Record<string, unknown>[];
+  let total: number;
+  if (sort.byPrice || pricedWhere) {
+    // Sorting or filtering on price needs every matching printing's price.
+    raw = asRows(
+      await db.execute(sql`
+        SELECT ${scoreColumns},
+          m.price, m.price_type, m.currency, m.condition, m.source_key, m.observed_at,
+          count(*) OVER () AS total
+        ${fromClause}
+        LEFT JOIN LATERAL (${headlinePriceSql(now)}) m ON TRUE
+        ${socialJoin}
+        WHERE ${where}
+        ORDER BY ${orderBy(query.sort)}, p.id ASC
+        LIMIT ${pageSize} OFFSET ${offset}
+      `),
+    );
+    total = raw.length > 0 ? Number(raw[0]!.total) : 0;
+  } else {
+    // Rank by the score keys first, then look up prices only for the rows on this
+    // page plus any rows tied with them (priced cards lead within a tie). Same
+    // order as sorting the whole catalog with prices, without pricing it all.
+    raw = asRows(
+      await db.execute(sql`
+        WITH ranked AS (
+          SELECT ${scoreColumns},
+            rank() OVER (ORDER BY ${sort.keys}) AS sort_group,
+            row_number() OVER (ORDER BY ${sort.keys}, p.id ASC) AS sort_position,
+            count(*) OVER () AS total
+          ${fromClause}
+          ${socialJoin}
+          WHERE ${where}
+        ),
+        bounds AS (
+          SELECT min(sort_group) AS lo, max(sort_group) AS hi FROM ranked
+          WHERE sort_position > ${offset} AND sort_position <= ${offset + pageSize}
+        )
+        SELECT r.*, m.price, m.price_type, m.currency, m.condition, m.source_key, m.observed_at
+        FROM ranked r
+        JOIN bounds b ON r.sort_group BETWEEN b.lo AND b.hi
+        LEFT JOIN LATERAL (${headlinePriceSql(now, sql`r.printing_id`)}) m ON TRUE
+        ORDER BY r.sort_group${sort.pricedFirst ? sql`, (m.price IS NULL) ASC` : sql``}, r.printing_id ASC
+        LIMIT ${pageSize} OFFSET ${offset} - (SELECT lo - 1 FROM bounds)
+      `),
+    );
+    total = raw.length > 0 ? Number(raw[0]!.total) : 0;
+  }
   if (raw.length === 0 && page > 1) {
     // Past the end: report the real total so the pager can lead back.
     const counted = asRows(
       await db.execute(sql`
         SELECT count(*) AS total
-        FROM tcg_printing p
-        JOIN tcg_card_concept c ON c.id = p.card_id
-        JOIN tcg_set st ON st.id = p.set_id
-        LEFT JOIN LATERAL (
-          SELECT * FROM tcg_score_snapshot ss WHERE ss.printing_id = p.id AND ss.as_of <= ${ts(now)}
-          ORDER BY ss.as_of DESC, ss.created_at DESC, ss.id DESC LIMIT 1
-        ) s ON TRUE
-        LEFT JOIN LATERAL (${headlinePriceSql(now)}) m ON TRUE
+        ${fromClause}
+        ${pricedWhere ? sql`LEFT JOIN LATERAL (${headlinePriceSql(now)}) m ON TRUE` : sql``}
         ${socialJoin}
         WHERE ${where}
       `),
