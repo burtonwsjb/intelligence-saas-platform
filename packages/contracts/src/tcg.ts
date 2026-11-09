@@ -3,6 +3,12 @@ export const TCG_GAME_KEYS = [
   "one_piece",
   "dragon_ball",
   "yugioh",
+  "magic",
+  "lorcana",
+  "flesh_and_blood",
+  "star_wars_unlimited",
+  "digimon",
+  "gundam",
   "other",
 ] as const;
 

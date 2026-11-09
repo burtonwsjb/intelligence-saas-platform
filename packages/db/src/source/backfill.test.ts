@@ -108,7 +108,7 @@ describe("influencer seed plan", () => {
     ]);
     // Every hand-added YouTube creator has a handle to look up, accented ones included.
     const added = plan.channels.filter((channel) => channel.rank > 101);
-    expect(added).toHaveLength(22);
+    expect(added).toHaveLength(33);
     expect(added.every((channel) => channel.input && !channel.skip)).toBe(true);
     expect(added.find((channel) => channel.name === "Poké Pulls TCG")?.input).toBe("@poképullscollects");
     expect(added.find((channel) => channel.name === "PokeBeard")?.input).toBe("@pokebeardtcg");
