@@ -39,6 +39,12 @@ export const TCC_CATALOG_GAMES = [
   { gameKey: "one_piece", tccGame: "onepiece" },
   { gameKey: "dragon_ball", tccGame: "dragonball" },
   { gameKey: "yugioh", tccGame: "yugioh" },
+  { gameKey: "magic", tccGame: "magic" },
+  { gameKey: "lorcana", tccGame: "lorcana" },
+  { gameKey: "flesh_and_blood", tccGame: "fab" },
+  { gameKey: "star_wars_unlimited", tccGame: "starwars" },
+  { gameKey: "digimon", tccGame: "digimon" },
+  { gameKey: "gundam", tccGame: "gundam" },
 ] as const;
 type CatalogGameKey = (typeof TCC_CATALOG_GAMES)[number]["gameKey"];
 

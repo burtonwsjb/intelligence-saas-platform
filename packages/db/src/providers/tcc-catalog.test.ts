@@ -179,13 +179,19 @@ describe("TCG Card Central catalog import", () => {
       ["onepiece", null],
       ["dragonball", null],
       ["yugioh", null],
+      ["magic", null],
+      ["lorcana", null],
+      ["fab", null],
+      ["starwars", null],
+      ["digimon", null],
+      ["gundam", null],
     ]);
     expect(feed.requests[0]!.url.pathname).toBe(TCC_CATALOG_PATH);
     expect(feed.requests[0]!.url.searchParams.get("limit")).toBe("2");
     expect(feed.requests.every((row) => row.authorization === "Bearer fixture-token")).toBe(true);
     expect(report).toMatchObject({
       status: "completed",
-      requests: 5,
+      requests: 11,
       cards: 6,
       printings: 8,
       sets: 4,
@@ -256,9 +262,10 @@ describe("TCG Card Central catalog import", () => {
       ["pokemon", uuid(2)],
       ["pokemon", uuid(3)],
     ]);
-    const third = await run(new Date(T0.getTime() + 120_000));
-    const fourth = await run(new Date(T0.getTime() + 180_000));
-    expect(third.sweepComplete || fourth.sweepComplete).toBe(true);
+    // Ten games: a few more 2-request runs reach the end of the sweep.
+    let done = false;
+    for (let i = 2; i < 12 && !done; i++) done = (await run(new Date(T0.getTime() + i * 60_000))).sweepComplete;
+    expect(done).toBe(true);
     expect(await count(client, "tcg_printing")).toBe(4);
 
     // A full pass is not repeated within a day...
@@ -374,7 +381,7 @@ describe("TCG Card Central catalog import", () => {
     );
     expect(imported).toMatchObject({ status: "completed", printings: 1 });
     // One page per game.
-    expect(feed.requests).toHaveLength(4);
+    expect(feed.requests).toHaveLength(10);
   });
 
   it("accepts catalog inserts only from the system principal", async () => {

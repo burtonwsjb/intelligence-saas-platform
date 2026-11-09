@@ -123,3 +123,32 @@ describe("rarityNear", () => {
     expect(detectCardMentions("Charizard ex is up", index)[0]!.rarity).toBeNull();
   });
 });
+
+describe("games that need context", () => {
+  const mixed = buildCardNameIndex({
+    cards: [
+      { name: "Lightning Bolt", gameKey: "magic" },
+      { name: "Charizard", gameKey: "pokemon" },
+      { name: "Stitch", gameKey: "lorcana" },
+    ],
+    sets: [{ key: "fdn", name: "Foundations", gameKey: "magic" }],
+  });
+
+  it("ignores a Magic name when the text never names Magic or a Magic set", () => {
+    expect(detectCardMentions("lightning bolt and charizard are both up", mixed).map((m) => m.name)).toEqual([
+      "Charizard",
+    ]);
+  });
+
+  it("keeps it when the game or one of its sets is named", () => {
+    expect(detectCardMentions("in MTG lightning bolt keeps climbing", mixed).map((m) => m.name)).toEqual([
+      "Lightning Bolt",
+    ]);
+    expect(detectCardMentions("lightning bolt from foundations is cheap", mixed)[0]).toMatchObject({
+      name: "Lightning Bolt",
+      gameKey: "magic",
+    });
+    expect(detectCardMentions("lorcana stitch is a buy", mixed)[0]).toMatchObject({ name: "Stitch", gameKey: "lorcana" });
+  });
+});
+

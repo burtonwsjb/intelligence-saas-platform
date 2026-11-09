@@ -14,7 +14,10 @@ function rowsOf<T>(result: unknown): T[] {
   return (Array.isArray(result) ? result : ((result as { rows?: T[] }).rows ?? [])) as T[];
 }
 
-export async function traceSourcePost(db: Database, input: { url: string; cardName?: string | null }) {
+export async function traceSourcePost(
+  db: Database,
+  input: { url: string; cardName?: string | null; /** The 30-day summary ends here (default: now). */ now?: Date },
+) {
   const url = canonicalPostUrl(input.url);
   if (!url) return { url: input.url, error: "invalid_url" };
   const domain = new URL(url).hostname.replace(/^www\./, "");
@@ -95,7 +98,7 @@ export async function traceSourcePost(db: Database, input: { url: string; cardNa
     // What the card page would get: the 30-day summary per printing.
     const sentiment = [];
     for (const printing of printings as { id: string; set_key: string; collector_number: string }[]) {
-      const summary = await getCardSentiment(tx, printing.id, "30d");
+      const summary = await getCardSentiment(tx, printing.id, "30d", { now: input.now });
       if (summary.contentItems === 0) continue;
       sentiment.push({
         set_key: printing.set_key,

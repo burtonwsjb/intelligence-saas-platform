@@ -600,6 +600,29 @@ export function rarityNear(before: string, after: string): string | null {
 }
 
 /**
+ * Games whose card names are often ordinary English ("Shock", "Opt",
+ * "Island") or are shared with other games. A name from one of these games
+ * counts only when the same text names the game, or a set of that game, so
+ * a Pokemon video never turns into a Magic mention.
+ */
+export const NEEDS_GAME_CONTEXT: Record<string, RegExp> = {
+  magic: /\b(?:magic the gathering|magic: the gathering|mtg)\b/i,
+  lorcana: /\blorcana\b/i,
+  flesh_and_blood: /\b(?:flesh and blood|flesh & blood|fab tcg|fabtcg)\b/i,
+  star_wars_unlimited: /\b(?:star wars unlimited|star wars: unlimited|swu)\b/i,
+  digimon: /\bdigimon\b/i,
+  gundam: /\bgundam\b/i,
+};
+
+/** The context games named in `text` by name or by one of their set names. */
+export function gamesInContext(text: string, sets: Array<{ entries: Array<{ gameKey: string }> }>): Set<string> {
+  const out = new Set<string>();
+  for (const [game, pattern] of Object.entries(NEEDS_GAME_CONTEXT)) if (pattern.test(text)) out.add(game);
+  for (const set of sets) for (const entry of set.entries) out.add(entry.gameKey);
+  return out;
+}
+
+/**
  * Card mentions in `text`. Set names are matched first so a set ("Obsidian
  * Flames") never counts as a card. Each card takes the nearest set name in
  * the same text from the same game, a collector number written right after
@@ -611,7 +634,11 @@ export function detectCardMentions(text: string, index: CardNameIndex): Detected
   const tokens = tokenizeForDetection(text);
   const used = tokens.map(() => false);
   const sets = longestMatches(tokens, index.sets, index.maxSetTokens, used);
-  const cards = longestMatches(tokens, index.cards, index.maxCardTokens, used);
+  const matched = longestMatches(tokens, index.cards, index.maxCardTokens, used);
+  const named = gamesInContext(text, sets);
+  const cards = matched
+    .map((card) => ({ ...card, entries: card.entries.filter((e) => !NEEDS_GAME_CONTEXT[e.gameKey] || named.has(e.gameKey)) }))
+    .filter((card) => card.entries.length > 0);
   const seen = new Set<string>();
   const result: DetectedCardMention[] = [];
   for (const card of cards) {

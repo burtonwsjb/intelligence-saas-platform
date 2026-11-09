@@ -12,12 +12,18 @@
  *   PikaPikaPaPa, Poke Profit) are on the CSV list without a handle, so these
  *   rows are what lets the worker find their channels.
  *
+ * - 124–134: market channels for the other games TCG Card Central sells,
+ *   approved by the owner on 2026-11-09 (One Piece, Yu-Gi-Oh!, Magic,
+ *   Lorcana, Dragon Ball Fusion World, Digimon, Flesh and Blood, Star Wars:
+ *   Unlimited, Gundam). Channel ids were read from each channel's own
+ *   YouTube page. Poke Stocks (Pokemon) is already rank 109.
+ *
  * Handles are resolved through the YouTube Data API like every other seed;
  * none is guessed. Being on this list is not authority.
  */
 import type { InfluencerSeedEntry } from "../seed.js";
 
-export const ADDED_INFLUENCER_SEED_VERSION = "added_influencers.2026-10-18";
+export const ADDED_INFLUENCER_SEED_VERSION = "added_influencers.2026-11-09";
 
 const blank = {
   youtubeChannelId: null,
@@ -27,6 +33,17 @@ const blank = {
   feedUrl: null,
   newsletterUrl: null,
 } as const;
+
+function channel(rank: number, name: string, channelId: string): InfluencerSeedEntry {
+  return {
+    ...blank,
+    rank,
+    name,
+    youtubeChannelId: channelId,
+    youtubeUrl: `https://www.youtube.com/channel/${channelId}`,
+    makesSpecificCalls: "yes",
+  };
+}
 
 function youtube(rank: number, name: string, handle: string): InfluencerSeedEntry {
   return {
@@ -70,4 +87,15 @@ export const ADDED_INFLUENCER_SEEDS: readonly InfluencerSeedEntry[] = [
   youtube(121, "vaporself", "@vaporself"),
   youtube(122, "VegasCardDex", "@VegasCardDex"),
   youtube(123, "YourAsianInvestor", "@YourAsianInvestor"),
+  channel(124, "One Piece Market", "UC2uF13S5WVwsoi7kcLdRJtQ"),
+  channel(125, "House of Champs (Yu-Gi-Oh!)", "UCJitJPaU9ClQ7ivDKEzLNuA"),
+  channel(126, "MTG Stocks (Magic)", "UCQYYYpmtaBai1vK7a6ygCVA"),
+  channel(127, "The Quest For Lore (Lorcana)", "UCjVbOxo9Mmr7saXhREfkMmw"),
+  channel(128, "SaiyanCollectsTCG (Dragon Ball)", "UCTIy-WK3VPqp-uMbf4OvzeA"),
+  channel(129, "Mario's Gaming World (Digimon)", "UCe4aEMamMImLDgCtd2Gaz8Q"),
+  channel(130, "TCGTed (Flesh and Blood)", "UCOdxqo7yrE5CKVFHKHCnPsA"),
+  channel(131, "Unplayable (Star Wars: Unlimited)", "UCaRxbAydIP4P_nNjima5yJA"),
+  channel(132, "BoardMatt (Star Wars: Unlimited)", "UCASbMFC84yQRUECyFtSaNXw"),
+  channel(133, "TriloG Studio (Gundam)", "UCwzFSiWP-VFblRmEZIpjZgA"),
+  channel(134, "Wossy Plays (Gundam)", "UCm5dQhtBpw1S3ajLVPKWs0A"),
 ];

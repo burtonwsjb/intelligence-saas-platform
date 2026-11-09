@@ -98,6 +98,12 @@ export const GAME_TEXT: Record<string, string> = {
   dragon_ball_z: "Dragon Ball Z",
   yugioh: "Yu-Gi-Oh!",
   yu_gi_oh: "Yu-Gi-Oh!",
+  magic: "Magic: The Gathering",
+  lorcana: "Disney Lorcana",
+  flesh_and_blood: "Flesh and Blood",
+  star_wars_unlimited: "Star Wars: Unlimited",
+  digimon: "Digimon",
+  gundam: "Gundam",
 };
 
 export function gameText(key: string): string {
