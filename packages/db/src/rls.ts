@@ -78,6 +78,23 @@ async function readContext(db: Database) {
   return firstContextRow(result);
 }
 
+/**
+ * Sets all four request settings in one statement: each separate statement is
+ * a network round trip, and a page opens several of these contexts.
+ */
+async function setContext(
+  tx: Database,
+  values: { organizationId: string; userId: string; principalType: string; apiKeyId: string },
+): Promise<void> {
+  await tx.execute(
+    sql`select
+      set_config('app.current_organization_id', ${values.organizationId}, true),
+      set_config('app.current_user_id', ${values.userId}, true),
+      set_config('app.current_principal_type', ${values.principalType}, true),
+      set_config('app.current_api_key_id', ${values.apiKeyId}, true)`,
+  );
+}
+
 export async function assertTenantContext(db: Database): Promise<void> {
   const row = await readContext(db);
   if (!row?.organization_id) {
@@ -104,16 +121,7 @@ export async function withOrganizationContext<T>(
 ): Promise<T> {
   const safe = parseOrganizationContext(context);
   return db.transaction(async (tx) => {
-    await tx.execute(
-      sql`select set_config('app.current_organization_id', ${safe.organizationId}, true)`,
-    );
-    await tx.execute(
-      sql`select set_config('app.current_user_id', ${safe.userId}, true)`,
-    );
-    await tx.execute(
-      sql`select set_config('app.current_principal_type', 'user', true)`,
-    );
-    await tx.execute(sql`select set_config('app.current_api_key_id', '', true)`);
+    await setContext(tx, { organizationId: safe.organizationId, userId: safe.userId, principalType: "user", apiKeyId: "" });
     await assertTenantContext(tx);
     return run(tx);
   });
@@ -127,16 +135,7 @@ export async function withMachineContext<T>(
   const organizationId = assertContextId(context.organizationId, "organizationId");
   const apiKeyId = assertContextId(context.apiKeyId, "apiKeyId");
   return db.transaction(async (tx) => {
-    await tx.execute(
-      sql`select set_config('app.current_organization_id', ${organizationId}, true)`,
-    );
-    await tx.execute(sql`select set_config('app.current_user_id', '', true)`);
-    await tx.execute(
-      sql`select set_config('app.current_principal_type', 'machine', true)`,
-    );
-    await tx.execute(
-      sql`select set_config('app.current_api_key_id', ${apiKeyId}, true)`,
-    );
+    await setContext(tx, { organizationId, userId: "", principalType: "machine", apiKeyId });
     await assertTenantContext(tx);
     return run(tx);
   });
@@ -149,14 +148,7 @@ export async function withSystemContext<T>(
 ): Promise<T> {
   const organizationId = assertContextId(context.organizationId, "organizationId");
   return db.transaction(async (tx) => {
-    await tx.execute(
-      sql`select set_config('app.current_organization_id', ${organizationId}, true)`,
-    );
-    await tx.execute(sql`select set_config('app.current_user_id', '', true)`);
-    await tx.execute(
-      sql`select set_config('app.current_principal_type', 'system', true)`,
-    );
-    await tx.execute(sql`select set_config('app.current_api_key_id', '', true)`);
+    await setContext(tx, { organizationId, userId: "", principalType: "system", apiKeyId: "" });
     await assertTenantContext(tx);
     return run(tx);
   });
@@ -167,10 +159,7 @@ export async function withPlatformContext<T>(
   run: (db: Database) => Promise<T>,
 ): Promise<T> {
   return db.transaction(async (tx) => {
-    await tx.execute(sql`select set_config('app.current_organization_id', '', true)`);
-    await tx.execute(sql`select set_config('app.current_user_id', '', true)`);
-    await tx.execute(sql`select set_config('app.current_principal_type', 'system', true)`);
-    await tx.execute(sql`select set_config('app.current_api_key_id', '', true)`);
+    await setContext(tx, { organizationId: "", userId: "", principalType: "system", apiKeyId: "" });
     return run(tx);
   });
 }
@@ -186,10 +175,7 @@ export async function withActorContext<T>(
 ): Promise<T> {
   const safeUserId = assertContextId(userId, "userId");
   return db.transaction(async (tx) => {
-    await tx.execute(sql`select set_config('app.current_organization_id', '', true)`);
-    await tx.execute(sql`select set_config('app.current_user_id', ${safeUserId}, true)`);
-    await tx.execute(sql`select set_config('app.current_principal_type', 'user', true)`);
-    await tx.execute(sql`select set_config('app.current_api_key_id', '', true)`);
+    await setContext(tx, { organizationId: "", userId: safeUserId, principalType: "user", apiKeyId: "" });
     return run(tx);
   });
 }

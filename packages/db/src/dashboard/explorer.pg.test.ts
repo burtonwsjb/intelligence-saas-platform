@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import postgres from "postgres";
+import { sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import {
   applyMigrations,
@@ -76,5 +77,32 @@ describe("card explorer on PostgreSQL as app_user", () => {
     expect(sentiment.basis).toBe("accuracy_weighted");
     const evidence = await listCardEvidence(db, printingId);
     expect(evidence.items.length).toBeLessThanOrEqual(10);
+  });
+  it("pages through ties exactly as one whole-catalog sort would", async () => {
+    const db = appConn!.db;
+    // One big tie: every card shares the same scores, so pages cut through the
+    // tie and only the priced-first rule and printing id decide the order.
+    // Score history is append-only, so the test lifts the guard for this one edit.
+    await adminConn!.db.transaction(async (tx) => {
+      await tx.execute(sql`ALTER TABLE tcg_score_snapshot DISABLE TRIGGER USER`);
+      await tx.execute(sql`UPDATE tcg_score_snapshot SET opportunity_score = 70, confidence_score = 50, risk_score = 40, liquidity_score = 50`);
+      await tx.execute(sql`ALTER TABLE tcg_score_snapshot ENABLE TRIGGER USER`);
+    });
+    const mixed = await listCardExplorerPage(db, parseExplorerQuery({ pageSize: "48", window: "90d" }));
+    expect(mixed.rows.some((row) => row.price)).toBe(true);
+    expect(mixed.rows.some((row) => !row.price)).toBe(true);
+    for (const sort of ["opportunity", "name", "risk_low", "market_buy", "recent", "confidence"]) {
+      const whole = await listCardExplorerPage(db, parseExplorerQuery({ pageSize: "48", sort, window: "90d" }));
+      expect(whole.total).toBeLessThanOrEqual(48);
+      expect(whole.total).toBeGreaterThan(6);
+      const paged: string[] = [];
+      for (let page = 1; page <= whole.total + 1; page += 1) {
+        const part = await listCardExplorerPage(db, { ...parseExplorerQuery({ page: String(page), sort, window: "90d" }), pageSize: 2 });
+        expect(part.total).toBe(whole.total);
+        if (part.rows.length === 0) break;
+        paged.push(...part.rows.map((row) => row.printingId));
+      }
+      expect(paged, sort).toEqual(whole.rows.map((row) => row.printingId));
+    }
   });
 });

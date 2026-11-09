@@ -1,5 +1,6 @@
 {
   "framework": "nextjs",
+  "regions": ["pdx1"],
   "installCommand": "pnpm install --frozen-lockfile",
   "buildCommand": "pnpm --filter @isp/web... build"
 }

@@ -1,20 +1,15 @@
 import { AppNav } from "@/components/AppNav";
 import { loadAppAccess } from "@/lib/app-access";
-import { getDb } from "@/lib/auth";
-import { organization, visibleAppNav, withOrganizationContext } from "@isp/db";
-import { eq } from "drizzle-orm";
+import { visibleAppNav } from "@isp/db";
 import type { ReactNode } from "react";
 
 export const dynamic = "force-dynamic";
 
 export default async function AppShellLayout({ children }: { children: ReactNode }) {
-  const { access, unread, organizationId, userId } = await loadAppAccess();
-  const [workspace] = await withOrganizationContext(getDb(), { organizationId, userId }, (scoped) =>
-    scoped.select({ name: organization.name }).from(organization).where(eq(organization.id, organizationId)).limit(1),
-  );
+  const { access, unread, workspaceName } = await loadAppAccess();
   return (
     <div className="app-frame">
-      <AppNav items={visibleAppNav(access)} unread={unread} workspaceName={workspace?.name ?? null} />
+      <AppNav items={visibleAppNav(access)} unread={unread} workspaceName={workspaceName} />
       <div className="app-content">{children}</div>
     </div>
   );
