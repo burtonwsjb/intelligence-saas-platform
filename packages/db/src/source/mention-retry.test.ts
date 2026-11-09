@@ -123,6 +123,8 @@ describe("website mentions of a card printed in several languages", () => {
     const trace = await traceSourcePost(db, {
       url: "https://insider.example.com/2026/10/07/mega-charizard-x-ex-price/?utm_source=rss",
       cardName: "Mega Charizard X ex",
+      // The fixture post is from 2026-10-07: read its 30 days from a fixed day, not the clock.
+      now: new Date("2026-10-20T00:00:00Z"),
     });
     expect(trace).toMatchObject({ domain: "insider.example.com", accounts: [{ handle: "insider.example.com" }] });
     const posts = (trace as { posts: Array<{ mentions: Array<{ raw: string; status: string; chosen_language: string | null }> }> }).posts;
