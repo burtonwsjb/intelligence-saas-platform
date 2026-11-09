@@ -243,7 +243,9 @@ describe("TCG Card Central catalog import", () => {
     const checkpoint = await latestTccCatalogCheckpoint(db);
     expect(checkpoint?.sweep_completed_at).toBe(T0.toISOString());
     expect(checkpoint?.games.pokemon).toEqual({ after: uuid(2), done: true });
-  });
+    // Ten games are paged through PGlite; under the full parallel suite on CI
+    // this takes 25s+ (about 3s alone), like the other import tests here.
+  }, 90_000);
 
   it("bounds requests per run, resumes from the stored cursor and re-sweeps once a day", async () => {
     const { client, db } = await setup();
