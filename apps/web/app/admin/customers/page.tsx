@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AdminHeader } from "@/components/Admin";
 import {
   listActiveCustomers,
   listAtRiskCustomers,
@@ -40,8 +41,7 @@ export default async function AdminCustomersPage({
 
   return (
     <>
-      <h1>Customers</h1>
-      <p className="muted">Phase 17 CRM listings. Operator notes stay off tenant surfaces.</p>
+      <AdminHeader icon="customers" title="Customers" description="Every workspace and where it is in its lifecycle. Operator notes never show to customers." />
       <p>
         <Link href="/admin/customers">all</Link>
         {" · "}

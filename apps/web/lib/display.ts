@@ -115,6 +115,13 @@ export const PROVIDER_TEXT: Record<string, string> = {
   tcgplayer: "TCGplayer",
   ebay: "eBay",
   tickermint: "TickerMint",
+  youtube: "YouTube",
+  reddit: "Reddit",
+  google: "Google",
+  tiktok: "TikTok",
+  web_feed: "Influencer websites",
+  podcast: "Podcasts",
+  supadata: "Supadata",
 };
 
 export function providerText(key: string): string {

@@ -1,4 +1,5 @@
 import { describePlatformConfig } from "@isp/db";
+import { AdminHeader } from "@/components/Admin";
 import { requireGrantedOperator } from "@/lib/platform-admin";
 
 export const dynamic = "force-dynamic";
@@ -9,11 +10,7 @@ export default async function AdminConfigPage() {
 
   return (
     <>
-      <h1>Configuration</h1>
-      <p className="muted">
-        Display-only flags. Connection strings, API keys, webhook secrets, and Stripe IDs are never
-        shown.
-      </p>
+      <AdminHeader icon="config" title="Configuration" description="What is set up on this server. Connection strings, keys and secrets are never shown." />
       <div className="table-wrap">
       <table className="data-table">
         <tbody>

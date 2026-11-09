@@ -1,4 +1,5 @@
 import { SUPPORT_CASE_STATUSES, listSupportCases } from "@isp/db";
+import { AdminHeader } from "@/components/Admin";
 import { requireGrantedOperator } from "@/lib/platform-admin";
 import { createSupportCaseAction, setSupportStatusAction } from "@/app/admin-actions";
 
@@ -18,8 +19,7 @@ export default async function AdminSupportPage({
 
   return (
     <>
-      <h1>Support</h1>
-      <p className="muted">Operator-only cases. Tenants cannot read this table.</p>
+      <AdminHeader icon="support" title="Support" description="Operator-only support cases. Customers cannot see this." />
       {query.error ? <p className="form-error">Support action was rejected.</p> : null}
       <form className="auth-form" action={createSupportCaseAction}>
         <label>

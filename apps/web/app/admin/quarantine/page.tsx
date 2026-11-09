@@ -1,3 +1,4 @@
+import { AdminHeader } from "@/components/Admin";
 import {
   listIntelligenceQuarantineForAdmin,
   listMarketQuarantineForAdmin,
@@ -24,8 +25,7 @@ export default async function AdminQuarantinePage({
 
   return (
     <>
-      <h1>Quarantine</h1>
-      <p className="muted">Safe payload summaries only. Raw secrets are never shown. Every action is audited.</p>
+      <AdminHeader icon="quarantine" title="Quarantine" description="Records that failed checks. Approve, retry or dismiss them. Every action is audited." />
       {query.error ? <p className="form-error">Quarantine action was rejected.</p> : null}
       <h2>Market</h2>
       {market.map((row) => (

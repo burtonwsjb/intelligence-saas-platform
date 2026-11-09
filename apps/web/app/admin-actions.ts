@@ -42,6 +42,19 @@ import {
 } from "@isp/db";
 import { requireGrantedOperator } from "@/lib/platform-admin";
 
+/**
+ * Where to land after a successful action. Buttons on the admin control
+ * center send returnTo=/admin so the operator stays on the dashboard; any
+ * value outside the admin console falls back to the action's own page.
+ */
+function successPath(formData: FormData, fallback: string, notice: string): string {
+  const requested = String(formData.get("returnTo") ?? "");
+  if (/^\/admin(\/[a-z-]*)?$/.test(requested)) {
+    return `${requested}?done=${notice}`;
+  }
+  return fallback;
+}
+
 export async function setCreatorTrustAction(formData: FormData) {
   const operator = await requireGrantedOperator();
   if (!operator.adminDb) {
@@ -191,7 +204,7 @@ export async function setFeatureFlagAction(formData: FormData) {
     action: "feature.flag",
     metadata: { key },
   });
-  redirect("/admin/beta");
+  redirect(successPath(formData, "/admin/beta", "flag"));
 }
 
 export async function setProviderEnabledAction(formData: FormData) {
@@ -233,7 +246,7 @@ export async function setProviderPausedAction(formData: FormData) {
     }
     throw error;
   }
-  redirect("/admin/sources");
+  redirect(successPath(formData, "/admin/sources", "paused"));
 }
 
 export async function triggerProviderSyncAction(formData: FormData) {
@@ -254,7 +267,7 @@ export async function triggerProviderSyncAction(formData: FormData) {
     }
     throw error;
   }
-  redirect("/admin/sources");
+  redirect(successPath(formData, "/admin/sources", "sync"));
 }
 
 export async function retryProviderJobAction(formData: FormData) {
@@ -513,7 +526,7 @@ export async function triggerDiscoveryRunAction(formData: FormData) {
     if (error instanceof DiscoveryConfigurationError) redirect("/admin/discovery?error=configuration");
     throw error;
   }
-  redirect("/admin/discovery?queued=yes");
+  redirect(successPath(formData, "/admin/discovery?queued=yes", "discovery"));
 }
 
 export async function reviewQuarantineAction(formData: FormData) {
@@ -569,7 +582,7 @@ export async function updateWorkerResourcesAction(formData: FormData) {
   } catch {
     redirect("/admin/health?resources=rejected");
   }
-  redirect("/admin/health?resources=saved");
+  redirect(successPath(formData, "/admin/health?resources=saved", "worker"));
 }
 
 export async function closeInterruptedScheduledRunAction(formData: FormData) {
