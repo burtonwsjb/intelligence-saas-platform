@@ -5,14 +5,31 @@ import { HeaderNav } from "@/components/HeaderNav";
 import { BrandMark } from "@/components/Icon";
 import { MarketingChrome } from "@/components/MarketingChrome";
 import { SKIP_LINK_HREF } from "@/lib/a11y";
+import { CANONICAL_ORIGIN } from "@/lib/canonical-host";
 import "./globals.css";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = {
-  title: "Sentiment",
-  description: "Buy and sell sentiment for trading cards and sealed products",
-};
+const DESCRIPTION = "Buy and sell sentiment for trading cards and sealed products";
+
+/** Absolute links (Open Graph, canonical) use APP_URL, falling back to tcgsentiment.com. */
+function siteOrigin(): URL {
+  try {
+    return new URL(process.env.APP_URL?.trim() || CANONICAL_ORIGIN);
+  } catch {
+    return new URL(CANONICAL_ORIGIN);
+  }
+}
+
+export function generateMetadata(): Metadata {
+  return {
+    metadataBase: siteOrigin(),
+    title: "Sentiment",
+    description: DESCRIPTION,
+    applicationName: "Sentiment",
+    openGraph: { type: "website", siteName: "Sentiment", title: "Sentiment", description: DESCRIPTION, url: "/" },
+  };
+}
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
