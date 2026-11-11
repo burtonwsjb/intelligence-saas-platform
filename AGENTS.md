@@ -3,6 +3,13 @@
 Read PROJECT_SOURCE_OF_TRUTH.md in full before planning or changing code. It is
 owner-controlled. Do not modify it to make incomplete behavior appear finished.
 
+For the unified product-completion work, also read
+`docs/MASTER_COMPLETION_PHASE.md` and `docs/MASTER_ACCEPTANCE_CHECKLIST.md`.
+They record the owner's cache-first market integration and clean, visual,
+bounded-page UI direction. They do not replace the source of truth. Keep the
+requirement-level evidence register current and distinguish engineering staging
+readiness, owner acceptance, and full production/source-of-truth completion.
+
 Automatic topic discovery must create canonical creator identities and feed real
 recurring monitoring and the existing ingestion pipeline. Manual account IDs are
 optional seeds, never a prerequisite. Popularity is not historical authority.
