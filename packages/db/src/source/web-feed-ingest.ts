@@ -49,6 +49,7 @@ import { sourceAccount, sourceIngest } from "../schema/source.js";
 import { parseWebhookUrl, type DnsLookup } from "../webhooks/ssrf.js";
 import { detectCardMentions, loadCardNameIndex, type CardNameIndex } from "./card-detect.js";
 import { boundedWindowExcerpt, cardMentionId, storeCardMentionSegments, type CardMentionSegment } from "./card-mentions.js";
+import { storeScopeTalkAtIngest } from "./scope-talk-store.js";
 import { ingestSourceContentRecord } from "./ingest.js";
 import { normalizeMentionText, stableSourceId, type SourceContentRecordInput } from "./identity.js";
 
@@ -513,6 +514,7 @@ export async function ingestWebFeedPost(
       hintsKey: "card_detect",
       segments: planned,
     });
+    await storeScopeTalkAtIngest(tx, { contentId, publishedAt: published, title: input.post.title, texts: [input.post.text], cards: input.index });
     let callsCreated = 0;
     if (mentions > 0) {
       const calls = await extractCreatorCallsFromContent(tx, contentId);

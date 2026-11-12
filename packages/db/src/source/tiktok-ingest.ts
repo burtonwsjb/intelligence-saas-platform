@@ -43,6 +43,7 @@ import { providerSyncRun } from "../schema/provider.js";
 import { sourceAccount, sourceIngest } from "../schema/source.js";
 import { detectCardMentions, loadCardNameIndex, type CardNameIndex } from "./card-detect.js";
 import { storeCardMentionSegments } from "./card-mentions.js";
+import { storeScopeTalkAtIngest } from "./scope-talk-store.js";
 import { ingestSourceContentRecord } from "./ingest.js";
 import { stableSourceId } from "./identity.js";
 import { planWebPostSegments } from "./web-feed-ingest.js";
@@ -269,6 +270,7 @@ async function storeTikTokVideo(
       hintsKey: "card_detect",
       segments: planned,
     }));
+    await storeScopeTalkAtIngest(tx, { contentId: ingested.contentId, publishedAt: input.publishedAt, texts: [caption], cards: input.index });
     if (mentions > 0) {
       const calls = await extractCreatorCallsFromContent(tx, ingested.contentId);
       callsCreated = calls.filter((row) => row.status === "processed").length;

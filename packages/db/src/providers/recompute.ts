@@ -3,6 +3,7 @@ import type { Database } from "../client.js";
 import { computeIndexLevel, listIndexDefinitions, persistIndexLevel } from "../analytics/index-engine.js";
 import { extractCreatorCallsFromContent } from "../creator/ingest.js";
 import { extractAssetCallsFromContent } from "../creator/assets.js";
+import { extractScopeTalkForContent } from "../source/scope-talk-store.js";
 import { DEFAULT_PREDICTION_VISIBILITY } from "../prediction/catalog.js";
 import { issuePrediction } from "../prediction/issue.js";
 import { tcgMarketSnapshot } from "../schema/tcg-market.js";
@@ -46,6 +47,8 @@ export async function processCreatorExtractJob(db: Database, contentId: string) 
   const cardCalls = await extractCreatorCallsFromContent(db, contentId);
   // Calls about tracked non-card assets (Bitcoin, ...) come from the same post.
   await extractAssetCallsFromContent(db, contentId);
+  // Set, sealed, graded and group talk in the same post, for card and product sentiment.
+  await db.transaction((inner) => extractScopeTalkForContent(inner as unknown as Database, contentId)).catch(() => 0);
   return cardCalls;
 }
 

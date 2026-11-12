@@ -39,6 +39,7 @@ import { providerSyncRun } from "../schema/provider.js";
 import { sourceIngest } from "../schema/source.js";
 import { loadCardNameIndex, type CardNameIndex } from "./card-detect.js";
 import { storeCardMentionSegments, type CardMentionSegment } from "./card-mentions.js";
+import { storeScopeTalkAtIngest } from "./scope-talk-store.js";
 import type { SourceContentRecordInput } from "./identity.js";
 import { ingestSourceContentRecord } from "./ingest.js";
 import { planWebPostSegments } from "./web-feed-ingest.js";
@@ -220,6 +221,15 @@ export async function ingestBackfilledVideo(
       segments: planned,
     });
     const stored = existing?.status !== "processed";
+    if (stored) {
+      await storeScopeTalkAtIngest(tx, {
+        contentId,
+        publishedAt: new Date(record.content.published_at),
+        title: record.content.title ?? null,
+        texts: [input.description],
+        cards: input.index,
+      });
+    }
     let callsCreated = 0;
     if (stored || mentions > 0) {
       const cardCalls = await extractCreatorCallsFromContent(tx, contentId);

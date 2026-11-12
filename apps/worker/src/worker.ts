@@ -25,6 +25,7 @@ import {
   syncSealedProducts,
   syncSetAssets,
   rescanAssetCalls,
+  rescanScopeTalk,
   syncTccPriceHistory,
   retryUnboundDetectedMentions,
   traceSourcePost,
@@ -43,6 +44,7 @@ import {
   type WebBackfillReport,
   type MentionRetryReport,
   type AssetCallRescanReport,
+  type ScopeTalkRescanReport,
   type PodcastFeedSyncReport,
   type WebFeedSyncReport,
   type YoutubeBackfillReport,
@@ -210,6 +212,7 @@ export async function runMarketWork(db: Database, env: NodeJS.ProcessEnv = proce
   await runWebSitemapBackfill(db, env);
   await runMentionRetry(db);
   await runAssetCallRescan(db);
+  await runScopeTalkRescan(db);
   await runPostTrace(db, env);
   await runChartCoverage(db);
   await runPriceHistory(db, env);
@@ -273,6 +276,30 @@ export async function runAssetCallRescan(db: Database): Promise<AssetCallRescanR
     return report;
   } catch (error) {
     logLoopFailure("worker.asset_call_rescan_failed", "asset_call_rescan", error);
+    return null;
+  }
+}
+
+/**
+ * Reads set, sealed, graded and group talk out of posts from the last year
+ * stored before that reader existed, a bounded batch per run behind a cursor.
+ * Database only. Skipped (logged once per run) until migration 0042 is applied.
+ */
+export async function runScopeTalkRescan(db: Database): Promise<ScopeTalkRescanReport | null> {
+  try {
+    const report = await rescanScopeTalk(db);
+    if (report.scanned > 0 || report.skipped) {
+      logQueueEvent("info", "worker.scope_talk_rescan", {
+        status: report.skipped ? "skipped" : "completed",
+        reason: report.skipped ?? null,
+        scanned: report.scanned,
+        statements: report.statements,
+        failed: report.failed,
+      });
+    }
+    return report;
+  } catch (error) {
+    logLoopFailure("worker.scope_talk_rescan_failed", "scope_talk_rescan", error);
     return null;
   }
 }

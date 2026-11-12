@@ -3,6 +3,8 @@ import type { Hono } from "hono";
 import {
   disableWebhookEndpoint,
   getCardSentimentWithHistory,
+  getCardTalk,
+  type CardTalk,
   getChartSentiment,
   getCreatorAuthorityProfile,
   getCreatorLeaderboard,
@@ -320,6 +322,8 @@ function sentimentBody(input: {
       classified_posts: summary.classified,
       posts_from_rated_creators: summary.ratedPosts,
       accounts: summary.uniqueAccounts,
+      // Posts by what they said about the card: named it, its rarity group, its set's singles, its whole set, its set's graded cards.
+      by_scope: summary.byScope,
     },
     history: {
       period_days: input.bucketDays,
@@ -343,6 +347,23 @@ function sentimentBody(input: {
       waiting_for_market: calls.pending,
       accuracy: calls.evaluated > 0 ? round4(calls.correct / calls.evaluated) : null,
     },
+  };
+}
+
+function cardTalkBody(talk: CardTalk) {
+  return {
+    quotes: talk.quotes.map((quote) => ({
+      scope: quote.scope,
+      sentiment: quote.sentiment,
+      text: quote.clause,
+      grade: quote.grade,
+      rarity: quote.rarity,
+      time_frame: quote.horizonPhrase,
+      published_at: quote.publishedAt.toISOString(),
+      url: quote.url,
+      account: quote.accountName,
+    })),
+    graded: talk.grades,
   };
 }
 
@@ -641,15 +662,17 @@ export function registerCommercialRoutes(
         return jsonError("not_found", "Printing not found.", 404, requestId);
       }
       const hidden = await hiddenCreatorIds(c.get("db"), c.get("machine"));
-      const [sentiment, calls, chart] = await Promise.all([
+      const [sentiment, calls, chart, talk] = await Promise.all([
         getCardSentimentWithHistory(c.get("db"), row.printing.id, window, { hiddenCreatorIds: hidden }),
         getPrintingCalls(c.get("db"), row.printing.id, { hiddenCreatorIds: hidden }),
         getChartSentiment(c.get("db"), [row.printing.id]),
+        getCardTalk(c.get("db"), row.printing.id, window, { hiddenCreatorIds: hidden }),
       ]);
       return c.json({
         printing: exactPrinting(row),
         ...sentimentBody({ window, ...sentiment, calls }),
         chart_sentiment: chartSentimentBody(chart.get(row.printing.id)),
+        wider_talk: cardTalkBody(talk),
       });
     } catch (error) {
       return commercialError(error, requestId);
@@ -672,16 +695,18 @@ export function registerCommercialRoutes(
       // A scan or card page on tcgcardcentral.com: counted so the hourly rescore refreshes this card first.
       await recordPrintingDemand(c.get("db"), [row.printing.id]);
       const hidden = await hiddenCreatorIds(c.get("db"), c.get("machine"));
-      const [sentiment, calls, chart] = await Promise.all([
+      const [sentiment, calls, chart, talk] = await Promise.all([
         getCardSentimentWithHistory(c.get("db"), row.printing.id, window, { hiddenCreatorIds: hidden }),
         getPrintingCalls(c.get("db"), row.printing.id, { hiddenCreatorIds: hidden }),
         getChartSentiment(c.get("db"), [row.printing.id]),
+        getCardTalk(c.get("db"), row.printing.id, window, { hiddenCreatorIds: hidden }),
       ]);
       return c.json({
         tcc_card_id: tccCardId,
         printing: exactPrinting(row),
         ...sentimentBody({ window, ...sentiment, calls }),
         chart_sentiment: chartSentimentBody(chart.get(row.printing.id)),
+        wider_talk: cardTalkBody(talk),
       });
     } catch (error) {
       return commercialError(error, requestId);

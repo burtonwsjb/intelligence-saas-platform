@@ -2,6 +2,7 @@ import { sql, type SQL } from "drizzle-orm";
 import type { Database } from "../client.js";
 import { callGradeFromEvidence } from "../creator/grade.js";
 import { loadPrintingImages } from "../tcg/card-image.js";
+import { scopeTalkReady } from "../source/scope-talk-store.js";
 
 // Card explorer read model. Every number returned here comes from persisted,
 // versioned records (score snapshots, market snapshots, resolved mentions).
@@ -803,6 +804,29 @@ export type SentimentEvidenceRow = {
   rated: boolean;
   /** When the post was published, for history buckets. */
   publishedAt?: Date;
+  /**
+   * What the post said about this card: "card" (named it), or wider talk that
+   * covers it: "rarity" (its rarity group), "singles" or "set" (its whole set),
+   * "graded" (graded cards of its set). Absent on rows read before 0042.
+   */
+  scope?: EvidenceScope;
+  /** Graded talk only: the grade it named ("PSA 10"), null for graded cards in general. */
+  grade?: string | null;
+};
+
+export type EvidenceScope = "card" | "rarity" | "singles" | "set" | "graded";
+
+/**
+ * How much one post counts by how specific it was about the card. A post
+ * about the card itself counts fully; talk about the whole set counts half,
+ * since it covers hundreds of cards that will not all move together.
+ */
+export const SCOPE_WEIGHT: Record<EvidenceScope, number> = {
+  card: 1,
+  rarity: 0.75,
+  singles: 0.5,
+  set: 0.5,
+  graded: 0.4,
 };
 
 /**
@@ -829,6 +853,12 @@ export type SentimentSummary = {
   to: Date;
   basis: "accuracy_weighted";
   label: SentimentLabel;
+  /**
+   * Classified posts by what they said about the card: named it ("card"),
+   * its rarity group, its set's singles, its whole set, or its set's graded
+   * cards. Each post counts once, at its most specific statement.
+   */
+  byScope: Record<EvidenceScope, number>;
 };
 
 export type SentimentLabel =
@@ -849,11 +879,14 @@ export const SENTIMENT_MIN_SAMPLE = 3;
  * one item collapse to "mixed". Unknown is reported, never folded into neutral.
  */
 export function summarizeSentiment(rows: SentimentEvidenceRow[], range: { from: Date; to: Date }): SentimentSummary {
-  const byContent = new Map<string, { accountId: string; weight: number; rated: boolean; values: Set<string> }>();
+  const byContent = new Map<
+    string,
+    { accountId: string; weight: number; rated: boolean; values: Set<string>; scope: EvidenceScope }
+  >();
   for (const row of rows) {
     const entry =
       byContent.get(row.contentId) ??
-      { accountId: row.accountId, weight: row.weight, rated: row.rated, values: new Set<string>() };
+      { accountId: row.accountId, weight: row.weight, rated: row.rated, values: new Set<string>(), scope: row.scope ?? "card" };
     entry.values.add(row.sentiment);
     byContent.set(row.contentId, entry);
   }
@@ -861,6 +894,7 @@ export function summarizeSentiment(rows: SentimentEvidenceRow[], range: { from: 
   const weighted: Record<SentimentKey, number> = { positive: 0, neutral: 0, negative: 0, mixed: 0 };
   let unknown = 0;
   let ratedPosts = 0;
+  const byScope: Record<EvidenceScope, number> = { card: 0, rarity: 0, singles: 0, set: 0, graded: 0 };
   const accounts = new Set<string>();
   for (const entry of byContent.values()) {
     accounts.add(entry.accountId);
@@ -874,6 +908,7 @@ export function summarizeSentiment(rows: SentimentEvidenceRow[], range: { from: 
     const weight = Number.isFinite(entry.weight) ? Math.max(0, entry.weight) : SENTIMENT_BASELINE_WEIGHT;
     counts[key] += 1;
     weighted[key] += weight;
+    byScope[entry.scope] = (byScope[entry.scope] ?? 0) + 1;
     if (entry.rated) ratedPosts += 1;
   }
   const classified = counts.positive + counts.neutral + counts.negative + counts.mixed;
@@ -898,6 +933,7 @@ export function summarizeSentiment(rows: SentimentEvidenceRow[], range: { from: 
     to: range.to,
     basis: "accuracy_weighted",
     label: sentimentLabel(weighted, weightTotal, classified),
+    byScope,
   };
 }
 
@@ -965,16 +1001,90 @@ const MENTION_SENTIMENT = sql.raw(`COALESCE(NULLIF(sm.sentiment, 'unknown'), (
 ), 'unknown')`);
 
 /**
+ * Wider talk (market_scope_talk, migration 0042) as evidence rows for the
+ * printings in `printingFilter`: statements about the printing's set, its
+ * singles, graded cards, its rarity group, and statements that name the card
+ * inside such talk. Talk without a time frame counts only when posted in the
+ * window; talk with one ("until January") counts while the frame is open,
+ * up to two years back. `age_factor` fades talk without a time frame after
+ * 30 days (see talkAgeFactor in source/scope-talk.ts).
+ */
+function scopeTalkEvidenceSql(printingFilter: SQL, range: { from: Date; to: Date }): SQL {
+  const to = ts(range.to);
+  return sql`
+    SELECT p.id AS printing_id, t.content_id, sc.account_id, t.sentiment, sc.published_at, p.language_code, t.id AS talk_id,
+      CASE t.scope WHEN 'card' THEN 0 WHEN 'rarity' THEN 2 WHEN 'singles' THEN 3 WHEN 'set' THEN 4 ELSE 5 END AS specificity,
+      t.scope, t.grade,
+      CASE
+        WHEN t.horizon_days IS NOT NULL THEN 1
+        WHEN sc.published_at >= ${to}::timestamptz - interval '30 days' THEN 1
+        ELSE GREATEST(0, 1 - (EXTRACT(EPOCH FROM (${to}::timestamptz - sc.published_at)) / 86400 - 30) / 60)
+      END AS age_factor
+    FROM market_scope_talk t
+    JOIN source_content sc ON sc.id = t.content_id
+    JOIN tcg_printing p ON p.set_id = t.set_id AND ${printingFilter}
+      -- Talk covers the printings in the post's language (English when the
+      -- post does not say): an English video about a set says nothing about
+      -- its Japanese printings.
+      AND (
+        (sc.language IS NULL AND p.language_code = 'en')
+        OR (sc.language IS NOT NULL AND lower(p.language_code) LIKE split_part(lower(sc.language), '-', 1) || '%')
+      )
+    WHERE t.scope IN ('card', 'rarity', 'singles', 'set', 'graded')
+      AND sc.published_at <= ${to}
+      AND sc.published_at > ${to}::timestamptz - interval '730 days'
+      AND (
+        (t.horizon_days IS NULL AND sc.published_at > ${ts(range.from)})
+        OR (t.horizon_days IS NOT NULL AND sc.published_at + make_interval(days => t.horizon_days) > ${to}::timestamptz
+            )
+      )
+      AND (t.scope <> 'card' OR EXISTS (
+        SELECT 1 FROM tcg_card_concept c WHERE c.id = p.card_id
+          AND position(' ' || t.card_name || ' ' IN ' ' || trim(regexp_replace(translate(lower(c.canonical_name), 'éèêëáàâäíìîïóòôöúùûüñç', 'eeeeaaaaiiiioooouuuunc'), '[^a-z0-9]+', ' ', 'g')) || ' ') > 0
+      ))
+      AND (t.scope <> 'rarity' OR CASE t.rarity
+        WHEN 'Alternate Art' THEN p.variant_key = 'alt_art'
+        WHEN 'Parallel' THEN p.variant_key = 'parallel'
+        ELSE lower(COALESCE(p.rarity, '')) = lower(t.rarity)
+      END)
+  `;
+}
+
+/**
  * The evidence rows behind listSentimentEvidence, as SQL: for the given
  * printings, or for every printing when printingIds is null (the card list's
- * social filter and sort).
+ * social filter and sort). With `withTalk`, wider talk is added and each post
+ * keeps only its most specific statement about each card: a card named in an
+ * "except" clause drops out of that post, a card named with "especially"
+ * takes that clause's direction over the set's.
  */
 function sentimentEvidenceSql(
   printingIds: string[] | null,
   range: { from: Date; to: Date },
   hidden: string[],
+  withTalk = false,
 ): SQL {
   const forPrintings = (column: SQL) => (printingIds ? sql`${column} IN (${inList(printingIds)})` : sql`${column} IS NOT NULL`);
+  const exact = sql`
+    SELECT l.chosen_printing_id AS printing_id, sm.content_id, sc.account_id, ${MENTION_SENTIMENT} AS sentiment, sc.published_at,
+      p.language_code, NULL::text AS talk_id, 1 AS specificity, 'card'::text AS scope, NULL::text AS grade, 1::numeric AS age_factor
+    FROM latest l
+    JOIN source_mention sm ON sm.id = l.mention_id
+    JOIN source_content sc ON sc.id = sm.content_id
+    JOIN tcg_printing p ON p.id = l.chosen_printing_id
+    WHERE l.status IN ('exact', 'high_confidence')
+      AND ${forPrintings(sql`l.chosen_printing_id`)}
+      AND sc.published_at > ${ts(range.from)}
+      AND sc.published_at <= ${ts(range.to)}
+  `;
+  const combined = withTalk
+    ? sql`
+        SELECT * FROM (
+          SELECT ev.*, min(ev.specificity) OVER (PARTITION BY ev.printing_id, ev.content_id) AS best
+          FROM (${exact} UNION ALL ${scopeTalkEvidenceSql(forPrintings(sql`p.id`), range)}) ev
+        ) ranked
+        WHERE ranked.specificity = ranked.best AND ranked.sentiment <> 'excluded' AND ranked.age_factor > 0`
+    : exact;
   return sql`
     WITH candidate AS (
       SELECT DISTINCT a.mention_id FROM entity_resolution_attempt a
@@ -995,31 +1105,24 @@ function sentimentEvidenceSql(
       ) trust ON TRUE
       WHERE trust.trust_state = 'excluded'
     )
-    SELECT l.chosen_printing_id AS printing_id, sm.content_id, sc.account_id, ${MENTION_SENTIMENT} AS sentiment, sc.published_at,
+    SELECT e.printing_id, e.content_id, e.account_id, e.sentiment, e.published_at, e.scope, e.grade, e.age_factor,
       authority.authority_weight, authority.creator_id IS NOT NULL AS rated
-    FROM latest l
-    JOIN source_mention sm ON sm.id = l.mention_id
-    JOIN source_content sc ON sc.id = sm.content_id
-    JOIN tcg_printing p ON p.id = l.chosen_printing_id
+    FROM (${combined}) e
     -- Same slice choice as scoring/gather.ts: newest slice in the printing's
     -- language, else the newest overall slice, else the newest slice.
     LEFT JOIN LATERAL (
       SELECT s.creator_id, s.authority_weight
       FROM creator_source_account csa
       JOIN creator_authority_slice s ON s.creator_id = csa.creator_id
-      WHERE csa.source_account_id = sc.account_id
-      ORDER BY (s.language_code = p.language_code) DESC NULLS LAST,
+      WHERE csa.source_account_id = e.account_id
+      ORDER BY (s.language_code = e.language_code) DESC NULLS LAST,
         (s.language_code IS NULL AND s.price_tier = 'all' AND s.game_key IS NULL) DESC,
         s.created_at DESC, s.id DESC
       LIMIT 1
     ) authority ON TRUE
-    WHERE l.status IN ('exact', 'high_confidence')
-      AND ${forPrintings(sql`l.chosen_printing_id`)}
-      AND sc.published_at > ${ts(range.from)}
-      AND sc.published_at <= ${ts(range.to)}
-      AND sc.account_id NOT IN (SELECT source_account_id FROM excluded_account)
+    WHERE e.account_id NOT IN (SELECT source_account_id FROM excluded_account)
       ${hidden.length
-        ? sql`AND sc.account_id NOT IN (
+        ? sql`AND e.account_id NOT IN (
             SELECT source_account_id FROM creator_source_account WHERE creator_id IN (${inList(hidden)})
           )`
         : sql``}
@@ -1033,16 +1136,26 @@ export async function listSentimentEvidence(
   options: { hiddenCreatorIds?: string[] } = {},
 ): Promise<SentimentEvidenceRow[]> {
   if (printingIds.length === 0) return [];
-  const result = await db.execute(sql`${sentimentEvidenceSql(printingIds, range, options.hiddenCreatorIds ?? [])} LIMIT 5000`);
-  return asRows(result).map((row) => ({
-    printingId: String(row.printing_id),
-    contentId: String(row.content_id),
-    accountId: String(row.account_id),
-    sentiment: String(row.sentiment),
-    weight: row.authority_weight == null ? SENTIMENT_BASELINE_WEIGHT : Number(row.authority_weight),
-    rated: row.rated === true || row.rated === "t",
-    publishedAt: toDate(row.published_at),
-  }));
+  const withTalk = await scopeTalkReady(db).catch(() => false);
+  const result = await db.execute(
+    sql`${sentimentEvidenceSql(printingIds, range, options.hiddenCreatorIds ?? [], withTalk)} LIMIT 5000`,
+  );
+  return asRows(result).map((row) => {
+    const scope = (typeof row.scope === "string" ? row.scope : "card") as EvidenceScope;
+    const base = row.authority_weight == null ? SENTIMENT_BASELINE_WEIGHT : Number(row.authority_weight);
+    const age = row.age_factor == null ? 1 : Number(row.age_factor);
+    return {
+      printingId: String(row.printing_id),
+      contentId: String(row.content_id),
+      accountId: String(row.account_id),
+      sentiment: String(row.sentiment),
+      weight: base * (SCOPE_WEIGHT[scope] ?? 1) * (Number.isFinite(age) ? age : 1),
+      rated: row.rated === true || row.rated === "t",
+      publishedAt: toDate(row.published_at),
+      scope,
+      grade: row.grade == null ? null : String(row.grade),
+    };
+  });
 }
 
 /**
@@ -1166,6 +1279,90 @@ export async function getCardSentiment(
   const now = options.now ?? new Date();
   const range = { from: new Date(now.getTime() - EXPLORER_WINDOW_DAYS[window] * 86_400_000), to: now };
   return summarizeSentiment(await listSentimentEvidence(db, [printingId], range, options), range);
+}
+
+export type CardTalkQuote = {
+  scope: EvidenceScope;
+  sentiment: "positive" | "negative" | "neutral" | "excluded";
+  clause: string;
+  grade: string | null;
+  rarity: string | null;
+  horizonPhrase: string | null;
+  publishedAt: Date;
+  url: string;
+  accountName: string | null;
+};
+
+export type CardTalk = {
+  /** The newest wider-talk statements that cover this card, with where they were said. */
+  quotes: CardTalkQuote[];
+  /** Graded talk about this card's set, per grade named ("PSA 10", or "graded" when none). */
+  grades: Array<{ grade: string; positive: number; negative: number; neutral: number }>;
+};
+
+/**
+ * The wider talk behind a card's sentiment, for the card page: what was said
+ * about its set, singles, rarity group, graded cards or the card itself
+ * inside such talk. Same window and time frame rules as the sentiment.
+ * Empty until migration 0042 is applied.
+ */
+export async function getCardTalk(
+  db: Database,
+  printingId: string,
+  window: ExplorerWindow,
+  options: { now?: Date; hiddenCreatorIds?: string[]; limit?: number } = {},
+): Promise<CardTalk> {
+  if (!(await scopeTalkReady(db).catch(() => false))) return { quotes: [], grades: [] };
+  const now = options.now ?? new Date();
+  const range = { from: new Date(now.getTime() - EXPLORER_WINDOW_DAYS[window] * 86_400_000), to: now };
+  const hidden = options.hiddenCreatorIds ?? [];
+  const result = await db.execute(sql`
+    SELECT ev.scope, ev.sentiment, ev.grade, t.clause, t.rarity, t.horizon_phrase, sc.published_at, sc.canonical_url,
+      coalesce(sa.display_name, sa.handle) AS account_name
+    FROM (${scopeTalkEvidenceSql(sql`p.id = ${printingId}`, range)}) ev
+    JOIN market_scope_talk t ON t.id = ev.talk_id
+    JOIN source_content sc ON sc.id = ev.content_id
+    JOIN source_account sa ON sa.id = sc.account_id
+    LEFT JOIN creator_source_account csa ON csa.source_account_id = sc.account_id
+    LEFT JOIN LATERAL (
+      SELECT te.trust_state FROM creator_trust_event te WHERE te.creator_id = csa.creator_id
+      ORDER BY te.created_at DESC LIMIT 1
+    ) trust ON TRUE
+    WHERE ev.age_factor > 0
+      AND (trust.trust_state IS NULL OR trust.trust_state <> 'excluded')
+      ${hidden.length ? sql`AND (csa.creator_id IS NULL OR csa.creator_id NOT IN (${inList(hidden)}))` : sql``}
+    ORDER BY sc.published_at DESC
+    LIMIT 200
+  `);
+  const rows = asRows(result);
+  const seen = new Set<string>();
+  const quotes: CardTalkQuote[] = [];
+  const grades = new Map<string, { grade: string; positive: number; negative: number; neutral: number }>();
+  for (const row of rows) {
+    const scope = String(row.scope) as EvidenceScope;
+    const sentiment = String(row.sentiment) as CardTalkQuote["sentiment"];
+    if (scope === "graded" && sentiment !== "excluded") {
+      const grade = row.grade == null ? "graded" : String(row.grade);
+      const entry = grades.get(grade) ?? { grade, positive: 0, negative: 0, neutral: 0 };
+      entry[sentiment] += 1;
+      grades.set(grade, entry);
+    }
+    const key = `${row.canonical_url}|${row.clause}`;
+    if (seen.has(key) || quotes.length >= (options.limit ?? 10)) continue;
+    seen.add(key);
+    quotes.push({
+      scope,
+      sentiment,
+      clause: String(row.clause),
+      grade: row.grade == null ? null : String(row.grade),
+      rarity: row.rarity == null ? null : String(row.rarity),
+      horizonPhrase: row.horizon_phrase == null ? null : String(row.horizon_phrase),
+      publishedAt: toDate(row.published_at),
+      url: String(row.canonical_url),
+      accountName: row.account_name == null ? null : String(row.account_name),
+    });
+  }
+  return { quotes, grades: [...grades.values()].sort((a, b) => a.grade.localeCompare(b.grade)) };
 }
 
 export type MarketConfirmationState = "confirmed" | "unconfirmed" | "insufficient" | "no_score";

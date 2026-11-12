@@ -40,6 +40,7 @@ import {
   cardMentionId,
   storeCardMentionSegments,
 } from "./card-mentions.js";
+import { storeScopeTalkAtIngest } from "./scope-talk-store.js";
 import { normalizeMentionText, stableSourceId } from "./identity.js";
 
 export { boundedWindowExcerpt } from "./card-mentions.js";
@@ -196,6 +197,22 @@ export async function storeTranscriptMentions(
       })),
     })),
   });
+  // Set, sealed, graded and group talk is read from every window, including
+  // windows that name no card; only bounded clause quotes are kept.
+  const [published] = await tx
+    .select({ publishedAt: sourceContent.publishedAt })
+    .from(sourceContent)
+    .where(eq(sourceContent.id, contentId))
+    .limit(1);
+  if (published) {
+    await storeScopeTalkAtIngest(tx, {
+      contentId,
+      publishedAt: published.publishedAt,
+      title: input.contentTitle,
+      texts: windows.map((window) => window.text),
+      cards: index,
+    });
+  }
   let callsCreated = 0;
   if (mentionCount > 0) {
     const calls = await extractCreatorCallsFromContent(tx, contentId);
