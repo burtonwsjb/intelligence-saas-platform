@@ -7,6 +7,8 @@ import { discoveryTopic } from "../schema/discovery.js";
 import { normalizeDiscoveryQuery, DiscoveryConfigurationError, stableDiscoveryId } from "../providers/discovery.js";
 import { analyzeSourceSentiment } from "../providers/sentiment.js";
 import { findAssetForTopic } from "../creator/assets.js";
+import { scopeTalkReady } from "../source/scope-talk-store.js";
+import { talkAgeFactor } from "../source/scope-talk.js";
 import { ASSET_SLICE_GAME_KEY } from "../creator/authority.js";
 import {
   SENTIMENT_BASELINE_WEIGHT,
@@ -275,6 +277,74 @@ export type TopicSentiment = {
  * platform's rule-based analyzer, so it reads buy / sell / up / down language,
  * not sarcasm, and is English-first.
  */
+/**
+ * Clause-level talk (market_scope_talk) about a sealed product or a set, one
+ * row per post at its most specific statement: the product type itself,
+ * then sealed product in general, then the whole set. Empty until migration
+ * 0042 is applied.
+ */
+async function listProductTalkEvidence(
+  db: Database,
+  input: { setId: string; productType: string | null; kind: string; range: { from: Date; to: Date }; hidden: string[] },
+): Promise<Map<string, SentimentEvidenceRow>> {
+  if (!(await scopeTalkReady(db).catch(() => false))) return new Map();
+  const scopes =
+    input.kind === "sealed"
+      ? sql`(t.scope = 'sealed' AND (t.product_type IS NULL OR t.product_type = ${input.productType})) OR t.scope = 'set'`
+      : sql`t.scope = 'set'`;
+  const rows = rowsOf(
+    await db.execute(sql`
+      SELECT DISTINCT ON (t.content_id) t.content_id, t.sentiment, sc.account_id, sc.published_at, t.horizon_days,
+        authority.authority_weight
+      FROM market_scope_talk t
+      JOIN source_content sc ON sc.id = t.content_id
+      LEFT JOIN creator_source_account csa ON csa.source_account_id = sc.account_id
+      LEFT JOIN LATERAL (
+        SELECT s.authority_weight FROM creator_authority_slice s
+        WHERE s.creator_id = csa.creator_id
+        ORDER BY (s.game_key IS NULL AND s.language_code IS NULL AND s.price_tier = 'all') DESC, s.created_at DESC, s.id DESC
+        LIMIT 1
+      ) authority ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT te.trust_state FROM creator_trust_event te
+        WHERE te.creator_id = csa.creator_id
+        ORDER BY te.created_at DESC LIMIT 1
+      ) trust ON TRUE
+      WHERE t.set_id = ${input.setId}
+        AND (${scopes})
+        AND sc.published_at <= ${input.range.to.toISOString()}::timestamptz
+        AND sc.published_at > ${input.range.to.toISOString()}::timestamptz - interval '730 days'
+        AND (
+          (t.horizon_days IS NULL AND sc.published_at > ${input.range.from.toISOString()}::timestamptz)
+          OR (t.horizon_days IS NOT NULL AND sc.published_at + make_interval(days => t.horizon_days) > ${input.range.to.toISOString()}::timestamptz)
+        )
+        AND (trust.trust_state IS NULL OR trust.trust_state <> 'excluded')
+        ${input.hidden.length ? sql`AND (csa.creator_id IS NULL OR csa.creator_id NOT IN (${sql.join(input.hidden.map((id) => sql`${id}`), sql`, `)}))` : sql``}
+      ORDER BY t.content_id,
+        CASE WHEN t.scope = 'sealed' AND t.product_type IS NOT NULL THEN 0 WHEN t.scope = 'sealed' THEN 1 ELSE 2 END
+      LIMIT 2000
+    `),
+  );
+  const out = new Map<string, SentimentEvidenceRow>();
+  for (const row of rows) {
+    const publishedAt = toDate(row.published_at);
+    const ageDays = (input.range.to.getTime() - publishedAt.getTime()) / 86_400_000;
+    const age = talkAgeFactor(ageDays, row.horizon_days == null ? null : Number(row.horizon_days));
+    if (age <= 0) continue;
+    const base = row.authority_weight == null ? SENTIMENT_BASELINE_WEIGHT : Number(row.authority_weight);
+    out.set(String(row.content_id), {
+      printingId: input.setId,
+      contentId: String(row.content_id),
+      accountId: String(row.account_id),
+      sentiment: String(row.sentiment),
+      weight: base * age,
+      rated: row.authority_weight != null,
+      publishedAt,
+    });
+  }
+  return out;
+}
+
 export async function getTopicSentiment(
   db: Database,
   query: string,
@@ -365,7 +435,7 @@ export async function getTopicSentiment(
       rated,
     };
   });
-  const evidence: SentimentEvidenceRow[] = posts.map((post) => ({
+  let evidence: SentimentEvidenceRow[] = posts.map((post) => ({
     printingId: query,
     contentId: post.contentId,
     accountId: post.accountId,
@@ -374,6 +444,26 @@ export async function getTopicSentiment(
     rated: post.rated,
     publishedAt: post.publishedAt,
   }));
+  if (assetRow && (assetRow.kind === "sealed" || assetRow.kind === "set") && assetRow.setId) {
+    // What creators said about this product (or its set) clause by clause:
+    // "booster boxes up but ETBs down" counts up for the box only. A post's
+    // most specific statement replaces its whole-post reading.
+    const talk = await listProductTalkEvidence(db, {
+      setId: assetRow.setId,
+      productType: assetRow.kind === "sealed" ? assetRow.productType : null,
+      kind: assetRow.kind,
+      range: { from, to: now },
+      hidden,
+    });
+    if (talk.size) {
+      const byId = new Map(evidence.map((row) => [row.contentId, row]));
+      for (const [contentId, row] of talk) {
+        const existing = byId.get(contentId);
+        byId.set(contentId, { ...(existing ?? row), sentiment: row.sentiment, weight: existing ? existing.weight : row.weight });
+      }
+      evidence = [...byId.values()].filter((row) => row.sentiment !== "excluded");
+    }
+  }
   const summary = summarizeSentiment(evidence, { from, to: now });
   const history = sentimentHistory(evidence, { from, to: now }, bucketDays);
 

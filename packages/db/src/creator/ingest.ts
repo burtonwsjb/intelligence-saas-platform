@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import type { Database } from "../client.js";
 import { creator, creatorCall, creatorCallOutcome, creatorSourceAccount } from "../schema/creator.js";
 import { sourceAccount, sourceContent, sourceContentSegment, sourceMention } from "../schema/source.js";
@@ -116,6 +116,28 @@ async function persistCall(
   if (existing[0] && !input.revisesCallId) {
     return { status: "duplicate" as const, call: existing[0] };
   }
+  if (!input.revisesCallId) {
+    // The same call read again with a time frame the reader now understands
+    // ("until January") has a new fingerprint; it is still the same call.
+    const [same] = await db
+      .select()
+      .from(creatorCall)
+      .where(
+        and(
+          eq(creatorCall.creatorId, input.creatorId),
+          eq(creatorCall.contentId, input.contentId),
+          input.mentionId ? eq(creatorCall.mentionId, input.mentionId) : isNull(creatorCall.mentionId),
+          input.printingId ? eq(creatorCall.printingId, input.printingId) : isNull(creatorCall.printingId),
+          eq(creatorCall.direction, input.candidate.direction),
+          eq(creatorCall.extractionVersion, CREATOR_EXTRACTOR_VERSION),
+          grade
+            ? sql`${creatorCall.evidence}->'grade' = ${JSON.stringify(grade)}::jsonb`
+            : sql`NOT (${creatorCall.evidence} ? 'grade')`,
+        ),
+      )
+      .limit(1);
+    if (same) return { status: "duplicate" as const, call: same };
+  }
   const boundPrinting = mayBindCallPrinting(input.resolutionStatus) ? input.printingId : null;
   const price = !boundPrinting
     ? null
@@ -186,6 +208,7 @@ export async function extractCreatorCallsFromContent(
       .join(" ");
     const candidate = await extractor.extract({
       text,
+      publishedAt: content.publishedAt,
       mentionContext: mention.mentionContext,
       candidatePrice: mention.candidatePrice,
       candidatePercent: mention.candidatePercent,

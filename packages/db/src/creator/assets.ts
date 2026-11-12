@@ -109,7 +109,7 @@ export async function extractAssetCallsFromContent(
   const text = [content.title, content.summary, content.excerpt].filter(Boolean).join(" ");
   const assets = preferProducts(matchAssets(text, activeAssets ?? (await listActiveAssets(db)))).slice(0, ASSET_MATCHES_PER_CONTENT);
   if (assets.length === 0) return [];
-  const candidate = await extractor.extract({ text });
+  const candidate = await extractor.extract({ text, publishedAt: content.publishedAt });
   if (!candidate) return assets.map((asset) => ({ assetId: asset.id, status: "not_a_call" as const }));
   const { creator } = await ensureCreatorForSourceAccount(db, content.accountId);
   const results = [];
@@ -123,7 +123,23 @@ export async function extractAssetCallsFromContent(
       candidate.horizon_code,
       extractor.version,
     ]);
-    const [existing] = await db.select().from(creatorCall).where(eq(creatorCall.fingerprint, fingerprint)).limit(1);
+    const [byFingerprint] = await db.select().from(creatorCall).where(eq(creatorCall.fingerprint, fingerprint)).limit(1);
+    // The same call read again with a time frame the reader now understands has a new fingerprint.
+    const [existing] = byFingerprint
+      ? [byFingerprint]
+      : await db
+          .select()
+          .from(creatorCall)
+          .where(
+            and(
+              eq(creatorCall.creatorId, creator.id),
+              eq(creatorCall.contentId, content.id),
+              eq(creatorCall.assetId, asset.id),
+              eq(creatorCall.direction, candidate.direction),
+              eq(creatorCall.extractionVersion, extractor.version),
+            ),
+          )
+          .limit(1);
     if (existing) {
       results.push({ assetId: asset.id, status: "duplicate" as const, call: existing });
       continue;

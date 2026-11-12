@@ -464,6 +464,28 @@ export {
   rescanAssetCalls,
   type AssetCallRescanReport,
 } from "./creator/asset-call-rescan.js";
+export {
+  SCOPE_TALK_VERSION,
+  buildScopeSetIndex,
+  cardNameKey,
+  clauseDirection,
+  extractScopeTalk,
+  parseTalkHorizon,
+  talkAgeFactor,
+  type ScopeKind,
+  type ScopeSentiment,
+  type ScopeTalkStatement,
+} from "./source/scope-talk.js";
+export {
+  SCOPE_TALK_RESCAN_DEFAULT_LIMIT,
+  SCOPE_TALK_RESCAN_TRIGGER,
+  extractScopeTalkForContent,
+  rescanScopeTalk,
+  resetScopeTalkCaches,
+  scopeTalkReady,
+  storeScopeTalk,
+  type ScopeTalkRescanReport,
+} from "./source/scope-talk-store.js";
 export { traceSourcePost } from "./source/post-trace.js";
 export {
   WEB_FEED_BOT_TOKEN,
@@ -938,6 +960,10 @@ export {
   explorerQueryToSearch,
   getCardSentiment,
   getCardSentimentWithHistory,
+  getCardTalk,
+  SCOPE_WEIGHT,
+  type CardTalk,
+  type EvidenceScope,
   sentimentBucketDays,
   sentimentHistory,
   type SentimentHistoryPoint,

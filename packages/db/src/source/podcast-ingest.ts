@@ -43,6 +43,7 @@ import { sourceAccount, sourceIngest } from "../schema/source.js";
 import { parseWebhookUrl, type DnsLookup } from "../webhooks/ssrf.js";
 import { loadCardNameIndex, type CardNameIndex } from "./card-detect.js";
 import { storeCardMentionSegments } from "./card-mentions.js";
+import { storeScopeTalkAtIngest } from "./scope-talk-store.js";
 import { ingestSourceContentRecord } from "./ingest.js";
 import { stableSourceId, type SourceContentRecordInput } from "./identity.js";
 import { canonicalPostUrl, planWebPostSegments } from "./web-feed-ingest.js";
@@ -368,6 +369,13 @@ export async function ingestPodcastEpisode(
       extractionVersion: PODCAST_NOTES_EXTRACTOR_VERSION,
       hintsKey: "card_detect",
       segments: planned,
+    });
+    await storeScopeTalkAtIngest(tx, {
+      contentId,
+      publishedAt: published,
+      title: input.episode.title,
+      texts: [input.episode.text],
+      cards: input.index,
     });
     let callsCreated = 0;
     if (mentions > 0) {

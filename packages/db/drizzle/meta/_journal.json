@@ -288,6 +288,13 @@
       "when": 40,
       "tag": "0041_fast_page_loads",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 41,
+      "tag": "0042_market_scope_talk",
+      "breakpoints": true
     }
   ]
 }

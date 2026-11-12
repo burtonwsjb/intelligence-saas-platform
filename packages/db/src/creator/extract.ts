@@ -1,8 +1,11 @@
 import type { ExtractedCallCandidate } from "./identity.js";
 import { CREATOR_EXTRACTOR_VERSION, CREATOR_LLM_EXTRACTOR_VERSION, validateExtractedCall } from "./identity.js";
+import { parseTalkHorizon } from "../source/scope-talk.js";
 
 export type CallExtractionInput = {
   text: string;
+  /** When the post was published, so "until January" can be read as a number of days. */
+  publishedAt?: Date | null;
   mentionContext?: string | null;
   candidatePrice?: string | null;
   candidatePercent?: string | null;
@@ -24,6 +27,14 @@ const WATCH = [/keep an eye/i, /\bwatch\b/i];
 const HOLD = [/\bhold\b/i, /\bholding\b/i];
 const AVOID = [/\bavoid\b/i, /stay away/i];
 const NON_CALL = [/i pulled/i, /this card exists/i, /price is \$/i, /just a pull/i];
+
+const SPOKEN_CODES: Record<number, ExtractedCallCandidate["horizon_code"]> = {
+  7: "7d",
+  30: "30d",
+  90: "90d",
+  180: "180d",
+  365: "365d",
+};
 
 function matches(patterns: RegExp[], text: string): boolean {
   return patterns.some((pattern) => pattern.test(text));
@@ -139,9 +150,19 @@ export function extractCallDeterministic(input: CallExtractionInput): ExtractedC
   if (!direction) {
     return null;
   }
-  const horizon_code = inferHorizon(text, input.candidateTimeframe);
+  let horizon_code = inferHorizon(text, input.candidateTimeframe);
+  let spokenDays: number | null = null;
   if (horizon_code !== "unspecified") {
     evidence.push("explicit_horizon");
+  } else if (input.publishedAt) {
+    // "over the next couple months", "wait until January", "by the end of the year".
+    const spoken = parseTalkHorizon(text, input.publishedAt);
+    if (spoken) {
+      const code = SPOKEN_CODES[spoken.days];
+      horizon_code = code ?? "custom";
+      spokenDays = code ? null : spoken.days;
+      evidence.push("spoken_time_frame");
+    }
   }
   const target_price = inferTargetPrice(text, input.candidatePrice);
   const target_percent = inferTargetPercent(text, input.candidatePercent);
@@ -157,7 +178,7 @@ export function extractCallDeterministic(input: CallExtractionInput): ExtractedC
     target_price,
     target_percent,
     horizon_code,
-    horizon_custom_days: customDays(text, horizon_code),
+    horizon_custom_days: spokenDays ?? customDays(text, horizon_code),
     stated_confidence: inferStatedConfidence(text),
     extraction_confidence: 0.82,
     evidence,
