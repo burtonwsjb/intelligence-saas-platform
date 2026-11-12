@@ -179,4 +179,28 @@ describe("real post wording seen on staging (2026-11-12)", () => {
       "meg:sealed:booster_pack:positive",
     ]);
   });
+
+  it("does not read releases, retail, hunting or doubts as price calls (2026-11-12 v2 sample)", () => {
+    expect(read("Pokémon Ascended Heroes Pre-Orders About to Drop")).toEqual([]);
+    expect(read("Costco is dropping TWO massive Pokémon premium boxes soon")).toEqual([]);
+    expect(read("The Prismatic Evolutions Premium Figure Collection Should Have Dropped in September")).toEqual([]);
+    expect(read("New Store Selling CHEAP Pokemon TCG Products Announced")).toEqual([]);
+    expect(read("We're down to the last 5 major cards needed to finish our Mega Evolution master set")).toEqual([]);
+    expect(read("Mega Evolution chase cards and we're still hunting it down")).toEqual([]);
+    expect(read("buzz that another set called Phantasmal Flames might steal some thunder at launch")).toEqual([]);
+    expect(read("Evolving Skies Alternate Art Buying Guide")).toEqual([]);
+    expect(read("I doubt Ascended Heroes will trigger the same buying frenzy Prismatic Evolutions achieved")).toEqual([]);
+  });
+
+  it("reads prices that held as neutral and keeps real buy calls and price moves", () => {
+    expect(read("Phantasmal Flames Prices Haven't Dropped")).toEqual(["pfl:set::neutral"]);
+    expect(read("The SHOCKING Truth About Phantasmal Flames… + What I'm Loading Up On")).toEqual(["pfl:set::positive"]);
+    expect(read("Time to buy Prismatic Evolutions booster boxes")).toEqual(["pre:sealed:booster_box:positive"]);
+    expect(read("Prices across the board have dropped by Phantasmal Flames")).toEqual(["pfl:set::negative"]);
+  });
+
+  it("does not read TAG TEAM or ACE SPEC cards as graded", () => {
+    const rows = extractScopeTalk("TAG TEAM GX cards from Silver Tempest continue climbing", live, cards, posted);
+    expect(rows.some((row) => row.scope === "graded")).toBe(false);
+  });
 });
