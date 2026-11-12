@@ -13,7 +13,7 @@
  */
 import { detectCardMentions, detectionKey, tokenizeForDetection, type CardNameIndex } from "./card-detect.js";
 
-export const SCOPE_TALK_VERSION = "scope_talk.v1";
+export const SCOPE_TALK_VERSION = "scope_talk.v2";
 /** Longest stored clause. Retention: a bounded quote, never the full text. */
 export const SCOPE_TALK_CLAUSE_MAX_CHARS = 280;
 /** At most this many statements are read out of one text. */
@@ -178,34 +178,46 @@ const NEG_UP = /\b(?:not|never|isn'?t|aren'?t|won'?t|don'?t\s+(?:see|think))\s+(
 const NEG_DOWN = /\b(?:not|never|isn'?t|aren'?t|won'?t|don'?t\s+(?:see|think))\s+(?:\w+\s+){0,2}?(?:going\s+down|go(?:ing)?\s+down|drop(?:ping)?|fall(?:ing)?|crash(?:ing)?|dip(?:ping)?)\b/i;
 const NEGATIVE = [
   /\bgo(?:ing|nna|es)?\s+(?:to\s+)?(?:be\s+)?(?:going\s+)?down\b/i,
-  /\b(?:is|are|'s|'re|been|be|keeps?|kept|went|trending|heading|headed|way|coming)\s+(?:\w+\s+)?down\b/i,
+  /\b(?:is|are|'s|'re|been|be|keeps?\s+going|kept\s+going|went|has\s+gone|have\s+gone)\s+(?:way\s+|all\s+|already\s+|still\s+|really\s+|way\s+)?down\b/i,
+  /\b(?:trending|heading|headed|going|moving|ticking|coming|sliding)\s+(?:back\s+|way\s+)?down\b/i,
   /\bdown\s+(?:bad|hard|big|a\s+lot|\d+\s*%)/i,
   /\b(?:will|gonna|going\s+to|about\s+to|could|might|should)\s+(?:\w+\s+)?(?:drop|fall|crash|tank|dip|decline|plummet|collapse|correct)\b/i,
   /\b(?:dropping|falling|crashing|tanking|dipping|declining|plummeting|collapsing|sinking|bleeding|cooling\s+off|softening|correcting)\b/i,
   /\b(?:dropped|fell|crashed|tanked|dipped|declined|plummeted|collapsed)\b/i,
   /\b(?:sell|selling|sell\s+off|dump(?:ing)?|offload(?:ing)?|get\s+out|cash\s+out|take\s+profits?)\b/i,
-  /\b(?:overpriced|overvalued|over\s*hyped|bubble|peaked|saturated|oversupplied|flooded|flooding|reprints?|reprinted|bearish)\b/i,
+  /\b(?:overpriced|overvalued|over\s*hyped|bubble|peaked|saturated|oversupplied|flooded|flooding|bearish)\b/i,
   /\b(?:stay\s+away|avoid)\b/i,
   /\blose\s+value\b|\blosing\s+value\b/i,
 ];
 const POSITIVE = [
   /\bgo(?:ing|nna|es)?\s+(?:to\s+)?(?:be\s+)?(?:going\s+)?up\b/i,
-  /\b(?:is|are|'s|'re|been|be|keeps?|kept|went|trending|heading|headed|way|shooting|creeping|climbing)\s+(?:\w+\s+)?up\b/i,
+  /\b(?:is|are|'s|'re|been|be|keeps?\s+going|kept\s+going|went|has\s+gone|have\s+gone)\s+(?:way\s+|all\s+|already\s+|still\s+|really\s+)?up\b/i,
+  /\b(?:trending|heading|headed|going|moving|ticking|shooting|creeping|climbing)\s+(?:back\s+|way\s+)?up\b/i,
   /\bup\s+(?:big|a\s+lot|\d+\s*%)/i,
   /\b(?:will|gonna|going\s+to|about\s+to|could|might|should)\s+(?:\w+\s+)?(?:rise|climb|pump|moon|spike|explode|skyrocket|increase|appreciate|double|take\s+off)\b/i,
-  /\b(?:rising|climbing|pumping|mooning|spiking|exploding|skyrocketing|increasing|appreciating|gaining|ripping|heating\s+up|taking\s+off)\b/i,
-  /\b(?:buy|buying|pick\s+up|picking\s+up|scoop(?:ing)?|load\s+up|loading\s+up|grab(?:bing)?|stack(?:ing)?|accumulat(?:e|ing))\b/i,
+  /\b(?:rising|climbing|pumping|mooning|spiking|exploding|skyrocketing|increasing|appreciating|gaining|heating\s+up|taking\s+off)\b/i,
+  /\b(?:buy|buying|pick\s+up|picking\s+up|scoop(?:ing)?|load\s+up|loading\s+up|accumulat(?:e|ing))\b/i,
   /\b(?:undervalued|underpriced|bullish|sleeper|steal|great\s+investment|good\s+investment|long\s+term\s+hold)\b/i,
 ];
 const NEUTRAL = [/\b(?:hold|holding|flat|stable|steady|sideways|stagnant|leveled\s+off|levelled\s+off)\b/i];
 
 /** Bare "up"/"down" right after a scope word: "sealed down, singles up", "PSA 10s up". */
-const BARE_UP = /\b(?:sealed|singles|boxes|etbs?|bundles|packs|slabs|graded|10s|9s|cards|set|it|they|them|products?)\s+(?:\w+\s+)?up\b/i;
-const BARE_DOWN = /\b(?:sealed|singles|boxes|etbs?|bundles|packs|slabs|graded|10s|9s|cards|set|it|they|them|products?)\s+(?:\w+\s+)?down\b/i;
+const BARE_UP = /\b(?:sealed|singles|boxes|etbs?|bundles|packs|slabs|graded|10s|9s|cards|set|it|they|them|products?)\s+(?:are\s+|is\s+)?up\b/i;
+const BARE_DOWN = /\b(?:sealed|singles|boxes|etbs?|bundles|packs|slabs|graded|10s|9s|cards|set|it|they|them|products?)\s+(?:are\s+|is\s+)?down\b/i;
+
+const OPENING = /\b(?:rip(?:s|ped|ping)?|open(?:s|ed|ing)?|crack(?:s|ed|ing)?|pull(?:s|ed|ing)?|unbox(?:es|ed|ing)?)\b[^.]{0,40}\b(?:packs?|box(?:es)?|etbs?|bundles?|tins?|cases?|product)\b/i;
+const PRICE_MOVE = /\b(?:going|go|will|gonna)\s+(?:\w+\s+)?(?:up|down|rise|drop|fall|climb|crash)\b|\b(?:undervalued|overvalued|overpriced)\b/i;
+const SHOP_LINK = /[►▶]|\u{1F449}|\u{1F517}|\b(?:buy|get|order|shop)\b[^.]{0,60}\b(?:from|on|at)\s+(?:buyee|amazon|ebay|tcgplayer|walmart|target|costco|our|my|the\s+link|here)\b|\b(?:affiliate|promo\s+code|discount\s+code|use\s+code|link\s+(?:below|in))\b/iu;
+const PRICE_QUOTE = /\b(?:sells?|selling|sold|run\s+you|goes|going|costs?|listed)\s+(?:\w+\s+){0,2}?for\s+(?:around\s+|about\s+|roughly\s+|under\s+|over\s+)?\$/gi;
 
 /** The direction a clause states, or null when it states none. Negated phrases are read first. */
 export function clauseDirection(clause: string): "positive" | "negative" | "neutral" | null {
-  const text = clause.replace(/[’]/g, "'");
+  const raw = clause.replace(/[’]/g, "'");
+  // Not calls: opening product ("ripping packs of …"), shop links ("Buy … from
+  // Buyee", "► …"), and price quotes ("might sell raw for $130").
+  if (OPENING.test(raw) && !PRICE_MOVE.test(raw)) return null;
+  if (SHOP_LINK.test(raw)) return null;
+  const text = raw.replace(PRICE_QUOTE, " ");
   if (NEG_BUY.test(text)) return "negative";
   if (NEG_UP.test(text)) return "negative";
   if (NEG_DOWN.test(text)) return "positive";
@@ -224,6 +236,9 @@ export function clauseDirection(clause: string): "positive" | "negative" | "neut
   if (NEUTRAL.some((re) => re.test(text))) return "neutral";
   return null;
 }
+
+const QUESTION = /\?\s*$|^\s*(?:will|is|are|should|could|can|does|did|has|have|why|how|what|which|when|where)\b|^\s*do\b(?!\s+not)/i;
+const POINTS_BACK = /^(?:and\s+|so\s+)?(?:it|it's|its|they|they're|theyre|them|those|these|that|that's|both|all|all\s+of\s+them|everything|prices|values)\b/i;
 
 // ---------------------------------------------------------------------------
 // Splitting
@@ -355,14 +370,26 @@ function productTypesIn(clause: string): Array<string | null> {
   return types.some((type) => type != null) ? types.filter((type) => type != null) : types;
 }
 
-function raritiesIn(clause: string): string[] {
+/**
+ * Rarity groups the clause talks about as a group: a plural ("the SIRs",
+ * "alt arts") or "all / these / every …". "Lugia V Alt Art" names one card,
+ * not the group, so a singular rarity next to a card name is not a group.
+ */
+function raritiesIn(clause: string, namesCard: boolean): string[] {
   let text = clause;
   const out: string[] = [];
   for (const group of [...RARITY_GROUPS].sort((a, b) => b.re.source.length - a.re.source.length)) {
-    if (group.re.test(text)) {
-      out.push(group.rarity);
-      text = text.replace(new RegExp(group.re.source, group.re.flags.includes("g") ? group.re.flags : `${group.re.flags}g`), " ");
+    const re = new RegExp(group.re.source, group.re.flags.includes("g") ? group.re.flags : `${group.re.flags}g`);
+    let hit = false;
+    for (const match of text.matchAll(re)) {
+      const word = match[0];
+      const before = text.slice(Math.max(0, (match.index ?? 0) - 24), match.index ?? 0);
+      const plural = /(?:rares|arts|SIRs|SARs|IRs|ARs|golds|secrets|parallels|cards)$/i.test(word);
+      const determiner = /\b(?:all|every|these|those|any|most)\s+(?:of\s+)?(?:the\s+)?$/i.test(before);
+      if (plural || (determiner && !namesCard)) hit = true;
     }
+    if (hit) out.push(group.rarity);
+    text = text.replace(re, " ");
   }
   return [...new Set(out)];
 }
@@ -384,7 +411,6 @@ type Scopes = {
 function scopesOf(clause: string, cardIndex: CardNameIndex | null, grader: string | null, setNames: ScopeSet[]) {
   const products = productTypesIn(clause);
   const graded = gradesIn(clause, grader);
-  const rarities = raritiesIn(clause);
   const cards = cardIndex
     ? [
         ...new Set(
@@ -394,6 +420,7 @@ function scopesOf(clause: string, cardIndex: CardNameIndex | null, grader: strin
         ),
       ]
     : [];
+  const rarities = raritiesIn(clause, cards.length > 0);
   const scopes: Scopes = {
     products,
     grades: graded.grades,
@@ -498,7 +525,8 @@ export function extractScopeTalk(
     const read = scopesOf(clause.text, cardIndex, carried, current);
     if (read.grader) grader = { name: read.grader, sentence: clause.sentence };
     const scopes = read.scopes;
-    const direction = clauseDirection(clause.text);
+    // A question ("Will Black & White keep appreciating?", "Why this card could be the smartest buy") is not a call.
+    const direction = QUESTION.test(clause.sentenceText) ? null : clauseDirection(clause.text);
     const namesSet = found.sets.length > 0;
 
     if (clause.exception) {
@@ -516,9 +544,11 @@ export function extractScopeTalk(
       if (hasScope(scopes) || namesSet) pending.push({ clause, scopes, sets: current });
       continue;
     }
-    if (pending.length) {
-      flush(direction);
-    }
+    // "Booster boxes, ETBs, those are all going down": a direction carries back
+    // to scopes named earlier in the sentence only from a clause that points
+    // back at them; otherwise the earlier mentions were not part of the call.
+    if (pending.length && !hasScope(scopes) && !namesSet && POINTS_BACK.test(clause.text)) flush(direction);
+    else pending = [];
     if (hasScope(scopes) || namesSet) {
       for (const set of current) out.push(...statementsFor(set, scopes, direction, clause, true, publishedAt, text));
     }
@@ -596,7 +626,7 @@ export function parseTalkHorizon(text: string, publishedAt: Date): TalkHorizon |
     return { days: daysUntil(publishedAt, new Date(Date.UTC(year, 0, 15))), phrase: afterHolidays[0] };
   }
   const monthRe = new RegExp(
-    `\\b(?:until|till|til|'til|by|in|before|around|into|through|wait\\s+(?:for|until|till)?|until\\s+(?:at\\s+least|about)|end\\s+of|early|mid|late)\\s+(${MONTHS.join("|")}|${MONTH_ABBR.filter((m) => m !== "may" && m !== "mar").join("|")})\\b`,
+    `\\b(?:until|till|til|'til|by|before|through|wait\\s+(?:for|until|till)?|until\\s+(?:at\\s+least|about)|end\\s+of|by\\s+(?:early|mid|late))\\s+(${MONTHS.join("|")}|${MONTH_ABBR.filter((m) => m !== "may" && m !== "mar").join("|")})\\b`,
   );
   const month = lower.match(monthRe);
   if (month) {

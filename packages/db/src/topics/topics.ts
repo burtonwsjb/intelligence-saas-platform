@@ -8,7 +8,7 @@ import { normalizeDiscoveryQuery, DiscoveryConfigurationError, stableDiscoveryId
 import { analyzeSourceSentiment } from "../providers/sentiment.js";
 import { findAssetForTopic } from "../creator/assets.js";
 import { scopeTalkReady } from "../source/scope-talk-store.js";
-import { talkAgeFactor } from "../source/scope-talk.js";
+import { SCOPE_TALK_VERSION, talkAgeFactor } from "../source/scope-talk.js";
 import { ASSET_SLICE_GAME_KEY } from "../creator/authority.js";
 import {
   SENTIMENT_BASELINE_WEIGHT,
@@ -311,6 +311,7 @@ async function listProductTalkEvidence(
         ORDER BY te.created_at DESC LIMIT 1
       ) trust ON TRUE
       WHERE t.set_id = ${input.setId}
+        AND t.extraction_version = ${SCOPE_TALK_VERSION}
         AND (${scopes})
         AND sc.published_at <= ${input.range.to.toISOString()}::timestamptz
         AND sc.published_at > ${input.range.to.toISOString()}::timestamptz - interval '730 days'

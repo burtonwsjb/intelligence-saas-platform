@@ -7,7 +7,7 @@
  * Everything here is a no-op until migration 0042 creates the table.
  */
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, ne, sql } from "drizzle-orm";
 import type { Database } from "../client.js";
 import { withPlatformContext } from "../rls.js";
 import { providerSyncRun } from "../schema/provider.js";
@@ -140,6 +140,12 @@ export async function storeScopeTalk(
   const indexes = input.indexes ?? (await loadScopeTalkIndexes(tx));
   const planned = planScopeTalk(input.contentId, input.pieces, indexes, input.publishedAt);
   if (!input.keepExisting) await tx.delete(marketScopeTalk).where(eq(marketScopeTalk.contentId, input.contentId));
+  else {
+    // Statements an earlier reader version stored for this post are replaced.
+    await tx
+      .delete(marketScopeTalk)
+      .where(and(eq(marketScopeTalk.contentId, input.contentId), ne(marketScopeTalk.extractionVersion, SCOPE_TALK_VERSION)));
+  }
   if (planned.length === 0) return 0;
   await tx
     .insert(marketScopeTalk)

@@ -3,6 +3,7 @@ import type { Database } from "../client.js";
 import { callGradeFromEvidence } from "../creator/grade.js";
 import { loadPrintingImages } from "../tcg/card-image.js";
 import { scopeTalkReady } from "../source/scope-talk-store.js";
+import { SCOPE_TALK_VERSION } from "../source/scope-talk.js";
 
 // Card explorer read model. Every number returned here comes from persisted,
 // versioned records (score snapshots, market snapshots, resolved mentions).
@@ -1031,6 +1032,7 @@ function scopeTalkEvidenceSql(printingFilter: SQL, range: { from: Date; to: Date
         OR (sc.language IS NOT NULL AND lower(p.language_code) LIKE split_part(lower(sc.language), '-', 1) || '%')
       )
     WHERE t.scope IN ('card', 'rarity', 'singles', 'set', 'graded')
+      AND t.extraction_version = ${SCOPE_TALK_VERSION}
       AND sc.published_at <= ${to}
       AND sc.published_at > ${to}::timestamptz - interval '730 days'
       AND (
