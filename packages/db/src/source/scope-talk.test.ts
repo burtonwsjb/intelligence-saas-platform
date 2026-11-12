@@ -133,3 +133,50 @@ describe("graders across sentences", () => {
     expect(rows.map((row) => `${row.grade}:${row.sentiment}`)).toEqual(["PSA 10:positive", "PSA 9:negative"]);
   });
 });
+
+describe("real post wording seen on staging (2026-11-12)", () => {
+  const live = buildScopeSetIndex([
+    { setId: "jtg", gameKey: "pokemon", name: "SV09: Journey Together" },
+    { setId: "sit", gameKey: "pokemon", name: "SWSH12: Silver Tempest" },
+    { setId: "evs", gameKey: "pokemon", name: "SWSH07: Evolving Skies" },
+    { setId: "meg", gameKey: "pokemon", name: "ME01: Mega Evolution" },
+    { setId: "n1", gameKey: "pokemon", name: "Neo Genesis" },
+    { setId: "pfl", gameKey: "pokemon", name: "ME02: Phantasmal Flames" },
+    { setId: "pre", gameKey: "pokemon", name: "SV: Prismatic Evolutions" },
+  ]);
+  const read = (text: string) => brief(extractScopeTalk(text, live, cards, posted));
+
+  it("ignores opening product, shop links and price quotes", () => {
+    expect(read("Ripping packs of Phantasmal Flames until we get a hit")).toEqual([]);
+    expect(read("► Buy Mega Evolution Booster Box from Buyee")).toEqual([]);
+    expect(read("A 1st Edition Neo Genesis booster box will run you around $12")).toEqual([]);
+    expect(read("An Alternate Art Rayquaza from Evolving Skies might sell raw for $130")).toEqual([]);
+  });
+
+  it("reads one card with a rarity as that card, not its whole rarity group", () => {
+    expect(read("Silver Tempest Lugia V Alt Art dropped 12% to around $360")).not.toContain("sit:rarity:Alternate Art:negative");
+    expect(read("Silver Tempest alt arts dropped 12% this month")).toEqual(["sit:rarity:Alternate Art:negative"]);
+  });
+
+  it("keeps real calls", () => {
+    expect(read("Journey Together represents the clearest sell signal in the current market")).toEqual(["jtg:set::negative"]);
+    expect(read("Prismatic Evolutions is Extremely Undervalued")).toEqual(["pre:set::positive"]);
+    expect(read("Phantasmal Flames Prices Are Already Crashing A Week After Release")).toEqual(["pfl:set::negative"]);
+  });
+
+  it("skips questions but not orders", () => {
+    expect(read("Will Prismatic Evolutions keep appreciating at this pace?")).toEqual([]);
+    expect(read("Do not buy Prismatic Evolutions booster boxes yet")).toEqual(["pre:sealed:booster_box:negative"]);
+  });
+
+  it("does not read a past month as a time frame", () => {
+    const rows = extractScopeTalk("Journey Together is a sell, all top cards lost value in November", live, cards, posted);
+    expect(rows[0]?.horizonDays).toBeNull();
+  });
+
+  it("does not carry a later direction back to a product only mentioned", () => {
+    expect(read("Ascended Heroes will be a Special Set without booster boxes, but the Mega Evolution packs are going up")).toEqual([
+      "meg:sealed:booster_pack:positive",
+    ]);
+  });
+});
