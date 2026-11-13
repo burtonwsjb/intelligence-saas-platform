@@ -13,7 +13,7 @@
  */
 import { detectCardMentions, detectionKey, tokenizeForDetection, type CardNameIndex } from "./card-detect.js";
 
-export const SCOPE_TALK_VERSION = "scope_talk.v2";
+export const SCOPE_TALK_VERSION = "scope_talk.v3";
 /** Longest stored clause. Retention: a bounded quote, never the full text. */
 export const SCOPE_TALK_CLAUSE_MAX_CHARS = 280;
 /** At most this many statements are read out of one text. */
@@ -148,7 +148,8 @@ const PRODUCT_WORDS: Array<{ re: RegExp; type: string | null }> = [
   { re: /\bsealed\b|\bsealed\s+products?\b|\bproducts?\b|\bcases?\b/i, type: null },
 ];
 
-const GRADERS = "psa|bgs|beckett|cgc|sgc|tag|ace";
+// "TAG TEAM" cards and "ACE SPEC" cards are not graders.
+const GRADERS = "psa|bgs|beckett|cgc|sgc|tag(?!\\s*team)|ace(?!\\s*spec)";
 const GRADE_NUMBER_WORDS: Record<string, string> = {
   ten: "10", nine: "9", eight: "8", seven: "7", six: "6", five: "5",
 };
@@ -176,15 +177,20 @@ const RARITY_GROUPS: Array<{ re: RegExp; rarity: string }> = [
 const NEG_BUY = /\b(?:hold\s+off(?:\s+on)?|wait(?:\s+(?:to|on|for|until|till))?|don'?t|do\s+not|never|stop|not|no\s+need\s+to|avoid)\s+(?:\w+\s+){0,2}?(?:buy(?:ing)?|pick(?:ing)?\s+up|chas(?:e|ing)|invest(?:ing)?)\b/i;
 const NEG_UP = /\b(?:not|never|isn'?t|aren'?t|won'?t|don'?t\s+(?:see|think))\s+(?:\w+\s+){0,2}?(?:going\s+up|go(?:ing)?\s+up|rise|rising|climb(?:ing)?|moon(?:ing)?)\b/i;
 const NEG_DOWN = /\b(?:not|never|isn'?t|aren'?t|won'?t|don'?t\s+(?:see|think))\s+(?:\w+\s+){0,2}?(?:going\s+down|go(?:ing)?\s+down|drop(?:ping)?|fall(?:ing)?|crash(?:ing)?|dip(?:ping)?)\b/i;
+/** "Prices haven't dropped": holding, not a call either way. */
+const NEG_DROPPED = /\b(?:haven'?t|hasn'?t|didn'?t|have\s+not|has\s+not|did\s+not|never)\s+(?:\w+\s+)?(?:dropped|fallen|fell|crashed|dipped|gone\s+down|come\s+down|budged|moved)\b/i;
+/** "Pre-orders drop today", "Costco is dropping two boxes": a release, not a price move. */
+const RELEASE = /\bpre-?orders?\b|\b(?:releas(?:e|es|ed|ing)|launch(?:es|ed|ing)?|restock(?:s|ed|ing)?|announced)\b|\bdrop(?:s|ped|ping)?\s+(?:a|an|another|two|three|four|\d+|new|its|their|this|the\s+new|exclusive)\b|\bdrop(?:s|ped|ping)?\s+(?:today|tonight|tomorrow|soon|this\s+(?:week|month)|next|throughout|in\s+(?:january|february|march|april|may|june|july|august|september|october|november|december|\d{4}|stores?))\b|\bshould\s+have\s+dropped\b/i;
+const PRICE_WORD = /\$|%|\bprices?\b|\bvalues?\b|\bmarket\b|\bworth\b/i;
 const NEGATIVE = [
   /\bgo(?:ing|nna|es)?\s+(?:to\s+)?(?:be\s+)?(?:going\s+)?down\b/i,
-  /\b(?:is|are|'s|'re|been|be|keeps?\s+going|kept\s+going|went|has\s+gone|have\s+gone)\s+(?:way\s+|all\s+|already\s+|still\s+|really\s+|way\s+)?down\b/i,
+  /\b(?:is|are|'s|'re|been|be|keeps?\s+going|kept\s+going|went|has\s+gone|have\s+gone)\s+(?:way\s+|all\s+|already\s+|still\s+|really\s+|way\s+)?down\b(?!\s+to\s+(?:the\s+|our\s+|my\s+)?(?:last|final|\d|one|two|three|four|five|a\s+few))/i,
   /\b(?:trending|heading|headed|going|moving|ticking|coming|sliding)\s+(?:back\s+|way\s+)?down\b/i,
   /\bdown\s+(?:bad|hard|big|a\s+lot|\d+\s*%)/i,
   /\b(?:will|gonna|going\s+to|about\s+to|could|might|should)\s+(?:\w+\s+)?(?:drop|fall|crash|tank|dip|decline|plummet|collapse|correct)\b/i,
   /\b(?:dropping|falling|crashing|tanking|dipping|declining|plummeting|collapsing|sinking|bleeding|cooling\s+off|softening|correcting)\b/i,
   /\b(?:dropped|fell|crashed|tanked|dipped|declined|plummeted|collapsed)\b/i,
-  /\b(?:sell|selling|sell\s+off|dump(?:ing)?|offload(?:ing)?|get\s+out|cash\s+out|take\s+profits?)\b/i,
+  /\b(?:sell(?!ing\b|s\b)|selling\s+off|start\s+selling|keep\s+selling|sell\s+off|dump(?:ing)?|offload(?:ing)?|get\s+out|cash\s+out|take\s+profits?)\b/i,
   /\b(?:overpriced|overvalued|over\s*hyped|bubble|peaked|saturated|oversupplied|flooded|flooding|bearish)\b/i,
   /\b(?:stay\s+away|avoid)\b/i,
   /\blose\s+value\b|\blosing\s+value\b/i,
@@ -195,15 +201,19 @@ const POSITIVE = [
   /\b(?:trending|heading|headed|going|moving|ticking|shooting|creeping|climbing)\s+(?:back\s+|way\s+)?up\b/i,
   /\bup\s+(?:big|a\s+lot|\d+\s*%)/i,
   /\b(?:will|gonna|going\s+to|about\s+to|could|might|should)\s+(?:\w+\s+)?(?:rise|climb|pump|moon|spike|explode|skyrocket|increase|appreciate|double|take\s+off)\b/i,
+  /\b(?:jumped|soared|surged|spiked|skyrocketed|climbed|rose)\b/i,
   /\b(?:rising|climbing|pumping|mooning|spiking|exploding|skyrocketing|increasing|appreciating|gaining|heating\s+up|taking\s+off)\b/i,
-  /\b(?:buy|buying|pick\s+up|picking\s+up|scoop(?:ing)?|load\s+up|loading\s+up|accumulat(?:e|ing))\b/i,
-  /\b(?:undervalued|underpriced|bullish|sleeper|steal|great\s+investment|good\s+investment|long\s+term\s+hold)\b/i,
+  // "buy" counts only as a recommendation ("buy now", "I'm buying", "time to
+  // buy"), not "buying guide", "when you buy singles" or "PSA buying slabs".
+  /(?:^|[:—–]\s*|\b(?:should|must|time\s+to|go|i'?m|i\s+am|we'?re|i'?d|i\s+would|keep|start|still|definitely|now)\s+(?:\w+\s+)?)(?:buy(?:ing)?|pick(?:ing)?\s+up)\b(?!\s+guide)|\bbuy\s+(?:now|them|it|these|those|the\s+dip)\b/i,
+  /\b(?:scoop(?:ing)?|load\s+up|loading\s+up|accumulat(?:e|ing))\b/i,
+  /\b(?:undervalued|underpriced|bullish|sleeper|(?:a|an\s+absolute|a\s+total|absolute)\s+steal|great\s+investment|good\s+investment|long\s+term\s+hold)\b/i,
 ];
 const NEUTRAL = [/\b(?:hold|holding|flat|stable|steady|sideways|stagnant|leveled\s+off|levelled\s+off)\b/i];
 
 /** Bare "up"/"down" right after a scope word: "sealed down, singles up", "PSA 10s up". */
-const BARE_UP = /\b(?:sealed|singles|boxes|etbs?|bundles|packs|slabs|graded|10s|9s|cards|set|it|they|them|products?)\s+(?:are\s+|is\s+)?up\b/i;
-const BARE_DOWN = /\b(?:sealed|singles|boxes|etbs?|bundles|packs|slabs|graded|10s|9s|cards|set|it|they|them|products?)\s+(?:are\s+|is\s+)?down\b/i;
+const BARE_UP = /\b(?:sealed|singles|boxes|etbs?|bundles|packs|slabs|graded|10s|9s|cards|set|products?)\s+(?:are\s+|is\s+)?up\b|\b(?:it|they)\s+(?:are|is)\s+up\b/i;
+const BARE_DOWN = /\b(?:sealed|singles|boxes|etbs?|bundles|packs|slabs|graded|10s|9s|cards|set|products?)\s+(?:are\s+|is\s+)?down\b(?!\s+to\b)|\b(?:it|they)\s+(?:are|is)\s+down\b(?!\s+to\b)/i;
 
 const OPENING = /\b(?:rip(?:s|ped|ping)?|open(?:s|ed|ing)?|crack(?:s|ed|ing)?|pull(?:s|ed|ing)?|unbox(?:es|ed|ing)?)\b[^.]{0,40}\b(?:packs?|box(?:es)?|etbs?|bundles?|tins?|cases?|product)\b/i;
 const PRICE_MOVE = /\b(?:going|go|will|gonna)\s+(?:\w+\s+)?(?:up|down|rise|drop|fall|climb|crash)\b|\b(?:undervalued|overvalued|overpriced)\b/i;
@@ -217,7 +227,9 @@ export function clauseDirection(clause: string): "positive" | "negative" | "neut
   // Buyee", "► …"), and price quotes ("might sell raw for $130").
   if (OPENING.test(raw) && !PRICE_MOVE.test(raw)) return null;
   if (SHOP_LINK.test(raw)) return null;
-  const text = raw.replace(PRICE_QUOTE, " ");
+  let text = raw.replace(PRICE_QUOTE, " ");
+  if (NEG_DROPPED.test(text)) return "neutral";
+  if (RELEASE.test(text) && !PRICE_WORD.test(text)) text = text.replace(/\bdrop(?:s|ped|ping)?\b/gi, " ");
   if (NEG_BUY.test(text)) return "negative";
   if (NEG_UP.test(text)) return "negative";
   if (NEG_DOWN.test(text)) return "positive";
@@ -228,7 +240,7 @@ export function clauseDirection(clause: string): "positive" | "negative" | "neut
   if (pos && neg) {
     // "buy the dip", "sell high" read both ways; the price direction words decide.
     const down = /\bdown\b|\bdrop|\bfall|\bcrash|\btank|\bdip\b/i.test(text);
-    const up = /\bup\b|\brise|\bclimb|\bpump|\bmoon|\bspike/i.test(text);
+    const up = /\bup\b|\brise|\bclimb|\bpump|\bmoon|\bspike|\bjump|\bsoar|\bsurg/i.test(text);
     if (down && !up) return "negative";
     if (up && !down) return "positive";
     return null;
