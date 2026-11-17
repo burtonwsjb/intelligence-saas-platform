@@ -34,3 +34,12 @@ No hosted environment may fall back to local billing simulation, `PLATFORM_ADMIN
 | Migrate/bootstrap | `DATABASE_ADMIN_URL` (unpooled), `APP_*_PASSWORD` | same |
 
 `assertHostedSecrets()` runs at API/worker/web auth startup.
+
+## Public domains
+
+Two names, two jobs:
+
+- **tcgsentiment.com** is the customer site (apps/web on Vercel): sign-up, Stripe billing, card movers, charts and influencer sentiment for collectors (trading card games only). Production web uses `APP_URL=https://tcgsentiment.com` and `BETTER_AUTH_URL=https://tcgsentiment.com`; email links, Stripe return URLs, Better Auth trusted origins and API CORS all derive from `APP_URL`.
+- **socialsignaliq.com** is the engine (apps/api and apps/worker on Railway, plus the database): collection, research, scoring and the API that tcgsentiment.com and tcgcardcentral.com read. The API answers on `api.socialsignaliq.com` (`API_URL`).
+- `www.tcgsentiment.com` is attached to the web project only so it can redirect: `apps/web/proxy.ts` 308s it to the same path and query on `https://tcgsentiment.com` (`apps/web/lib/canonical-host.ts`).
+- Staging and `*.up.railway.app` / `*.vercel.app` hosts are not redirected.
