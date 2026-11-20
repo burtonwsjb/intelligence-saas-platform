@@ -22,6 +22,7 @@ function fakeTcgcsv() {
         results = [
           { categoryId: 3, name: "Pokemon" },
           { categoryId: 68, name: "One Piece Card Game" },
+          { categoryId: 81, name: "Union Arena" },
         ];
       else if (path === "/tcgplayer/3/groups")
         results = [{ groupId: 23473, name: "SV06: Twilight Masquerade", abbreviation: "TWM", modifiedOn: "2026-11-01T00:00:00" }];
@@ -47,6 +48,22 @@ function fakeTcgcsv() {
         results = [
           { productId: 7001, subTypeName: "Normal", marketPrice: 3 },
           { productId: 7002, subTypeName: "Normal", marketPrice: 30 },
+        ];
+      else if (path === "/tcgplayer/81/groups") results = [{ groupId: 9001, name: "Jujutsu Kaisen", abbreviation: "UE01BT", modifiedOn: "2026-11-01T00:00:00" }];
+      else if (path === "/tcgplayer/81/9001/products")
+        results = [
+          { productId: 1, name: "Yuji Itadori", extendedData: num("UE01BT/JJK-1-001") },
+          { productId: 2, name: "Yuji Itadori (Parallel)", extendedData: num("UE01BT/JJK-1-001") },
+          { productId: 3, name: "Megumi Fushiguro", extendedData: num("UE01BT/JJK-1-002") },
+          { productId: 4, name: "Jujutsu Kaisen Booster Box" },
+        ];
+      else if (path === "/tcgplayer/81/9001/prices")
+        results = [
+          { productId: 1, subTypeName: "Normal", marketPrice: 0.5 },
+          { productId: 2, subTypeName: "Normal", marketPrice: 12 },
+          { productId: 3, subTypeName: "Normal", marketPrice: 0.25 },
+          { productId: 3, subTypeName: "Foil", marketPrice: 2 },
+          { productId: 4, subTypeName: "Normal", marketPrice: 90 },
         ];
       else throw new Error(`unexpected ${url}`);
       return { status: 200, headers: {}, bodyText: JSON.stringify({ success: true, results }) };
@@ -145,5 +162,41 @@ describe("tcgcsv card-list matching", () => {
     const again = await syncTcgcsvMatch(db, { env: ENABLED, transport, now: new Date("2026-11-20T23:00:00Z"), sleep: async () => {} });
     expect(again).toMatchObject({ status: "completed", groups: 0, linked: 0 });
     expect(urls.slice(8)).toEqual(["https://tcgcsv.com/last-updated.txt"]);
+    // Union Arena was only reported as a candidate: no category picked, nothing read or built.
+    expect(report.catalogCandidates).toEqual(["81:union_arena:Union Arena"]);
+    expect(urls.some((u) => u.includes("/81/"))).toBe(false);
+  });
+
+  it("builds a picked category's card list from tcgcsv and links and prices it", async () => {
+    const client = new PGlite();
+    await client.exec(await readMigrationSql());
+    const db = drizzle(client) as unknown as Database;
+    await seedTcgIdentityFixtures(db);
+    const { transport, urls } = fakeTcgcsv();
+    const report = await syncTcgcsvMatch(db, {
+      env: { ...ENABLED, TCGCSV_CATALOG_CATEGORY_IDS: "81" },
+      transport,
+      now: NOW,
+      sleep: async () => {},
+    });
+    expect(report).toMatchObject({ status: "completed", groups: 3, cardsAdded: 4 });
+    expect(report.byGame.union_arena).toBe(4);
+    expect(urls).toContain("https://tcgcsv.com/tcgplayer/81/9001/products");
+    // Prices file read once for the group, even though it was both built and matched.
+    expect(urls.filter((u) => u.endsWith("/81/9001/prices"))).toHaveLength(1);
+    const rows = (
+      await client.query<{ name: string; collector_number: string; variant_key: string; product_id: number; sub_type: string; market: string }>(`
+        SELECT c.canonical_name AS name, p.collector_number, p.variant_key, l.product_id, l.sub_type, d.market
+        FROM tcg_printing p JOIN tcg_card_concept c ON c.id = p.card_id
+        JOIN tcg_tcgplayer_link l ON l.printing_id = p.id
+        JOIN tcg_daily_price d ON d.printing_id = p.id
+        WHERE p.game_key = 'union_arena' ORDER BY l.product_id, l.sub_type`)
+    ).rows;
+    expect(rows.map((r) => [r.name, r.collector_number, r.variant_key, r.product_id, r.sub_type, Number(r.market)])).toEqual([
+      ["Yuji Itadori", "UE01BT/JJK-1-001", "normal", 1, "Normal", 0.5],
+      ["Yuji Itadori", "UE01BT/JJK-1-001", "parallel", 2, "Normal", 12],
+      ["Megumi Fushiguro", "UE01BT/JJK-1-002", "holofoil", 3, "Foil", 2],
+      ["Megumi Fushiguro", "UE01BT/JJK-1-002", "normal", 3, "Normal", 0.25],
+    ]);
   });
 });

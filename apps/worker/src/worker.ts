@@ -601,7 +601,7 @@ export async function runPriceHistory(
 export async function runTcgcsvMatch(db: Database, env: NodeJS.ProcessEnv = process.env): Promise<TcgcsvMatchReport | null> {
   try {
     const report = await syncTcgcsvMatch(db, { env });
-    if (report.status === "skipped" || (report.groups === 0 && report.status === "completed")) return report;
+    if (report.status === "skipped" || (report.groups === 0 && report.status === "completed" && report.catalogCandidates.length === 0)) return report;
     logQueueEvent(report.status === "stopped" ? "warn" : "info", "worker.tcgcsv_match", {
       status: report.status,
       reason: report.reason,
@@ -613,6 +613,8 @@ export async function runTcgcsvMatch(db: Database, env: NodeJS.ProcessEnv = proc
       linked: report.linked,
       ambiguous: report.ambiguous,
       priced: report.priced,
+      cards_added: report.cardsAdded,
+      catalog_candidates: report.catalogCandidates.join(";"),
       by_game: Object.entries(report.byGame).map(([g, n]) => `${g}:${n}`).join(","),
     });
     return report;
