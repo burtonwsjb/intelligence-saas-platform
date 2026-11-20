@@ -56,7 +56,6 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             <Link href="/terms">Terms</Link>
             <Link href="/privacy">Privacy</Link>
             <Link href="/acceptable-use">Acceptable use</Link>
-            <Link href="/api-terms">API terms</Link>
           </nav>
           <p className="shell-legal-note">
             Card images and names belong to their owners, including The Pokémon Company, Nintendo, Bandai,

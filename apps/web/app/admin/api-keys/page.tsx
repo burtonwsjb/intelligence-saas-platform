@@ -345,7 +345,7 @@ export default async function AdminApiKeysPage({
           </table>
         </div>
         <p className="subtle">
-          Full docs to send the customer: <Link href="/developers">/developers</Link>. Machine-readable list:{" "}
+          Full docs to send the customer: <Link href="/admin/api-docs">API docs</Link> (admin only; copy what they need). Machine-readable list:{" "}
           <code>{baseUrl}/v1/openapi.json</code>. Lists page with <code>?limit=</code> (up to 100) and the{" "}
           <code>next_cursor</code> in each answer.
         </p>

@@ -167,7 +167,6 @@ export function AppShell({
             <Link href="/terms">Terms</Link>
             <Link href="/privacy">Privacy</Link>
             <Link href="/acceptable-use">Acceptable use</Link>
-            <Link href="/api-terms">API terms</Link>
           </nav>
           <p>
             Card images and names belong to their owners, including The Pokémon Company, Nintendo, Bandai, Shueisha,

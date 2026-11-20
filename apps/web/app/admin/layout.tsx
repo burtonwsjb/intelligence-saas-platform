@@ -5,6 +5,8 @@ import { requirePlatformOperator } from "@/lib/platform-admin";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
+// Nothing under /admin is ever indexed.
+export const metadata = { robots: { index: false, follow: false } };
 
 const SECTIONS: ShellNavSection[] = [
   { label: null, items: [{ key: "home", href: "/admin", label: "Control center", icon: "dashboard" }] },
@@ -24,6 +26,7 @@ const SECTIONS: ShellNavSection[] = [
     items: [
       { key: "customers", href: "/admin/customers", label: "Customers", icon: "customers" },
       { key: "api-keys", href: "/admin/api-keys", label: "API access", icon: "key" },
+      { key: "api-docs", href: "/admin/api-docs", label: "API docs", icon: "external" },
       { key: "beta", href: "/admin/beta", label: "Invites & features", icon: "beta" },
       { key: "support", href: "/admin/support", label: "Support", icon: "support" },
     ],

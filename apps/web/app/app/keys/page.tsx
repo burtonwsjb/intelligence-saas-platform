@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { requirePageOrganization } from "@/lib/session";
+import { isPlatformOperatorUser } from "@/lib/platform-admin";
 import { getDb } from "@/lib/auth";
 import { listApiKeys, member, withOrganizationContext } from "@isp/db";
 import { CUSTOMER_READ_SCOPES, ISSUABLE_SCOPES, hasPermission } from "@isp/auth";
@@ -9,6 +11,7 @@ import { createApiKeyAction, revokeApiKeyAction, rotateApiKeyAction } from "@/ap
 import { readSecretFlash } from "@/lib/secret-flash";
 
 export const dynamic = "force-dynamic";
+export const metadata = { robots: { index: false, follow: false } };
 
 export default async function ApiKeysPage({
   searchParams,
@@ -16,6 +19,10 @@ export default async function ApiKeysPage({
   searchParams: Promise<{ error?: string }>;
 }) {
   const { session, organizationId } = await requirePageOrganization();
+  // The API is hidden from customers: only platform operators see this page.
+  if (!(await isPlatformOperatorUser(session.user))) {
+    notFound();
+  }
   const query = await searchParams;
   const created = await readSecretFlash("api_key");
   const [membership] = await getDb()
@@ -73,7 +80,7 @@ export default async function ApiKeysPage({
       )}
       <h2>Using your key</h2>
       <p className="muted">
-        Send the key in the Authorization header. Every answer is JSON. Full reference: <Link href="/developers">API docs</Link>.
+        Send the key in the Authorization header. Every answer is JSON. Full reference: <Link href="/admin/api-docs">API docs</Link>.
       </p>
       <pre className="code-block">
         {`curl -H "Authorization: Bearer <your key>" \\\n  "${customerApiBaseUrl()}/v1/printings?q=charizard&game=pokemon&limit=5"`}

@@ -3,7 +3,8 @@ import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
-export const metadata = { title: "API Terms · Sentiment" };
+// Unlisted (owner 2026-11-20: the API is hidden); still reachable from the Terms.
+export const metadata = { title: "API Terms · Sentiment", robots: { index: false, follow: false } };
 
 export default function ApiTermsPage() {
   return (

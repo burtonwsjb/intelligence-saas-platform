@@ -14,7 +14,7 @@ export function allowApiRequest(input: {
   path: string;
   headers: { get(name: string): string | undefined | null };
 }): boolean {
-  if (input.path === "/health" || input.path === "/ready" || input.path === "/v1/openapi.json") {
+  if (input.path === "/health" || input.path === "/ready") {
     return true;
   }
   const ip = clientIpFromRequestHeaders(input.headers);

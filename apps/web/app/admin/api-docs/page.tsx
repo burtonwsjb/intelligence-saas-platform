@@ -1,6 +1,10 @@
-import Link from "next/link";
 
-export const metadata = { title: "API docs · Sentiment" };
+import { requireGrantedOperator } from "@/lib/platform-admin";
+
+// Admin only (owner 2026-11-20): the admin layout already locks this route to
+// platform operators; the page checks again and is never indexed.
+export const dynamic = "force-dynamic";
+export const metadata = { title: "API docs · Sentiment", robots: { index: false, follow: false } };
 
 const BASE = "https://api.socialsignaliq.com";
 
@@ -87,7 +91,8 @@ const SIGNALS_EXAMPLE = `{
   "request_id": "…"
 }`;
 
-export default function DevelopersPage() {
+export default async function AdminApiDocsPage() {
+  await requireGrantedOperator();
   return (
     <article className="legal">
       <h1>Sentiment API</h1>
@@ -99,7 +104,7 @@ export default function DevelopersPage() {
 
       <h2>Getting a key</h2>
       <p>
-        Keys are issued by Sentiment, or made by a workspace owner on the API keys page in the app. A key is shown once
+        Keys are issued by Sentiment from the admin console. A key is shown once
         when it is made, so store it right away. Keep it on your server: anyone with the key can spend your requests. If
         a key leaks, ask for it to be rotated or revoked.
       </p>
@@ -155,8 +160,7 @@ const body = await res.json();`}</code>
 
       <h2>Endpoints</h2>
       <p>
-        All are <code>GET</code>. The scope is what the key needs. The machine-readable list is at{" "}
-        <a href={`${BASE}/v1/openapi.json`}>{`${BASE}/v1/openapi.json`}</a>.
+        All are <code>GET</code>. The scope is what the key needs. The machine-readable list is at <code>{`${BASE}/v1/openapi.json`}</code> (needs a key).
       </p>
       {GROUPS.map((group) => (
         <section key={group.title}>
@@ -190,8 +194,8 @@ const body = await res.json();`}</code>
 
       <h2>Terms</h2>
       <p>
-        Use of the API is covered by the <Link href="/api-terms">API Terms</Link>. Sentiment readings are information, not
-        investment advice.
+        Use of the API is covered by the API Terms (<code>/api-terms</code>, not linked or indexed). Sentiment readings
+        are information, not investment advice.
       </p>
     </article>
   );
