@@ -38,7 +38,7 @@ async function setup() {
   return { client, db };
 }
 
-function fakeTcgcsv(options: { refuse?: boolean } = {}) {
+function fakeTcgcsv(options: { refuse?: boolean; build?: string } = {}) {
   const urls: string[] = [];
   const agents: string[] = [];
   const transport: HttpTransport = {
@@ -46,6 +46,8 @@ function fakeTcgcsv(options: { refuse?: boolean } = {}) {
       urls.push(url);
       agents.push(init?.headers?.["user-agent"] ?? "");
       if (options.refuse) return { status: 403, headers: {}, bodyText: "" };
+      if (url === "https://tcgcsv.com/last-updated.txt")
+        return { status: 200, headers: {}, bodyText: `${options.build ?? "2026-11-20T20:05:33+0000"}\n` };
       const path = new URL(url).pathname;
       let results: unknown[] = [];
       if (path === "/tcgplayer/categories")
@@ -95,8 +97,9 @@ describe("tcgcsv daily prices", () => {
     const { transport, urls, agents } = fakeTcgcsv();
     const waits: number[] = [];
     const report = await syncTcgcsvDaily(db, { env: ENABLED, transport, now: EVENING, sleep: async (ms) => void waits.push(ms) });
-    expect(report).toMatchObject({ status: "completed", targets: 1, groups: 1, requests: 3, priced: 1, written: 1 });
+    expect(report).toMatchObject({ status: "completed", targets: 1, groups: 1, requests: 4, priced: 1, written: 1 });
     expect(urls).toEqual([
+      "https://tcgcsv.com/last-updated.txt",
       "https://tcgcsv.com/tcgplayer/categories",
       "https://tcgcsv.com/tcgplayer/3/groups",
       "https://tcgcsv.com/tcgplayer/3/23473/prices",
@@ -115,7 +118,17 @@ describe("tcgcsv daily prices", () => {
     // Same day again: nothing is asked.
     const again = await syncTcgcsvDaily(db, { env: ENABLED, transport, now: new Date("2026-11-20T23:00:00Z"), sleep: async () => {} });
     expect(again).toMatchObject({ status: "skipped", reason: "done_today" });
-    expect(urls).toHaveLength(3);
+    expect(urls).toHaveLength(4);
+
+    // Next day, but tcgcsv has not published a new build: only last-updated.txt is read.
+    const stale = await syncTcgcsvDaily(db, { env: ENABLED, transport, now: new Date("2026-11-21T22:00:00Z"), sleep: async () => {} });
+    expect(stale).toMatchObject({ status: "skipped", reason: "no_new_build" });
+    expect(urls.slice(4)).toEqual(["https://tcgcsv.com/last-updated.txt"]);
+
+    // A new build: the day is pulled.
+    const fresh = fakeTcgcsv({ build: "2026-11-21T20:04:00+0000" });
+    const next = await syncTcgcsvDaily(db, { env: ENABLED, transport: fresh.transport, now: new Date("2026-11-21T22:00:00Z"), sleep: async () => {} });
+    expect(next).toMatchObject({ status: "completed", written: 1 });
   });
 
   it("stops at the first refusal and stays away for a week", async () => {
@@ -123,6 +136,7 @@ describe("tcgcsv daily prices", () => {
     const refused = fakeTcgcsv({ refuse: true });
     const report = await syncTcgcsvDaily(db, { env: ENABLED, transport: refused.transport, now: EVENING, sleep: async () => {} });
     expect(report).toMatchObject({ status: "stopped", reason: "refused_403", requests: 1, written: 0 });
+    expect(refused.urls).toEqual(["https://tcgcsv.com/last-updated.txt"]);
     const ok = fakeTcgcsv();
     const nextDay = await syncTcgcsvDaily(db, { env: ENABLED, transport: ok.transport, now: new Date("2026-11-22T22:00:00Z") });
     expect(nextDay).toMatchObject({ status: "skipped", reason: "refused_recently" });

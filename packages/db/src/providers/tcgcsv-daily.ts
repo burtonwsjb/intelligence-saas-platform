@@ -12,8 +12,12 @@
  * tcgcsv's usage guidelines, followed here:
  * - A clear User-Agent naming the app and a way to reach us.
  * - Requests spaced (1 s here; tcgcsv asks for about 100 ms).
- * - Data cached: tcgcsv updates once a day, so this runs once per UTC day,
- *   after TCGCSV_DAILY_START_UTC_HOUR (default 21), one request per set.
+ * - Data cached: tcgcsv updates once a day, so this runs at most once per
+ *   UTC day, after TCGCSV_DAILY_START_UTC_HOUR (default 21), and only when
+ *   https://tcgcsv.com/last-updated.txt shows a build newer than the last
+ *   pull (one small request per hourly check until then). One price file
+ *   per set; the daily price archive is never used for this (tcgcsv may ban
+ *   clients that download archives day after day).
  * - Far under the 10,000 requests a day that may be banned: one categories
  *   request, one groups request per game, then one price file per set
  *   (about 500), hard capped at TCGCSV_DAILY_MAX_REQUESTS (default 1,000,
@@ -35,6 +39,7 @@ import type { TcgMarketRecordInput } from "../tcg/market-identity.js";
 import { createFetchTransport, type HttpTransport } from "./transport.js";
 
 export const TCGCSV_BASE = "https://tcgcsv.com/tcgplayer";
+export const TCGCSV_LAST_UPDATED_URL = "https://tcgcsv.com/last-updated.txt";
 export const TCGCSV_USER_AGENT = "TCGSentiment/1.0 (+https://tcgsentiment.com)";
 export const TCGCSV_DAILY_TRIGGER = "tcgcsv_daily";
 export const TCGCSV_DAILY_SPACING_MS = 1_000;
@@ -81,6 +86,8 @@ export type TcgcsvDailyReport = {
   missing: number;
   unmatchedGroups: number;
   written: number;
+  /** tcgcsv build (last-updated.txt) this pull read. */
+  build?: string;
 };
 
 export function emptyTcgcsvReport(): TcgcsvDailyReport {
@@ -330,6 +337,32 @@ export async function listTcgcsvTargets(db: Database, now = new Date()): Promise
   }));
 }
 
+/** tcgcsv's latest build time from last-updated.txt. */
+async function readLastUpdated(
+  transport: HttpTransport,
+): Promise<{ status: "ok"; at: string } | { status: "refused" | "failed"; reason: string }> {
+  try {
+    const response = await transport.fetch(TCGCSV_LAST_UPDATED_URL, { method: "GET", headers: { "user-agent": TCGCSV_USER_AGENT } });
+    if (response.status === 401 || response.status === 403 || response.status === 429) return { status: "refused", reason: `refused_${response.status}` };
+    if (response.status < 200 || response.status >= 300) return { status: "failed", reason: `last_updated_http_${response.status}` };
+    const text = response.bodyText.trim();
+    return Number.isFinite(Date.parse(text)) ? { status: "ok", at: new Date(Date.parse(text)).toISOString() } : { status: "failed", reason: "last_updated_unreadable" };
+  } catch {
+    return { status: "failed", reason: "last_updated_network" };
+  }
+}
+
+/** The build time saved with the last completed pull, if any. */
+async function lastPulledBuild(db: Database): Promise<string | null> {
+  const rows = rowsOf<{ build: string | null }>(
+    await db.execute(sql`
+      SELECT checkpoint->>'build' AS build FROM provider_sync_run
+      WHERE provider_key = 'tcgplayer' AND "trigger" = ${TCGCSV_DAILY_TRIGGER} AND status = 'completed' AND checkpoint->>'build' IS NOT NULL
+      ORDER BY completed_at DESC LIMIT 1`),
+  );
+  return rows[0]?.build ?? null;
+}
+
 async function saveDay(db: Database, day: string, now: Date, report: TcgcsvDailyReport) {
   const refused = report.reason?.startsWith("refused_") ?? false;
   const checkpoint = { ...report, day, refused };
@@ -387,6 +420,18 @@ export async function syncTcgcsvDaily(
   const now = input.now ?? new Date();
   const blocker = await withPlatformContext(db, (tx) => tcgcsvDailyBlocker(tx, env, now));
   if (blocker) return { ...emptyTcgcsvReport(), status: "skipped", reason: blocker };
+  // Only pull when tcgcsv has published a build newer than the last one pulled.
+  const transport = input.transport ?? createFetchTransport({ timeoutMs: 30_000 });
+  const build = await readLastUpdated(transport);
+  if (build.status !== "ok") {
+    const report = { ...emptyTcgcsvReport(), status: build.status === "refused" ? ("stopped" as const) : ("skipped" as const), reason: build.reason, requests: 1 };
+    if (build.status === "refused") await withPlatformContext(db, (tx) => saveDay(tx, utcDay(now), now, report));
+    return report;
+  }
+  const lastBuild = await withPlatformContext(db, (tx) => lastPulledBuild(tx));
+  if (lastBuild && Date.parse(build.at) <= Date.parse(lastBuild)) {
+    return { ...emptyTcgcsvReport(), status: "skipped", reason: "no_new_build", requests: 1 };
+  }
   return withPlatformContext(db, async (tx) => {
     const lock = rowsOf<{ locked: boolean }>(
       await tx.execute(sql`select pg_try_advisory_xact_lock(hashtext('tcgcsv.daily.v1')) as locked`),
@@ -395,7 +440,7 @@ export async function syncTcgcsvDaily(
     const targets = await listTcgcsvTargets(tx, now);
     const { report, records } = await collectTcgcsvDaily({
       targets,
-      transport: input.transport,
+      transport,
       now,
       maxRequests: tcgcsvDailyMaxRequests(env),
       sleep: input.sleep,
@@ -405,6 +450,8 @@ export async function syncTcgcsvDaily(
       const results = await ingestTcgMarketRecordsBatch(tx, records.slice(i, i + 500));
       for (const result of results) if (!(result instanceof Error) && result.status === "processed") report.written += 1;
     }
+    report.requests += 1; // last-updated.txt
+    report.build = build.at;
     if (report.status !== "skipped") await saveDay(tx, utcDay(now), now, report);
     return report;
   });
