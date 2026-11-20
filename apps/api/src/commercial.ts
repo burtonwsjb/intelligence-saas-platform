@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, inArray } from "drizzle-orm";
+import { and, asc, eq, gt, ilike, inArray } from "drizzle-orm";
 import type { Hono } from "hono";
 import {
   disableWebhookEndpoint,
@@ -38,6 +38,12 @@ import {
   safeWebhookFetch,
   summarizeSentiment,
   EXPLORER_WINDOW_DAYS,
+  EXPLORER_MARKET_SENTIMENTS,
+  EXPLORER_SOCIAL_SENTIMENTS,
+  EXPLORER_SORTS,
+  listCardExplorerPage,
+  parseExplorerQuery,
+  type ExplorerRow,
   TCC_ID_TYPE,
   TCC_NAMESPACE,
   tcgCardConcept,
@@ -97,6 +103,11 @@ function exactPrinting(row: {
     variant: row.printing.variantKey,
     canonical_key: row.printing.canonicalPrintingKey,
   };
+}
+
+/** Treat % and _ in a customer's search text as plain characters. */
+function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
 }
 
 async function loadPrinting(db: Database, id: string) {
@@ -380,10 +391,127 @@ function productBody(row: { asset: { assetKey: string; kind: string; displayName
   };
 }
 
+const SIGNAL_PARAMS = new Set(["q", "game", "set", "language", "variant", "market", "social", "sort", "window", "page", "page_size"]);
+const SIGNAL_SORTS = EXPLORER_SORTS.filter((sort) => sort !== "recent");
+
+function parseSignalsQuery(raw: Record<string, string | undefined>) {
+  for (const key of Object.keys(raw)) {
+    if (!SIGNAL_PARAMS.has(key)) throw new CommercialFilterError(`Unknown filter: ${key}`);
+  }
+  if (raw.market && !(EXPLORER_MARKET_SENTIMENTS as readonly string[]).includes(raw.market)) {
+    throw new CommercialFilterError(`market must be one of ${EXPLORER_MARKET_SENTIMENTS.join(", ")}.`);
+  }
+  if (raw.social && !(EXPLORER_SOCIAL_SENTIMENTS as readonly string[]).includes(raw.social)) {
+    throw new CommercialFilterError(`social must be one of ${EXPLORER_SOCIAL_SENTIMENTS.join(", ")}.`);
+  }
+  if (raw.sort && !(SIGNAL_SORTS as readonly string[]).includes(raw.sort)) {
+    throw new CommercialFilterError(`sort must be one of ${SIGNAL_SORTS.join(", ")}.`);
+  }
+  if (raw.window) sentimentWindow(raw.window);
+  const page = raw.page == null ? 1 : Number(raw.page);
+  if (!Number.isInteger(page) || page < 1 || page > 500) {
+    throw new CommercialFilterError("page must be an integer from 1 to 500.");
+  }
+  const pageSize = raw.page_size == null ? 24 : Number(raw.page_size);
+  if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 48) {
+    throw new CommercialFilterError("page_size must be an integer from 1 to 48.");
+  }
+  const parsed = parseExplorerQuery({
+    q: raw.q,
+    game: raw.game,
+    set: raw.set,
+    language: raw.language,
+    variant: raw.variant,
+    market: raw.market,
+    social: raw.social,
+    sort: raw.sort ?? (raw.market === "sell" ? "market_sell" : "market_buy"),
+    window: raw.window,
+    page: String(page),
+  });
+  return { ...parsed, page, pageSize };
+}
+
+function signalRow(row: ExplorerRow) {
+  const score = row.score;
+  const price = row.price;
+  return {
+    printing_id: row.printingId,
+    game: row.gameKey,
+    name: row.cardName,
+    set: { key: row.setKey, name: row.setName },
+    collector_number: row.collectorNumber,
+    language: row.languageCode,
+    variant: row.variantKey,
+    rarity: row.rarity,
+    finish: row.finish,
+    image_url: row.imageUrl,
+    reading: score
+      ? {
+          recommendation: score.recommendation,
+          opportunity: score.opportunityMeasured ? score.opportunity : null,
+          risk: score.risk,
+          confidence: score.confidence,
+          liquidity: score.liquidity,
+          market_confirmed: score.marketConfirmed,
+          hype_unconfirmed: score.hypeUnconfirmed,
+          why: score.why,
+          as_of: score.asOf.toISOString(),
+          score_version: score.scoreVersion,
+        }
+      : null,
+    price: price
+      ? {
+          amount: price.amount,
+          currency: price.currency,
+          unit: "major",
+          condition: price.condition,
+          quote_type: price.quoteType,
+          source: price.sourceKey,
+          observed_at: price.observedAt.toISOString(),
+        }
+      : null,
+    price_change: row.windowChange == null ? null : round4(row.windowChange),
+    price_series: row.series.map((point) => ({ observed_at: point.observedAt.toISOString(), amount: point.amount })),
+    social: {
+      label: row.sentiment.label,
+      basis: row.sentiment.basis,
+      posts: row.sentiment.classified,
+      rated_posts: row.sentiment.ratedPosts,
+      accounts: row.sentiment.uniqueAccounts,
+      counts: row.sentiment.counts,
+      weighted: Object.fromEntries(Object.entries(row.sentiment.weighted).map(([key, value]) => [key, round4(value)])),
+    },
+  };
+}
+
 export function registerCommercialRoutes(
   app: App,
   options?: { env?: NodeJS.ProcessEnv; webhookFetch?: WebhookFetch; dnsLookup?: DnsLookup },
 ) {
+  // Cards ranked by buy/sell reading, social lean or price: the same read the
+  // customer site's card list uses. Doubles as name search (?q=).
+  app.get("/v1/signals", requireScope("signals:read"), async (c) => {
+    const requestId = resolveRequestId(c.req.header("x-request-id"));
+    try {
+      const raw = queryRecord(c);
+      const query = parseSignalsQuery(raw);
+      await meter(c.get("db"), c.get("machine"), requestId);
+      const hidden = await hiddenCreatorIds(c.get("db"), c.get("machine"));
+      const page = await listCardExplorerPage(c.get("db"), query, { hiddenCreatorIds: hidden });
+      return c.json({
+        data: page.rows.map(signalRow),
+        page: page.page,
+        page_size: page.pageSize,
+        page_count: page.pageCount,
+        total: page.total,
+        window: { key: page.window.key, from: page.window.from.toISOString(), to: page.window.to.toISOString() },
+        request_id: requestId,
+      });
+    } catch (error) {
+      return commercialError(error, requestId);
+    }
+  });
+
   app.get("/v1/cards", requireScope("cards:read"), async (c) => {
     const requestId = resolveRequestId(c.req.header("x-request-id"));
     try {
@@ -398,6 +526,7 @@ export function registerCommercialRoutes(
           and(
             after ? gt(tcgCardConcept.id, after) : undefined,
             filters.game ? eq(tcgCardConcept.gameKey, filters.game) : undefined,
+            filters.q ? ilike(tcgCardConcept.canonicalName, `%${escapeLike(filters.q)}%`) : undefined,
           ),
         )
         .orderBy(asc(tcgCardConcept.id))
@@ -498,6 +627,7 @@ export function registerCommercialRoutes(
             filters.set ? eq(tcgSet.canonicalSetKey, filters.set) : undefined,
             filters.language ? eq(tcgPrinting.languageCode, filters.language) : undefined,
             filters.variant ? eq(tcgPrinting.variantKey, filters.variant) : undefined,
+            filters.q ? ilike(tcgCardConcept.canonicalName, `%${escapeLike(filters.q)}%`) : undefined,
           ),
         )
         .orderBy(asc(tcgPrinting.id))

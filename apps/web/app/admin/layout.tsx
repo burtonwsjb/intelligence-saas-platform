@@ -23,6 +23,7 @@ const SECTIONS: ShellNavSection[] = [
     label: "People",
     items: [
       { key: "customers", href: "/admin/customers", label: "Customers", icon: "customers" },
+      { key: "api-keys", href: "/admin/api-keys", label: "API access", icon: "key" },
       { key: "beta", href: "/admin/beta", label: "Invites & features", icon: "beta" },
       { key: "support", href: "/admin/support", label: "Support", icon: "support" },
     ],

@@ -4503,3 +4503,26 @@ button[disabled] {
 .table-wrap {
   position: relative;
 }
+
+/* Copyable command shown on the API access pages. */
+.code-block {
+  background: var(--surface-2, #f4f5f7);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m, 8px);
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-s);
+  overflow-x: auto;
+  white-space: pre;
+  margin: 0 0 var(--space-4);
+}
+
+/* API docs code samples */
+.legal pre {
+  overflow-x: auto;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface-2);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}

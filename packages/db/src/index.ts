@@ -78,6 +78,8 @@ export {
   lookupApiKeyByPrefix,
   revokeApiKey,
   touchApiKeyLastUsed,
+  updateApiKeySettings,
+  getApiKeySettings,
   type ApiKeyLookup,
 } from "./repos/api-key.js";
 export { getMonthUsage, monthStartUtc, recordUsage } from "./repos/usage.js";
@@ -1196,6 +1198,12 @@ export {
   setCreatorTrustKeepingHistory,
   setSupportCaseStatus,
   upsertOperatorIndexDefinition,
+  ApiRequestLimitError,
+  listApiAccessWorkspaces,
+  listOperatorApiKeys,
+  setWorkspaceApiRequestLimit,
+  type OperatorApiKeyRow,
+  type OperatorApiWorkspaceRow,
 } from "./platform-exports.js";
 export {
   enqueueCreatorExtractJob,

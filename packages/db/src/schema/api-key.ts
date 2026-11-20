@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { bigint, boolean, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { organization } from "./organization.js";
 import { user } from "./auth.js";
 
@@ -20,4 +20,12 @@ export const apiKey = pgTable("api_key", {
   lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
   expiresAt: timestamp("expires_at", { withTimezone: true }),
   revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  /** Requests per rolling minute; null = only the shared per-IP guard (migration 0047). */
+  rateLimitPerMinute: integer("rate_limit_per_minute"),
+  /** Authenticated requests made with this key (migration 0047). */
+  requestCount: bigint("request_count", { mode: "number" }).notNull().default(0),
+  /** Operator's note: who the key is for, plan, contact (migration 0047). */
+  note: text("note"),
+  /** Issued by a platform operator from /admin/api-keys (migration 0047). */
+  issuedByOperator: boolean("issued_by_operator").notNull().default(false),
 });

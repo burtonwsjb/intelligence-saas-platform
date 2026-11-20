@@ -1,6 +1,7 @@
 import { inspectTenant } from "@isp/db";
 import { requireGrantedOperator } from "@/lib/platform-admin";
 import { addOperatorNoteAction } from "@/app/admin-actions";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +43,9 @@ export default async function AdminCustomerDetailPage({
           ))}
         </ul>
       ) : null}
+      <p>
+        <Link href={`/admin/api-keys?workspace=${encodeURIComponent(organizationId)}`}>Issue an API key for this workspace</Link>
+      </p>
       <h2>Tags</h2>
       <p>{workspace.tags.map((tag) => tag.tagKey).join(", ") || "none"}</p>
       <h2>Timeline</h2>

@@ -16,7 +16,7 @@ import {
   verifyPresentedApiKey,
 } from "@isp/auth";
 import { jsonError } from "./errors.js";
-import { allowApiAuthAttempt } from "./rate-limit.js";
+import { allowApiAuthAttempt, consumeKeyRateLimit, type KeyRateDecision } from "./rate-limit.js";
 
 export type MachinePrincipal = {
   organizationId: string;
@@ -70,6 +70,7 @@ export function createMachineAuth(options?: {
       }
       throw error;
     }
+    let rateLimitPerMinute: number | null = null;
     try {
       await withMachineContext(
         db,
@@ -83,10 +84,10 @@ export function createMachineAuth(options?: {
           if (!row || row.status !== "active") {
             throw new TenantInactiveMachineError();
           }
-          await touchApiKeyLastUsed(scoped, {
+          ({ rateLimitPerMinute } = await touchApiKeyLastUsed(scoped, {
             id: verified.id,
             organizationId: verified.organizationId,
-          });
+          }));
         },
       );
     } catch (error) {
@@ -95,6 +96,16 @@ export function createMachineAuth(options?: {
       }
       throw error;
     }
+    let rate: KeyRateDecision | null = null;
+    if (rateLimitPerMinute != null) {
+      rate = consumeKeyRateLimit(verified.id, rateLimitPerMinute);
+      if (!rate.allowed) {
+        const limited = jsonError("rate_limited", `This API key allows ${rate.limit} requests per minute.`, 429);
+        limited.headers.set("retry-after", String(rate.resetSeconds));
+        setRateHeaders(limited.headers, rate);
+        return limited;
+      }
+    }
     c.set("db", db);
     c.set("machine", {
       organizationId: verified.organizationId,
@@ -102,7 +113,20 @@ export function createMachineAuth(options?: {
       scopes: verified.scopes.split(",").filter(Boolean),
     });
     await next();
+    if (rate) {
+      setRateHeaders(c.res.headers, rate);
+    }
   };
+}
+
+function setRateHeaders(headers: Headers, rate: KeyRateDecision) {
+  try {
+    headers.set("x-ratelimit-limit", String(rate.limit));
+    headers.set("x-ratelimit-remaining", String(rate.remaining));
+    headers.set("x-ratelimit-reset", String(rate.resetSeconds));
+  } catch {
+    // Some responses carry immutable headers; the limit still applied.
+  }
 }
 
 class TenantInactiveMachineError extends Error {

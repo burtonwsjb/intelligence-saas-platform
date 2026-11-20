@@ -14,6 +14,7 @@ const FILTER_KEYS = new Set([
   "limit",
   "include_membership",
   "sort",
+  "q",
 ]);
 
 export class CommercialFilterError extends Error {
@@ -25,6 +26,7 @@ export class CommercialFilterError extends Error {
 
 export function parseCommercialQuery(query: Record<string, string | undefined>): {
   game?: string;
+  q?: string;
   set?: string;
   language?: string;
   variant?: string;
@@ -61,11 +63,16 @@ export function parseCommercialQuery(query: Record<string, string | undefined>):
   if (query.to && (to == null || Number.isNaN(to.getTime()))) {
     throw new CommercialFilterError("to must be an ISO datetime.");
   }
+  const q = query.q?.trim();
+  if (q !== undefined && q !== "" && (q.length < 2 || q.length > 80)) {
+    throw new CommercialFilterError("q must be 2 to 80 characters.");
+  }
   if (query.sort && query.sort !== "id") {
     throw new CommercialFilterError("sort must be id.");
   }
   return {
     game: query.game,
+    q: q ? q : undefined,
     set: query.set,
     language: query.language,
     variant: query.variant,
