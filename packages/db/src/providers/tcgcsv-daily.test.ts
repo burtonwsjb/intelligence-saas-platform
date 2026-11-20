@@ -105,7 +105,7 @@ describe("tcgcsv daily prices", () => {
         attributes: { tcgplayer_product_id: product, tcgplayer_group_name: "SV06: Twilight Masquerade", tcgplayer_sub_type: "Normal" },
       });
     }
-    const migration = await readFile(new URL("../../drizzle/0043_tcg_daily_price.sql", import.meta.url), "utf8");
+    const migration = await readFile(new URL("../../drizzle/0045_tcg_daily_price.sql", import.meta.url), "utf8");
     await client.exec(migration);
     const links = (await client.query<{ product_id: number; group_name: string; method: string }>("SELECT product_id, group_name, method FROM tcg_tcgplayer_link")).rows;
     expect(links).toEqual([{ product_id: 555, group_name: "SV06: Twilight Masquerade", method: "tcc_answer" }]);

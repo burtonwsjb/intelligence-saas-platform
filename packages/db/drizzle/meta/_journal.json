@@ -300,7 +300,7 @@
       "idx": 42,
       "version": "7",
       "when": 42,
-      "tag": "0043_tcg_daily_price",
+      "tag": "0045_tcg_daily_price",
       "breakpoints": true
     }
   ]

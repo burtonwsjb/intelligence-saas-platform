@@ -155,7 +155,7 @@ export const tcgMarketRevision = pgTable("tcg_market_revision", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
-/** tcgcsv's sets (TCGplayer groups) and their read state (migration 0043). */
+/** tcgcsv's sets (TCGplayer groups) and their read state (migration 0045). */
 export const tcgTcgplayerGroup = pgTable("tcg_tcgplayer_group", {
   groupId: integer("group_id").primaryKey(),
   categoryId: integer("category_id").notNull(),
@@ -169,7 +169,7 @@ export const tcgTcgplayerGroup = pgTable("tcg_tcgplayer_group", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
-/** Which TCGplayer product and price sub-type a printing is (migration 0043). */
+/** Which TCGplayer product and price sub-type a printing is (migration 0045). */
 export const tcgTcgplayerLink = pgTable("tcg_tcgplayer_link", {
   printingId: text("printing_id")
     .primaryKey()
@@ -185,7 +185,7 @@ export const tcgTcgplayerLink = pgTable("tcg_tcgplayer_link", {
 
 /**
  * Slim daily TCGplayer market prices from tcgcsv, one row per printing and
- * day, stamped 20:00 UTC of the price day (migration 0043).
+ * day, stamped 20:00 UTC of the price day (migration 0045).
  */
 export const tcgDailyPrice = pgTable(
   "tcg_daily_price",
@@ -206,7 +206,7 @@ export const tcgDailyPrice = pgTable(
 
 /**
  * tcg_market_snapshot plus the slim daily prices shaped as snapshot rows
- * (migration 0043). Price readers read this; writers write the tables.
+ * (migration 0045). Price readers read this; writers write the tables.
  */
 export const tcgMarketPriceAll = pgView("tcg_market_price_all", {
   id: text("id").notNull(),
