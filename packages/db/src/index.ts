@@ -630,6 +630,36 @@ export {
   type TccPriceHistoryReport,
 } from "./providers/tcc-price-history.js";
 export {
+  TCGCSV_DAILY_TRIGGER,
+  TCGCSV_SKIPPED_CATEGORIES,
+  TCGCSV_USER_AGENT,
+  linkedGames,
+  pickTcgcsvRow,
+  refreshTcgcsvCatalog,
+  syncTcgcsvDaily,
+  tcgcsvDailySettings,
+  type TcgcsvDailyReport,
+} from "./providers/tcgcsv-daily.js";
+export { TCGCSV_GAME_ORDER, gameForCategory } from "./providers/tcgcsv-common.js";
+export {
+  matchGroup,
+  normNumber,
+  subTypeFor,
+  syncTcgcsvMatch,
+  tcgcsvMatchSettings,
+  type TcgcsvMatchReport,
+} from "./providers/tcgcsv-match.js";
+export {
+  TCGCSV_ARCHIVE_TRIGGER,
+  downloadTcgcsvArchive,
+  indexArchiveDir,
+  plannedArchiveDays,
+  syncTcgcsvHistory,
+  tcgcsvHistorySettings,
+  type TcgcsvArchiveReader,
+  type TcgcsvHistoryReport,
+} from "./providers/tcgcsv-history.js";
+export {
   INFLUENCER_SEED_LOOKUPS_PER_RUN,
   INFLUENCER_SEED_TRIGGER,
   POKEMON_INFLUENCER_SEEDS,

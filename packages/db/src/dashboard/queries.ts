@@ -7,7 +7,8 @@ import { tcgScoreSnapshot } from "../schema/scoring.js";
 import { tcgIndexDefinition, tcgIndexLevel } from "../schema/analytics.js";
 import { tcgPrediction } from "../schema/prediction.js";
 import { creator, creatorCall } from "../schema/creator.js";
-import { tcgMarketSnapshot } from "../schema/tcg-market.js";
+// Reads every price row: snapshots plus the slim daily tcgcsv prices (migration 0043).
+import { tcgMarketPriceAll as tcgMarketSnapshot } from "../schema/tcg-market.js";
 import {
   getLatestTcgMarketSnapshot,
   getTcgAskSoldSpread,

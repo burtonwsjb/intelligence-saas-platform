@@ -60,7 +60,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           </nav>
           <p className="shell-legal-note">
             Card images and names belong to their owners, including The Pokémon Company, Nintendo, Bandai,
-            Shueisha, Toei Animation and Konami. Sentiment is not affiliated with or endorsed by them.
+            Shueisha, Toei Animation and Konami. Sentiment is not affiliated with or endorsed by them. TCGplayer market prices via{" "}
+            <a href="https://tcgcsv.com" rel="noopener">TCGCSV</a>, with thanks.
           </p>
         </footer>
         </MarketingChrome>

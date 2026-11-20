@@ -1,7 +1,8 @@
 import { and, asc, desc, eq, gt, isNull, lte, sql } from "drizzle-orm";
 import type { Database } from "../client.js";
 import { tcgIndexDefinition, tcgIndexLevel, tcgIndexMembership } from "../schema/analytics.js";
-import { tcgMarketSnapshot } from "../schema/tcg-market.js";
+// Reads every price row: snapshots plus the slim daily tcgcsv prices (migration 0043).
+import { tcgMarketPriceAll as tcgMarketSnapshot } from "../schema/tcg-market.js";
 import { tcgCardConcept, tcgPrinting, tcgSet } from "../schema/tcg.js";
 import {
   DEFAULT_INDEX_WEIGHTING,

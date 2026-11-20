@@ -137,7 +137,7 @@ export async function loadChartInputRows(db: Database, printingId: string, asOf:
       SELECT observed_at, price_type, currency, grading_company, grade_label, grade_numeric::text AS grade_numeric,
         price::text AS price, sales_count, listing_count,
         CASE WHEN attributes->>'population' ~ '^[0-9]{1,9}$' THEN (attributes->>'population')::int END AS population
-      FROM tcg_market_snapshot
+      FROM tcg_market_price_all
       WHERE printing_id = ${printingId}
         AND observed_at >= ${from.toISOString()}::timestamptz
         AND observed_at <= ${asOf.toISOString()}::timestamptz
@@ -244,7 +244,7 @@ export async function runChartSentimentBatch(
     await db.execute(sql`
       SELECT p.printing_id
       FROM (
-        SELECT printing_id, max(created_at) AS arrived_at FROM tcg_market_snapshot
+        SELECT printing_id, max(created_at) AS arrived_at FROM tcg_market_price_all
         WHERE price_type IN ('reference', 'sold') AND price IS NOT NULL AND outlier_flag = false
           AND quality_label NOT IN ('outlier', 'suspect')
           AND observed_at >= ${from.toISOString()}::timestamptz

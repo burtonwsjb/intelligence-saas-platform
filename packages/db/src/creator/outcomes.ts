@@ -2,7 +2,8 @@ import { and, asc, eq, gt, inArray, isNull, lte, sql } from "drizzle-orm";
 import type { Database } from "../client.js";
 import { creatorCall, creatorCallOutcome } from "../schema/creator.js";
 import { marketAsset } from "../schema/asset.js";
-import { tcgMarketSnapshot } from "../schema/tcg-market.js";
+// Reads every price row: snapshots plus the slim daily tcgcsv prices (migration 0043).
+import { tcgMarketPriceAll as tcgMarketSnapshot } from "../schema/tcg-market.js";
 import { tcgPrinting, tcgSet } from "../schema/tcg.js";
 import { assetPriceAt, assetPricesBetween } from "./assets.js";
 import { callGradeFromEvidence, type CallGrade } from "./grade.js";

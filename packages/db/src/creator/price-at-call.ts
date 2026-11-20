@@ -1,5 +1,6 @@
 import { and, desc, eq, isNull, lte } from "drizzle-orm";
-import { tcgMarketSnapshot } from "../schema/tcg-market.js";
+// Reads every price row: snapshots plus the slim daily tcgcsv prices (migration 0043).
+import { tcgMarketPriceAll as tcgMarketSnapshot } from "../schema/tcg-market.js";
 import type { Database } from "../client.js";
 import { CREATOR_PRICE_AT_CALL_VERSION } from "./identity.js";
 import type { CallGrade } from "./grade.js";

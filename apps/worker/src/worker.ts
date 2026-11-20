@@ -27,6 +27,9 @@ import {
   rescanAssetCalls,
   rescanScopeTalk,
   syncTccPriceHistory,
+  syncTcgcsvDaily,
+  syncTcgcsvHistory,
+  syncTcgcsvMatch,
   retryUnboundDetectedMentions,
   traceSourcePost,
   syncPodcastFeeds,
@@ -38,6 +41,9 @@ import {
   type ChartSentimentRunReport,
   type Database,
   type TccCatalogReport,
+  type TcgcsvDailyReport,
+  type TcgcsvHistoryReport,
+  type TcgcsvMatchReport,
   type TccPriceHistoryReport,
   type TranscriptBackfillReport,
   type TranscriptFetcher,
@@ -216,6 +222,9 @@ export async function runMarketWork(db: Database, env: NodeJS.ProcessEnv = proce
   await runPostTrace(db, env);
   await runChartCoverage(db);
   await runPriceHistory(db, env);
+  await runTcgcsvMatch(db, env);
+  await runTcgcsvDaily(db, env);
+  await runTcgcsvHistory(db, env);
   await runCallScoring(db);
   await runCardRescore(db, env);
   await runChartSentiment(db, env);
@@ -581,6 +590,87 @@ export async function runPriceHistory(
     return report;
   } catch (error) {
     logLoopFailure("worker.price_history_failed", "price_history", error);
+    return null;
+  }
+}
+
+/**
+ * Links cards to TCGplayer products from tcgcsv's card lists, set by set in
+ * the owner's game order. Off unless TCGCSV_MATCH_ENABLED=1.
+ */
+export async function runTcgcsvMatch(db: Database, env: NodeJS.ProcessEnv = process.env): Promise<TcgcsvMatchReport | null> {
+  try {
+    const report = await syncTcgcsvMatch(db, { env });
+    if (report.status === "skipped" || (report.groups === 0 && report.status === "completed")) return report;
+    logQueueEvent(report.status === "stopped" ? "warn" : "info", "worker.tcgcsv_match", {
+      status: report.status,
+      reason: report.reason,
+      build: report.build,
+      requests: report.requests,
+      groups: report.groups,
+      groups_left: report.groupsLeft,
+      candidates: report.candidates,
+      linked: report.linked,
+      ambiguous: report.ambiguous,
+      priced: report.priced,
+      by_game: Object.entries(report.byGame).map(([g, n]) => `${g}:${n}`).join(","),
+    });
+    return report;
+  } catch (error) {
+    logLoopFailure("worker.tcgcsv_match_failed", "tcgcsv_match", error);
+    return null;
+  }
+}
+
+/**
+ * Today's TCGplayer market price straight from tcgcsv's daily price files for
+ * every printing linked to a TCGplayer product. Off unless
+ * TCGCSV_DAILY_ENABLED=1; only when tcgcsv has a new build, after
+ * TCGCSV_DAILY_START_UTC_HOUR.
+ */
+export async function runTcgcsvDaily(db: Database, env: NodeJS.ProcessEnv = process.env): Promise<TcgcsvDailyReport | null> {
+  try {
+    const report = await syncTcgcsvDaily(db, { env });
+    if (report.status === "skipped" && report.reason !== "nothing_linked") return report;
+    logQueueEvent(report.status === "stopped" ? "warn" : "info", "worker.tcgcsv_daily", {
+      status: report.status,
+      reason: report.reason,
+      build: report.build,
+      requests: report.requests,
+      groups: report.groups,
+      groups_left: report.groupsLeft,
+      linked: report.linked,
+      priced: report.priced,
+      missing: report.missing,
+      written: report.written,
+      links_resolved: report.linksResolved,
+    });
+    return report;
+  } catch (error) {
+    logLoopFailure("worker.tcgcsv_daily_failed", "tcgcsv_daily", error);
+    return null;
+  }
+}
+
+/**
+ * Past prices from tcgcsv's price archive, newest day first, each archive day
+ * downloaded once ever. Off unless TCGCSV_HISTORY_ENABLED=1.
+ */
+export async function runTcgcsvHistory(db: Database, env: NodeJS.ProcessEnv = process.env): Promise<TcgcsvHistoryReport | null> {
+  try {
+    const report = await syncTcgcsvHistory(db, { env });
+    if (report.status === "skipped") return report;
+    logQueueEvent(report.status === "stopped" ? "warn" : "info", "worker.tcgcsv_history", {
+      status: report.status,
+      reason: report.reason,
+      targets: report.targets,
+      downloads: report.downloads,
+      written: report.written,
+      days: report.days.map((d) => `${d.day}:${d.status}:${d.written}/${d.priced}`).join(","),
+    });
+    return report;
+  } catch (error) {
+    logLoopFailure("worker.tcgcsv_history_failed", "tcgcsv_history", error);
     return null;
   }
 }
