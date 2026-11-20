@@ -20,9 +20,9 @@ const nextConfig: NextConfig = {
         source: "/:path*",
         headers: securityHeaders({ hosted: hostedRuntime() }),
       },
-      // Keep the app, the admin console (API docs and keys) and the API terms
-      // out of search even if a crawler ignores robots.txt.
-      ...["/admin/:path*", "/admin", "/app/:path*", "/app", "/api-terms"].map((source) => ({
+      // Keep the app and the admin console (API docs and keys) out of search
+      // even if a crawler ignores robots.txt.
+      ...["/admin/:path*", "/admin", "/app/:path*", "/app"].map((source) => ({
         source,
         headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
       })),

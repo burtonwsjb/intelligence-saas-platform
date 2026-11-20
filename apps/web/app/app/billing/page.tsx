@@ -9,7 +9,6 @@ import {
 import { hasPermission } from "@isp/auth";
 import {
   PLAN_PRICE_DISPLAY,
-  evaluateQuota,
   loadEntitlement,
   resolveBillingMode,
   type EntitlementKey,
@@ -49,9 +48,8 @@ function formatDay(value: Date): string {
   return value.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
+// The API is admin-only (owner 2026-11-20), so customers never see API limits.
 const DISPLAY_KEYS: EntitlementKey[] = [
-  "api_requests_per_month",
-  "api_keys",
   "webhooks",
   "alerts",
   "predictions",
@@ -81,16 +79,13 @@ export default async function BillingPage({
       const entitlements = await Promise.all(
         DISPLAY_KEYS.map(async (key) => ({ key, value: await loadEntitlement(scoped, organizationId, key) })),
       );
-      const usage = await evaluateQuota(scoped, { organizationId, meterKey: "api.reads" });
-      return { billing, catalog, entitlements, usage };
+      return { billing, catalog, entitlements };
     },
   );
 
   const currentPlan = snapshot.billing?.planKey ?? "free";
   const status = snapshot.billing?.status ?? null;
   const planName = (key: string) => snapshot.catalog.plans.find((plan) => plan.key === key)?.name ?? key;
-  const usageLimit = Number.isFinite(snapshot.usage.limit) ? snapshot.usage.limit : null;
-  const usageShare = usageLimit ? Math.min(1, snapshot.usage.current / usageLimit) : 0;
 
   return (
     <>
@@ -130,24 +125,8 @@ export default async function BillingPage({
         </section>
         <section className="panel" aria-labelledby="usage-heading">
           <p className="eyebrow" id="usage-heading">
-            API use this period
+            Payments
           </p>
-          <p className="stat-value">
-            {snapshot.usage.current.toLocaleString("en-US")}
-            <span className="subtle"> / {usageLimit == null ? "unlimited" : usageLimit.toLocaleString("en-US")}</span>
-          </p>
-          {usageLimit ? (
-            <div
-              className="meter"
-              role="meter"
-              aria-label="API requests used"
-              aria-valuemin={0}
-              aria-valuemax={usageLimit}
-              aria-valuenow={snapshot.usage.current}
-            >
-              <span style={{ width: `${usageShare * 100}%` }} />
-            </div>
-          ) : null}
           <p className="subtle" style={{ marginBottom: 0 }}>
             If a payment lapses your data is kept and the workspace falls back to the Free plan.
           </p>

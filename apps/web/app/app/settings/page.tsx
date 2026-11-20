@@ -124,7 +124,7 @@ export default async function SettingsPage({
       </table>
       </div>
       <h2>Privacy</h2>
-      <p className="muted">Export workspace members, API key prefixes, and webhook destinations. Secrets are never included.</p>
+      <p className="muted">Export workspace members, access key prefixes and webhook destinations. Secrets are never included.</p>
       {access.canManageMembers ? (
         <>
           <p>

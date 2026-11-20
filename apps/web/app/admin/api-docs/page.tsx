@@ -192,11 +192,6 @@ const body = await res.json();`}</code>
         <code>{SIGNALS_EXAMPLE}</code>
       </pre>
 
-      <h2>Terms</h2>
-      <p>
-        Use of the API is covered by the API Terms (<code>/api-terms</code>, not linked or indexed). Sentiment readings
-        are information, not investment advice.
-      </p>
     </article>
   );
 }
