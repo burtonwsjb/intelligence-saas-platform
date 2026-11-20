@@ -4,9 +4,10 @@ export function commercialOpenApi() {
     info: {
       title: "Sentiment API",
       version: "v1",
-      description: "Tenant-authenticated commercial intelligence API. Internal ingest and Stripe webhooks are not included.",
+      description:
+        "Read API for Sentiment trading card data: cards, sets, prices and price history, buy/sell readings, accuracy-weighted influencer sentiment and influencer accuracy. Send `Authorization: Bearer <key>`. Keys are issued from the admin console or a workspace's API keys page; each key carries scopes and may carry a per-minute limit, reported in X-RateLimit-Limit, X-RateLimit-Remaining and X-RateLimit-Reset (seconds). Over the limit returns 429 rate_limited with Retry-After. Reads also count toward the workspace's monthly api.reads allowance (429 quota_exceeded). Errors are `{ error: { code, message, request_id } }`. Internal ingest and Stripe webhooks are not included.",
     },
-    servers: [{ url: "/" }],
+    servers: [{ url: "https://api.socialsignaliq.com" }, { url: "/" }],
     components: {
       securitySchemes: {
         bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "API key" },
@@ -14,9 +15,11 @@ export function commercialOpenApi() {
     },
     security: [{ bearerAuth: [] }],
     paths: {
-      "/v1/cards": { get: { summary: "List card concepts", security: [{ bearerAuth: [] }] } },
+      "/v1/signals": { get: { summary: "Cards ranked by buy/sell reading, influencer lean or price, with latest price, price change over the window and a price series; scope signals:read. ?q= (card name search), ?game=, ?set=, ?language=, ?variant=, ?market=buy|hold|sell|none, ?social=positive|negative|neutral|any|none, ?sort=market_buy (default)|market_sell|opportunity|risk_low|confidence|liquidity|price_high|price_low|name|social_positive|social_negative|social_posts, ?window=7d|30d (default)|90d, ?page=1.., ?page_size=1..48 (default 24)", security: [{ bearerAuth: [] }] } },
+      "/v1/me": { get: { summary: "The calling key's workspace, key id and scopes; scope decisions:read", security: [{ bearerAuth: [] }] } },
+      "/v1/cards": { get: { summary: "List card concepts; ?q= searches by name (2-80 characters), ?game=", security: [{ bearerAuth: [] }] } },
       "/v1/cards/{id}": { get: { summary: "Get a card concept", security: [{ bearerAuth: [] }] } },
-      "/v1/printings": { get: { summary: "List exact printings", security: [{ bearerAuth: [] }] } },
+      "/v1/printings": { get: { summary: "List exact printings; ?q= searches by card name", security: [{ bearerAuth: [] }] } },
       "/v1/printings/{id}": { get: { summary: "Get an exact printing", security: [{ bearerAuth: [] }] } },
       "/v1/sets": { get: { summary: "List sets", security: [{ bearerAuth: [] }] } },
       "/v1/printings/{id}/prices": {

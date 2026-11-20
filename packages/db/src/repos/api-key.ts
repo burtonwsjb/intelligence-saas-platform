@@ -91,6 +91,8 @@ export async function listApiKeys(
       lastUsedAt: apiKey.lastUsedAt,
       expiresAt: apiKey.expiresAt,
       revokedAt: apiKey.revokedAt,
+      rateLimitPerMinute: apiKey.rateLimitPerMinute,
+      requestCount: apiKey.requestCount,
     })
     .from(apiKey)
     .where(eq(apiKey.organizationId, organizationId));
@@ -121,13 +123,63 @@ export async function revokeApiKey(
   return updated.length;
 }
 
+/**
+ * Marks the key used and counts the request in one UPDATE, returning the
+ * key's per-minute limit (null = no per-key limit) for the rate limiter.
+ */
 export async function touchApiKeyLastUsed(
   scoped: Database,
   input: { id: string; organizationId: string },
-): Promise<void> {
+): Promise<{ rateLimitPerMinute: number | null }> {
   await assertTenantContext(scoped);
-  await scoped
+  const [row] = await scoped
     .update(apiKey)
-    .set({ lastUsedAt: new Date() })
-    .where(and(eq(apiKey.id, input.id), eq(apiKey.organizationId, input.organizationId)));
+    .set({ lastUsedAt: new Date(), requestCount: sql`${apiKey.requestCount} + 1` })
+    .where(and(eq(apiKey.id, input.id), eq(apiKey.organizationId, input.organizationId)))
+    .returning({ rateLimitPerMinute: apiKey.rateLimitPerMinute });
+  return { rateLimitPerMinute: row?.rateLimitPerMinute ?? null };
+}
+
+/** Per-key settings an operator changes from /admin/api-keys (migration 0047). */
+export async function updateApiKeySettings(
+  scoped: Database,
+  input: {
+    id: string;
+    organizationId: string;
+    rateLimitPerMinute?: number | null;
+    note?: string | null;
+    issuedByOperator?: boolean;
+  },
+): Promise<number> {
+  await assertTenantContext(scoped);
+  const set: Partial<typeof apiKey.$inferInsert> = {};
+  if (input.rateLimitPerMinute !== undefined) set.rateLimitPerMinute = input.rateLimitPerMinute;
+  if (input.note !== undefined) set.note = input.note;
+  if (input.issuedByOperator !== undefined) set.issuedByOperator = input.issuedByOperator;
+  if (Object.keys(set).length === 0) return 0;
+  const updated = await scoped
+    .update(apiKey)
+    .set(set)
+    .where(and(eq(apiKey.id, input.id), eq(apiKey.organizationId, input.organizationId)))
+    .returning({ id: apiKey.id });
+  return updated.length;
+}
+
+/** One key's settings for rotation; never returns the secret hash. */
+export async function getApiKeySettings(scoped: Database, input: { id: string; organizationId: string }) {
+  await assertTenantContext(scoped);
+  const [row] = await scoped
+    .select({
+      id: apiKey.id,
+      name: apiKey.name,
+      scopes: apiKey.scopes,
+      status: apiKey.status,
+      expiresAt: apiKey.expiresAt,
+      rateLimitPerMinute: apiKey.rateLimitPerMinute,
+      note: apiKey.note,
+    })
+    .from(apiKey)
+    .where(and(eq(apiKey.id, input.id), eq(apiKey.organizationId, input.organizationId)))
+    .limit(1);
+  return row ?? null;
 }

@@ -36,7 +36,7 @@ export default function PrivacyPage() {
       <h2>2. Information collected automatically</h2>
       <ul>
         <li>
-          <strong>Usage:</strong> pages and features used, API requests (counted for your plan’s limits) and the actions
+          <strong>Usage:</strong> pages and features used and the actions
           recorded in your workspace’s audit log.
         </li>
         <li>
@@ -81,7 +81,7 @@ export default function PrivacyPage() {
 
       <h2>4. How we use information</h2>
       <ul>
-        <li>to provide the Service: accounts, workspaces, Insights, alerts, the API and webhooks;</li>
+        <li>to provide the Service: accounts, workspaces, Insights, alerts and webhooks;</li>
         <li>to send account emails such as verification, security notices, alerts you set up and billing notices;</li>
         <li>to enforce plan limits, prevent abuse and keep the Service secure;</li>
         <li>to understand and improve how the Service works;</li>
@@ -97,7 +97,7 @@ export default function PrivacyPage() {
       <p>We do not sell personal information and we do not use it for advertising. We share it only:</p>
       <ul>
         <li>
-          with service providers that run the Service for us under contract: Vercel (website hosting), Railway (API and
+          with service providers that run the Service for us under contract: Vercel (website hosting), Railway (servers and
           background jobs), Supabase (database), Upstash (queues and caching), Resend (email) and Stripe (payments);
         </li>
         <li>with members of your workspace, as the workspace features require;</li>
@@ -108,7 +108,7 @@ export default function PrivacyPage() {
       <h2>6. How long we keep it</h2>
       <p>
         We keep account and workspace information while your workspace is active. When a workspace is closed we disable
-        it, revoke its API keys and webhooks, and delete or anonymise personal information we no longer need, except
+        it, revoke its access credentials and webhooks, and delete or anonymise personal information we no longer need, except
         security and audit records and billing records that we must keep for legal, tax or dispute purposes. Public
         market data and the history of creators’ public calls are kept so that accuracy scores stay honest.
       </p>
@@ -124,7 +124,7 @@ export default function PrivacyPage() {
 
       <h2>8. Security</h2>
       <p>
-        We protect information with encryption in transit, hashed passwords and API keys, per-workspace access controls
+        We protect information with encryption in transit, hashed passwords and access credentials, per-workspace access controls
         in the database and audit logging. No system is perfectly secure, so please use a strong, unique password.
       </p>
 

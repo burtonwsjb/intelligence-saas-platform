@@ -33,7 +33,8 @@ export default async function AppShellLayout({ children }: { children: ReactNode
     userId: session.user.id,
     email: session.user.email,
   }).catch(() => ({ granted: false }));
-  const items = visibleAppNav(access);
+  // The API (keys and usage meters) is admin-only; customers never see it in the menu.
+  const items = visibleAppNav(access).filter((item) => !["keys", "usage"].includes(item.key) || operator.granted);
   const sections: ShellNavSection[] = (["primary", "developer", "account"] as const).map((group) => ({
     label: SECTION_LABEL[group],
     items: items

@@ -8,7 +8,7 @@ export default function AcceptableUsePage() {
   return (
     <LegalDocument title="Acceptable Use Policy" current="/acceptable-use">
       <p>
-        This policy applies to everyone who uses Sentiment, through the website, the app or the API. It is part of the
+        This policy applies to everyone who uses Sentiment, through the website or the app. It is part of the
         Terms of Service. We want Sentiment to stay fair and useful for collectors, so please don’t misuse it.
       </p>
 
@@ -22,12 +22,11 @@ export default function AcceptableUsePage() {
         <li>harass, threaten, dox or defame anyone, including creators shown in Sentiment;</li>
         <li>impersonate a person or organisation, or misrepresent your connection with Sentiment;</li>
         <li>
-          scrape, crawl or bulk-download the website, or copy, resell or redistribute Insights or compiled data, except
-          through the API as the API Terms allow;
+          scrape, crawl or bulk-download the website, or copy, resell or redistribute Insights or compiled data;
         </li>
-        <li>use Insights or the API to build a product that competes with Sentiment;</li>
+        <li>use Insights to build a product that competes with Sentiment;</li>
         <li>
-          share accounts or API keys outside your workspace, create accounts automatically, or get around plan limits,
+          share accounts outside your workspace, create accounts automatically, or get around plan limits,
           rate limits, quotas or access controls;
         </li>
         <li>access, or try to access, another workspace’s data or any part of the Service you are not allowed to use;</li>
@@ -47,7 +46,7 @@ export default function AcceptableUsePage() {
 
       <h2>Enforcement</h2>
       <p>
-        If we believe this policy has been broken we may remove content, limit or suspend access, revoke API keys, or
+        If we believe this policy has been broken we may remove content, limit or suspend access, or
         close the account, and we may report illegal activity to the authorities. Where reasonable we will tell you what
         happened and give you a chance to respond.
       </p>

@@ -141,7 +141,13 @@ describe("commercial API and webhooks", () => {
     });
 
     const auth = { authorization: `Bearer ${key}` };
-    const openapi = await app.request("/v1/openapi.json");
+    // The API is private: the endpoint list needs a key too, and nothing is indexed.
+    const anonymousOpenapi = await app.request("/v1/openapi.json");
+    expect(anonymousOpenapi.status).toBe(401);
+    expect(anonymousOpenapi.headers.get("x-robots-tag")).toBe("noindex, nofollow");
+    const robots = await app.request("/robots.txt");
+    expect(await robots.text()).toContain("Disallow: /");
+    const openapi = await app.request("/v1/openapi.json", { headers: auth });
     expect(openapi.status).toBe(200);
     expect(openapi.headers.get("cache-control")).toBe("private, no-store");
     await expect(openapi.json()).resolves.toMatchObject({ openapi: "3.1.0" });

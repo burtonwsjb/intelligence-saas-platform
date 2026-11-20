@@ -65,6 +65,7 @@ export function createApiApp(options?: {
       c.header("cache-control", "private, no-store");
     }
     c.header("x-content-type-options", "nosniff");
+    c.header("x-robots-tag", "noindex, nofollow");
     c.header("x-frame-options", "DENY");
     c.header("referrer-policy", "no-referrer");
     const originHeader = c.req.header("origin");
@@ -87,6 +88,9 @@ export function createApiApp(options?: {
       latency_ms: Date.now() - started,
     });
   });
+
+  // Nothing on the API host belongs in search results.
+  app.get("/robots.txt", (c) => c.text("User-agent: *\nDisallow: /\n"));
 
   app.get("/health", (c) => {
     const body = healthOk();
@@ -148,8 +152,6 @@ export function createApiApp(options?: {
     }
   });
 
-  app.get("/v1/openapi.json", (c) => c.json(commercialOpenApi()));
-
   registerLocalTranscriptRoutes(app, { db: options?.db, env });
 
   app.use("/v1/events", async (c, next) => {
@@ -165,6 +167,9 @@ export function createApiApp(options?: {
   });
 
   app.use("/v1/*", machineAuth);
+
+  // The API is private (owner 2026-11-20): even its endpoint list needs a valid key.
+  app.get("/v1/openapi.json", (c) => c.json(commercialOpenApi()));
 
   app.post("/v1/events", requireScope("ingest:write"), async (c) => {
     const machine = c.get("machine");

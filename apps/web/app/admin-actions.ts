@@ -39,7 +39,21 @@ import {
   requestInfluencerSeed,
   setWebFeedSiteState,
   WebFeedSiteError,
+  ApiRequestLimitError,
+  setWorkspaceApiRequestLimit,
 } from "@isp/db";
+import {
+  InvalidApiKeyNameError,
+  MissingApiKeyPepperError,
+  UnknownScopeError,
+  ApiKeyDeniedError,
+  InvalidApiKeyLimitError,
+  createOperatorApiKey,
+  requireApiKeyPepper,
+  revokeOperatorApiKey,
+  rotateOperatorApiKey,
+  updateOperatorApiKeySettings,
+} from "@isp/auth";
 import { requireGrantedOperator } from "@/lib/platform-admin";
 
 /**
@@ -600,4 +614,137 @@ export async function closeInterruptedScheduledRunAction(formData: FormData) {
     redirect("/admin/health?resources=rejected");
   }
   redirect("/admin/health?resources=closed");
+}
+
+/**
+ * Customer API access, managed from /admin/api-keys. The operator picks a
+ * workspace and issues a key; the full secret is shown once on the next page.
+ */
+export async function issueCustomerApiKeyAction(formData: FormData) {
+  const operator = await requireGrantedOperator();
+  if (!operator.adminDb) {
+    redirect("/admin/api-keys?error=config");
+  }
+  const organizationId = String(formData.get("organizationId") ?? "").trim();
+  const expiresRaw = String(formData.get("expiresAt") ?? "").trim();
+  const expiresAt = expiresRaw ? new Date(`${expiresRaw}T23:59:59Z`) : null;
+  let fullKey: string;
+  try {
+    const created = await createOperatorApiKey(operator.adminDb, {
+      organizationId,
+      actorUserId: operator.session.user.id,
+      name: String(formData.get("name") ?? ""),
+      scopes: formData.getAll("scopes"),
+      pepper: requireApiKeyPepper(),
+      expiresAt: expiresAt && Number.isFinite(expiresAt.getTime()) ? expiresAt : null,
+      rateLimitPerMinute: formData.get("rateLimitPerMinute"),
+      note: formData.get("note"),
+    });
+    fullKey = created.fullKey;
+  } catch (error) {
+    if (error instanceof InvalidApiKeyNameError) {
+      redirect("/admin/api-keys?error=name");
+    }
+    if (error instanceof UnknownScopeError) {
+      redirect("/admin/api-keys?error=scopes");
+    }
+    if (error instanceof MissingApiKeyPepperError) {
+      redirect("/admin/api-keys?error=pepper");
+    }
+    if (error instanceof InvalidApiKeyLimitError) {
+      redirect("/admin/api-keys?error=rate");
+    }
+    redirect("/admin/api-keys?error=rejected");
+  }
+  await setSecretFlash("api_key", fullKey);
+  redirect("/admin/api-keys?done=issued");
+}
+
+/** New secret with the same settings; the old key stops working at once. */
+export async function rotateCustomerApiKeyAction(formData: FormData) {
+  const operator = await requireGrantedOperator();
+  if (!operator.adminDb) {
+    redirect("/admin/api-keys?error=config");
+  }
+  let fullKey: string;
+  try {
+    const rotated = await rotateOperatorApiKey(operator.adminDb, {
+      organizationId: String(formData.get("organizationId") ?? ""),
+      apiKeyId: String(formData.get("apiKeyId") ?? ""),
+      actorUserId: operator.session.user.id,
+      pepper: requireApiKeyPepper(),
+    });
+    fullKey = rotated.fullKey;
+  } catch (error) {
+    if (error instanceof MissingApiKeyPepperError) {
+      redirect("/admin/api-keys?error=pepper");
+    }
+    redirect("/admin/api-keys?error=rejected");
+  }
+  await setSecretFlash("api_key", fullKey);
+  redirect("/admin/api-keys?done=rotated");
+}
+
+export async function updateCustomerApiKeyAction(formData: FormData) {
+  const operator = await requireGrantedOperator();
+  if (!operator.adminDb) {
+    redirect("/admin/api-keys?error=config");
+  }
+  try {
+    await updateOperatorApiKeySettings(operator.adminDb, {
+      organizationId: String(formData.get("organizationId") ?? ""),
+      apiKeyId: String(formData.get("apiKeyId") ?? ""),
+      actorUserId: operator.session.user.id,
+      rateLimitPerMinute: formData.get("rateLimitPerMinute"),
+      note: formData.get("note"),
+    });
+  } catch (error) {
+    if (error instanceof InvalidApiKeyLimitError) {
+      redirect("/admin/api-keys?error=rate");
+    }
+    if (error instanceof ApiKeyDeniedError) {
+      redirect("/admin/api-keys?error=rejected");
+    }
+    throw error;
+  }
+  redirect("/admin/api-keys?done=updated");
+}
+
+export async function revokeCustomerApiKeyAction(formData: FormData) {
+  const operator = await requireGrantedOperator();
+  if (!operator.adminDb) {
+    redirect("/admin/api-keys?error=config");
+  }
+  try {
+    await revokeOperatorApiKey(operator.adminDb, {
+      organizationId: String(formData.get("organizationId") ?? ""),
+      apiKeyId: String(formData.get("apiKeyId") ?? ""),
+      actorUserId: operator.session.user.id,
+    });
+  } catch {
+    redirect("/admin/api-keys?error=rejected");
+  }
+  redirect("/admin/api-keys?done=revoked");
+}
+
+export async function setApiRequestLimitAction(formData: FormData) {
+  const operator = await requireGrantedOperator();
+  if (!operator.adminDb) {
+    redirect("/admin/api-keys?error=config");
+  }
+  const raw = String(formData.get("limit") ?? "").replaceAll(",", "").trim();
+  const limit = raw === "" ? null : Number(raw);
+  try {
+    await setWorkspaceApiRequestLimit(operator.adminDb, {
+      organizationId: String(formData.get("organizationId") ?? ""),
+      actorUserId: operator.session.user.id,
+      limit: limit === null || Number.isFinite(limit) ? limit : Number.NaN,
+    });
+  } catch (error) {
+    if (error instanceof ApiRequestLimitError) {
+      redirect("/admin/api-keys?error=limit");
+    }
+    throw error;
+  }
+  redirect("/admin/api-keys?done=limit");
 }

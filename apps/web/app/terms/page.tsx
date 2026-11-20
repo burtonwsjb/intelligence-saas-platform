@@ -12,11 +12,10 @@ export default function TermsPage() {
     <LegalDocument title="Terms of Service" current="/terms">
       <p>
         These terms are an agreement between you and {operator} (“we”, “us”) for the use of Sentiment, including the
-        website, the app, the API and any related services (the “Service”). By creating an account or using the Service
-        you agree to these terms, the <Link href="/privacy">Privacy Policy</Link>, the{" "}
-        <Link href="/acceptable-use">Acceptable Use Policy</Link> and, if you use the API, the{" "}
-        <Link href="/api-terms">API Terms</Link>. If you use the Service for a company, you agree for that company and
-        confirm you can bind it.
+        website, the app and any related services (the “Service”). By creating an account or using the Service you
+        agree to these terms, the <Link href="/privacy">Privacy Policy</Link> and the{" "}
+        <Link href="/acceptable-use">Acceptable Use Policy</Link>. If you use the Service for a company, you agree for
+        that company and confirm you can bind it.
       </p>
 
       <h2>1. Who can use Sentiment</h2>
@@ -27,8 +26,8 @@ export default function TermsPage() {
 
       <h2>2. Accounts and workspaces</h2>
       <p>
-        You need an account to use most of the Service. Give accurate information, keep your password and API keys
-        secret, and tell us promptly if you think someone else has access. You are responsible for activity in your
+        You need an account to use most of the Service. Give accurate information, keep your password secret,
+        and tell us promptly if you think someone else has access. You are responsible for activity in your
         account and in workspaces you own, including activity by team members you invite.
       </p>
 
@@ -84,13 +83,12 @@ export default function TermsPage() {
         The Service, including its software, design, scores, models and compiled data, belongs to us and our licensors.
         While you follow these terms, we give you a limited, non-exclusive, non-transferable licence to use the Service
         for your own personal or internal business purposes. You may not copy, resell, or redistribute Insights in bulk,
-        or use them to build a competing product, except as the API Terms allow.
+        or use them to build a competing product.
       </p>
 
-      <h2>8. Acceptable use and the API</h2>
+      <h2>8. Acceptable use</h2>
       <p>
-        You must follow the <Link href="/acceptable-use">Acceptable Use Policy</Link>. Use of the API is also subject to
-        the <Link href="/api-terms">API Terms</Link>, including rate limits and attribution.
+        You must follow the <Link href="/acceptable-use">Acceptable Use Policy</Link>.
       </p>
 
       <h2>9. Suspension and termination</h2>

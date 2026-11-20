@@ -1,12 +1,17 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
 import { requirePageOrganization } from "@/lib/session";
+import { isPlatformOperatorUser } from "@/lib/platform-admin";
 import { getDb } from "@/lib/auth";
 import { listApiKeys, member, withOrganizationContext } from "@isp/db";
-import { ISSUABLE_SCOPES, hasPermission } from "@isp/auth";
+import { CUSTOMER_READ_SCOPES, ISSUABLE_SCOPES, hasPermission } from "@isp/auth";
+import { CUSTOMER_API_ENDPOINTS, SCOPE_LABELS, customerApiBaseUrl } from "@/lib/api-docs";
 import { and, eq } from "drizzle-orm";
 import { createApiKeyAction, revokeApiKeyAction, rotateApiKeyAction } from "@/app/key-actions";
 import { readSecretFlash } from "@/lib/secret-flash";
 
 export const dynamic = "force-dynamic";
+export const metadata = { robots: { index: false, follow: false } };
 
 export default async function ApiKeysPage({
   searchParams,
@@ -14,6 +19,10 @@ export default async function ApiKeysPage({
   searchParams: Promise<{ error?: string }>;
 }) {
   const { session, organizationId } = await requirePageOrganization();
+  // The API is hidden from customers: only platform operators see this page.
+  if (!(await isPlatformOperatorUser(session.user))) {
+    notFound();
+  }
   const query = await searchParams;
   const created = await readSecretFlash("api_key");
   const [membership] = await getDb()
@@ -32,8 +41,8 @@ export default async function ApiKeysPage({
     <>
       <h1>API keys</h1>
       <p className="muted">
-        Tenant-bound test credentials. The full secret is shown once on create or rotate. Prefix, last used, and
-        expiration remain visible.
+        Use a key to pull Sentiment data (cards, prices, buy/sell readings, influencer calls) into your own tools. The
+        full key is shown once when you create or rotate it; after that only its first characters are shown.
       </p>
       {query.error === "quota" ? (
         <p className="form-error">API key limit reached for the current plan.</p>
@@ -55,8 +64,13 @@ export default async function ApiKeysPage({
           </label>
           {ISSUABLE_SCOPES.map((scope) => (
             <label key={scope}>
-              <input type="checkbox" name="scopes" value={scope} defaultChecked={scope === "decisions:read"} />
-              {scope}
+              <input
+                type="checkbox"
+                name="scopes"
+                value={scope}
+                defaultChecked={(CUSTOMER_READ_SCOPES as readonly string[]).includes(scope)}
+              />
+              {SCOPE_LABELS[scope] ?? scope} <span className="subtle">({scope})</span>
             </label>
           ))}
           <button type="submit">Create key</button>
@@ -64,6 +78,38 @@ export default async function ApiKeysPage({
       ) : (
         <p className="muted">Your role cannot create, rotate, or revoke API keys.</p>
       )}
+      <h2>Using your key</h2>
+      <p className="muted">
+        Send the key in the Authorization header. Every answer is JSON. Full reference: <Link href="/admin/api-docs">API docs</Link>.
+      </p>
+      <pre className="code-block">
+        {`curl -H "Authorization: Bearer <your key>" \\\n  "${customerApiBaseUrl()}/v1/printings?q=charizard&game=pokemon&limit=5"`}
+      </pre>
+      <div className="table-wrap">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Call</th>
+              <th>Returns</th>
+            </tr>
+          </thead>
+          <tbody>
+            {CUSTOMER_API_ENDPOINTS.map((endpoint) => (
+              <tr key={endpoint.path}>
+                <td>
+                  <code>{endpoint.path}</code>
+                </td>
+                <td>{endpoint.what}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="subtle">
+        Full reference: <code>{customerApiBaseUrl()}/v1/openapi.json</code>. Requests count toward your plan&apos;s
+        monthly allowance (see Usage).
+      </p>
+      <h2>Your keys</h2>
       <ul>
         {keys.map((key) => (
           <li key={key.id}>
@@ -72,6 +118,9 @@ export default async function ApiKeysPage({
             {key.lastUsedAt ? key.lastUsedAt.toISOString() : "never"}
             {" — expires "}
             {key.expiresAt ? key.expiresAt.toISOString() : "none"}
+            {" — "}
+            {Number(key.requestCount ?? 0).toLocaleString("en-US")} requests
+            {key.rateLimitPerMinute ? ` — limit ${key.rateLimitPerMinute}/min` : ""}
             {canManage && key.status === "active" ? (
               <>
                 <form action={rotateApiKeyAction}>

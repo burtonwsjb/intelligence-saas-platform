@@ -16,11 +16,16 @@ import {
 import { QuotaExceededError, assertTenantWithinLimit } from "@isp/billing";
 import { and, eq } from "drizzle-orm";
 import { setSecretFlash } from "@/lib/secret-flash";
+import { isPlatformOperatorUser } from "@/lib/platform-admin";
 
 async function requireKeyActor() {
   const requestHeaders = await headers();
   const session = await getAuth().api.getSession({ headers: requestHeaders });
   requireSession(session);
+  // Customer API keys are operator-only (owner 2026-11-20).
+  if (!(await isPlatformOperatorUser(session.user))) {
+    redirect("/app");
+  }
   const organizationId = session.session.activeOrganizationId;
   if (!organizationId) {
     redirect("/onboarding");

@@ -149,3 +149,11 @@ export {
 } from "./platform/creators.js";
 export { listOperatorIndexDefinitions, upsertOperatorIndexDefinition } from "./platform/indices.js";
 export { listPredictionsForOperator } from "./platform/predictions.js";
+export {
+  ApiRequestLimitError,
+  listApiAccessWorkspaces,
+  listOperatorApiKeys,
+  setWorkspaceApiRequestLimit,
+  type OperatorApiKeyRow,
+  type OperatorApiWorkspaceRow,
+} from "./platform/api-access.js";

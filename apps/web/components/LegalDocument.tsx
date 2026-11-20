@@ -6,7 +6,6 @@ const DOCUMENTS = [
   { href: "/terms", label: "Terms of Service" },
   { href: "/privacy", label: "Privacy Policy" },
   { href: "/acceptable-use", label: "Acceptable Use" },
-  { href: "/api-terms", label: "API Terms" },
 ];
 
 /** How to reach the operator: the contact email when configured, otherwise the in-app feedback page. */

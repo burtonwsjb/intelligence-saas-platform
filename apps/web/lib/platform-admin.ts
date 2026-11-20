@@ -47,3 +47,14 @@ export async function requireGrantedOperator() {
   }
   return operator;
 }
+
+/**
+ * True when the signed-in user holds a platform_admins grant. The customer API
+ * pages (/app/keys) are for operators only (owner 2026-11-20).
+ */
+export async function isPlatformOperatorUser(user: { id: string; email: string }): Promise<boolean> {
+  const access = await checkPlatformAdminAccess(getDb(), { userId: user.id, email: user.email }).catch(() => ({
+    granted: false,
+  }));
+  return access.granted;
+}

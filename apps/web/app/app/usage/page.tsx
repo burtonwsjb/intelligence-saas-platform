@@ -1,15 +1,24 @@
+import { notFound } from "next/navigation";
 import { EmptyState } from "@/components/EmptyState";
+import { isPlatformOperatorUser } from "@/lib/platform-admin";
+import { requireAppActor } from "@/lib/app-access";
 import { loadAppAccess } from "@/lib/app-access";
 import { getDb } from "@/lib/auth";
 import { listUsageWarnings, withOrganizationContext } from "@isp/db";
 import { evaluateQuota, loadEntitlement, type EntitlementKey } from "@isp/billing";
 
 export const dynamic = "force-dynamic";
+export const metadata = { robots: { index: false, follow: false } };
 
 const METERS = ["api.reads", "ingest.events", "opportunity.read"] as const;
 
 export default async function UsagePage() {
   const { organizationId, userId } = await loadAppAccess();
+  // API meters and limits: admin only (owner 2026-11-20).
+  const { session } = await requireAppActor();
+  if (!(await isPlatformOperatorUser(session.user))) {
+    notFound();
+  }
   const snapshot = await withOrganizationContext(getDb(), { organizationId, userId }, async (scoped) => {
     const usage = await Promise.all(
       METERS.map(async (meter) => ({
