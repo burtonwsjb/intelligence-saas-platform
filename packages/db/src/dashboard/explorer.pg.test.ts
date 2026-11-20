@@ -69,6 +69,7 @@ describe("card explorer on PostgreSQL as app_user", () => {
 
     const facets = await listExplorerFacets(db);
     expect(facets.languages.length).toBeGreaterThan(0);
+    expect(facets.currencies).toContain("USD");
     expect((await listSetSummaries(db)).total).toBeGreaterThan(0);
     expect((await listIndexSummaries(db)).length).toBeGreaterThan(0);
 
