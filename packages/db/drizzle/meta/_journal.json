@@ -300,6 +300,20 @@
       "idx": 42,
       "version": "7",
       "when": 42,
+      "tag": "0043_latest_score",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 43,
+      "tag": "0044_currency_facet",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 44,
       "tag": "0045_tcg_daily_price",
       "breakpoints": true
     }

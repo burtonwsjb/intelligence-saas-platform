@@ -628,6 +628,18 @@ export async function bootstrapRoles(
           REVOKE INSERT, UPDATE, DELETE ON tcg_printing_image FROM app_user;
           REVOKE DELETE ON tcg_printing_image FROM app_worker;
         END IF;
+        IF to_regclass('public.tcg_score_latest') IS NOT NULL THEN
+          GRANT SELECT ON tcg_score_latest TO app_user, app_worker;
+          REVOKE INSERT, UPDATE, DELETE ON tcg_score_latest FROM app_user, app_worker;
+        END IF;
+        IF to_regclass('public.tcg_daily_price') IS NOT NULL THEN
+          GRANT SELECT ON tcg_tcgplayer_group, tcg_tcgplayer_link, tcg_daily_price, tcg_market_price_all TO app_user, app_worker;
+          GRANT INSERT, UPDATE ON tcg_tcgplayer_group, tcg_tcgplayer_link TO app_worker;
+          GRANT INSERT ON tcg_daily_price TO app_worker;
+          REVOKE INSERT, UPDATE, DELETE ON tcg_tcgplayer_group, tcg_tcgplayer_link, tcg_daily_price FROM app_user;
+          REVOKE DELETE ON tcg_tcgplayer_group, tcg_tcgplayer_link, tcg_daily_price FROM app_worker;
+          REVOKE UPDATE ON tcg_daily_price FROM app_worker;
+        END IF;
         IF to_regclass('public.tcg_printing_demand') IS NOT NULL THEN
           GRANT SELECT, INSERT, UPDATE ON tcg_printing_demand TO app_user, app_worker;
           REVOKE DELETE ON tcg_printing_demand FROM app_user, app_worker;

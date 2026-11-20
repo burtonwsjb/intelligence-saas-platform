@@ -69,6 +69,7 @@ describe("card explorer on PostgreSQL as app_user", () => {
 
     const facets = await listExplorerFacets(db);
     expect(facets.languages.length).toBeGreaterThan(0);
+    expect(facets.currencies).toContain("USD");
     expect((await listSetSummaries(db)).total).toBeGreaterThan(0);
     expect((await listIndexSummaries(db)).length).toBeGreaterThan(0);
 
@@ -77,6 +78,21 @@ describe("card explorer on PostgreSQL as app_user", () => {
     expect(sentiment.basis).toBe("accuracy_weighted");
     const evidence = await listCardEvidence(db, printingId);
     expect(evidence.items.length).toBeLessThanOrEqual(10);
+  });
+  it("keeps tcg_score_latest equal to the newest snapshot per printing", async () => {
+    const admin = adminConn!.db;
+    const mismatch = await admin.execute(sql`
+      WITH derived AS (
+        SELECT DISTINCT ON (ss.printing_id) ss.printing_id, ss.id FROM tcg_score_snapshot ss
+        ORDER BY ss.printing_id, ss.as_of DESC, ss.created_at DESC, ss.id DESC
+      )
+      SELECT count(*)::int AS n FROM derived d
+      FULL JOIN tcg_score_latest l ON l.printing_id = d.printing_id
+      WHERE l.id IS DISTINCT FROM d.id`);
+    const rows = (Array.isArray(mismatch) ? mismatch : (mismatch as { rows: unknown[] }).rows) as { n: number }[];
+    expect(rows[0]!.n).toBe(0);
+    const [count] = (await admin.execute(sql`SELECT count(*)::int AS n FROM tcg_score_latest`)) as unknown as { n: number }[];
+    expect(count!.n).toBeGreaterThan(0);
   });
   it("pages through ties exactly as one whole-catalog sort would", async () => {
     const db = appConn!.db;
@@ -87,6 +103,8 @@ describe("card explorer on PostgreSQL as app_user", () => {
       await tx.execute(sql`ALTER TABLE tcg_score_snapshot DISABLE TRIGGER USER`);
       await tx.execute(sql`UPDATE tcg_score_snapshot SET opportunity_score = 70, confidence_score = 50, risk_score = 40, liquidity_score = 50`);
       await tx.execute(sql`ALTER TABLE tcg_score_snapshot ENABLE TRIGGER USER`);
+      // The latest-score copy (0043) follows inserts only, so mirror the edit there.
+      await tx.execute(sql`UPDATE tcg_score_latest SET opportunity_score = 70, confidence_score = 50, risk_score = 40, liquidity_score = 50`);
     });
     const mixed = await listCardExplorerPage(db, parseExplorerQuery({ pageSize: "48", window: "90d" }));
     expect(mixed.rows.some((row) => row.price)).toBe(true);
