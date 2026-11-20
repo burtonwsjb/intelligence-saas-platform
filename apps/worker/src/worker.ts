@@ -27,6 +27,7 @@ import {
   rescanAssetCalls,
   rescanScopeTalk,
   syncTccPriceHistory,
+  syncTcgcsvDaily,
   retryUnboundDetectedMentions,
   traceSourcePost,
   syncPodcastFeeds,
@@ -38,6 +39,7 @@ import {
   type ChartSentimentRunReport,
   type Database,
   type TccCatalogReport,
+  type TcgcsvDailyReport,
   type TccPriceHistoryReport,
   type TranscriptBackfillReport,
   type TranscriptFetcher,
@@ -216,6 +218,7 @@ export async function runMarketWork(db: Database, env: NodeJS.ProcessEnv = proce
   await runPostTrace(db, env);
   await runChartCoverage(db);
   await runPriceHistory(db, env);
+  await runTcgcsvDaily(db, env);
   await runCallScoring(db);
   await runCardRescore(db, env);
   await runChartSentiment(db, env);
@@ -581,6 +584,33 @@ export async function runPriceHistory(
     return report;
   } catch (error) {
     logLoopFailure("worker.price_history_failed", "price_history", error);
+    return null;
+  }
+}
+
+/**
+ * Today's TCGplayer market price straight from tcgcsv's daily price files for
+ * printings whose TCGplayer product is known. Off unless TCGCSV_DAILY_ENABLED=1;
+ * at most one pass per UTC day after TCGCSV_DAILY_START_UTC_HOUR.
+ */
+export async function runTcgcsvDaily(db: Database, env: NodeJS.ProcessEnv = process.env): Promise<TcgcsvDailyReport | null> {
+  try {
+    const report = await syncTcgcsvDaily(db, { env });
+    if (report.status === "skipped" && report.reason !== "nothing_to_price") return report;
+    logQueueEvent(report.status === "stopped" ? "warn" : "info", "worker.tcgcsv_daily", {
+      status: report.status,
+      reason: report.reason,
+      targets: report.targets,
+      groups: report.groups,
+      requests: report.requests,
+      priced: report.priced,
+      missing: report.missing,
+      unmatched_groups: report.unmatchedGroups,
+      written: report.written,
+    });
+    return report;
+  } catch (error) {
+    logLoopFailure("worker.tcgcsv_daily_failed", "tcgcsv_daily", error);
     return null;
   }
 }
