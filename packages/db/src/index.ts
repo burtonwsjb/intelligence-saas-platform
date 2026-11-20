@@ -643,6 +643,16 @@ export {
   type TcgcsvTarget,
 } from "./providers/tcgcsv-daily.js";
 export {
+  TCGCSV_ARCHIVE_TRIGGER,
+  downloadTcgcsvArchive,
+  indexArchiveDir,
+  plannedArchiveDays,
+  syncTcgcsvHistory,
+  tcgcsvHistorySettings,
+  type TcgcsvArchiveReader,
+  type TcgcsvHistoryReport,
+} from "./providers/tcgcsv-history.js";
+export {
   INFLUENCER_SEED_LOOKUPS_PER_RUN,
   INFLUENCER_SEED_TRIGGER,
   POKEMON_INFLUENCER_SEEDS,
