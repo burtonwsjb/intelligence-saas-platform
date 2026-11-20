@@ -633,15 +633,22 @@ export {
   TCGCSV_DAILY_TRIGGER,
   TCGCSV_SKIPPED_CATEGORIES,
   TCGCSV_USER_AGENT,
-  collectTcgcsvDaily,
-  listTcgcsvTargets,
+  linkedGames,
   pickTcgcsvRow,
+  refreshTcgcsvCatalog,
   syncTcgcsvDaily,
-  tcgcsvDailyBlocker,
-  tcgcsvDailyRecordId,
+  tcgcsvDailySettings,
   type TcgcsvDailyReport,
-  type TcgcsvTarget,
 } from "./providers/tcgcsv-daily.js";
+export { TCGCSV_GAME_ORDER, gameForCategory } from "./providers/tcgcsv-common.js";
+export {
+  matchGroup,
+  normNumber,
+  subTypeFor,
+  syncTcgcsvMatch,
+  tcgcsvMatchSettings,
+  type TcgcsvMatchReport,
+} from "./providers/tcgcsv-match.js";
 export {
   TCGCSV_ARCHIVE_TRIGGER,
   downloadTcgcsvArchive,

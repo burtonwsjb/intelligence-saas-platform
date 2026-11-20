@@ -1,15 +1,10 @@
+import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import { ingestTcgMarketRecord, readMigrationSql, seedTcgIdentityFixtures, type Database } from "../index.js";
-import {
-  TCGCSV_USER_AGENT,
-  collectTcgcsvDaily,
-  pickTcgcsvRow,
-  syncTcgcsvDaily,
-  tcgcsvDailyRecordId,
-  type TcgcsvTarget,
-} from "./tcgcsv-daily.js";
+import { TCGCSV_USER_AGENT, gameForCategory, pickTcgcsvRow } from "./tcgcsv-common.js";
+import { syncTcgcsvDaily } from "./tcgcsv-daily.js";
 import type { HttpTransport } from "./transport.js";
 
 const ENABLED = { TCGCSV_DAILY_ENABLED: "1" };
@@ -19,23 +14,14 @@ async function setup() {
   const client = new PGlite();
   await client.exec(await readMigrationSql());
   const db = drizzle(client) as unknown as Database;
-  await seedTcgIdentityFixtures(db);
-  // An earlier TCC answer told us the printing's TCGplayer product, set and sub-type.
-  await ingestTcgMarketRecord(db, {
-    provider: "tcg_card_central",
-    provider_record_id: "tcc:history:x:2026-11-09",
-    event_type: "tcg.market.reference_price",
-    market_type: "market_price",
-    price_type: "reference",
-    observed_at: "2026-11-09T23:59:59.000Z",
-    currency: "USD",
-    condition: "unknown",
-    raw_condition: "product_level",
-    price: 40,
-    printing: { game: "pokemon", set: "twm", collector_number: "214/167", language: "en", variant: "normal" },
-    attributes: { tcgplayer_product_id: 555, tcgplayer_group_name: "SV06: Twilight Masquerade", tcgplayer_sub_type: "Normal" },
-  });
-  return { client, db };
+  const fx = await seedTcgIdentityFixtures(db);
+  const printingId = fx.printings.greninjaEnNormal.id;
+  // An earlier TCC answer told us the printing's TCGplayer product, set name and sub-type (no group id yet).
+  await client.query(
+    `INSERT INTO tcg_tcgplayer_link (printing_id, group_name, product_id, sub_type, method) VALUES ($1, 'SV06: Twilight Masquerade', 555, 'Normal', 'tcc_answer')`,
+    [printingId],
+  );
+  return { client, db, printingId };
 }
 
 function fakeTcgcsv(options: { refuse?: boolean; build?: string } = {}) {
@@ -57,7 +43,11 @@ function fakeTcgcsv(options: { refuse?: boolean; build?: string } = {}) {
           { categoryId: 85, name: "Pokemon Japan" },
           { categoryId: 68, name: "One Piece Card Game" },
         ];
-      else if (path === "/tcgplayer/3/groups") results = [{ groupId: 23473, name: "SV06: Twilight Masquerade" }];
+      else if (path === "/tcgplayer/3/groups")
+        results = [
+          { groupId: 23473, name: "SV06: Twilight Masquerade", abbreviation: "TWM", modifiedOn: "2026-11-01T00:00:00" },
+          { groupId: 1, name: "Base Set", abbreviation: "BS" },
+        ];
       else if (path === "/tcgplayer/3/23473/prices")
         results = [
           { productId: 555, subTypeName: "Reverse Holofoil", marketPrice: 99 },
@@ -82,22 +72,62 @@ describe("tcgcsv daily prices", () => {
     expect(pickTcgcsvRow(rows, { productId: 2, subType: "Holofoil" })).toBeNull();
   });
 
+  it("maps tcgcsv categories to games, never skipped or other-language ones", () => {
+    expect(gameForCategory({ categoryId: 3, name: "Pokemon" })).toBe("pokemon");
+    expect(gameForCategory({ categoryId: 21, name: "Pokemon" })).toBeNull();
+    expect(gameForCategory({ categoryId: 85, name: "Pokemon Japan" })).toBeNull();
+    expect(gameForCategory({ categoryId: 68, name: "One Piece Card Game" })).toBe("one_piece");
+    expect(gameForCategory({ categoryId: 2, name: "YuGiOh" })).toBe("yugioh");
+    expect(gameForCategory({ categoryId: 1, name: "Magic" })).toBe("magic");
+    expect(gameForCategory({ categoryId: 71, name: "Lorcana TCG" })).toBe("lorcana");
+    expect(gameForCategory({ categoryId: 27, name: "Dragon Ball Super CCG" })).toBe("dragon_ball");
+  });
+
+  it("migration keeps TCG Card Central's latest product match for each printing", async () => {
+    const client = new PGlite();
+    await client.exec(await readMigrationSql());
+    const db = drizzle(client) as unknown as Database;
+    await seedTcgIdentityFixtures(db);
+    const printing = { game: "pokemon", set: "twm", collector_number: "214/167", language: "en", variant: "normal" };
+    for (const [day, product] of [["2026-11-01", 554], ["2026-11-09", 555]] as const) {
+      await ingestTcgMarketRecord(db, {
+        provider: "tcg_card_central",
+        provider_record_id: `tcc:history:x:${day}`,
+        event_type: "tcg.market.reference_price",
+        market_type: "market_price",
+        price_type: "reference",
+        observed_at: `${day}T23:59:59.000Z`,
+        currency: "USD",
+        condition: "unknown",
+        raw_condition: "product_level",
+        price: 40,
+        printing,
+        attributes: { tcgplayer_product_id: product, tcgplayer_group_name: "SV06: Twilight Masquerade", tcgplayer_sub_type: "Normal" },
+      });
+    }
+    const migration = await readFile(new URL("../../drizzle/0043_tcg_daily_price.sql", import.meta.url), "utf8");
+    await client.exec(migration);
+    const links = (await client.query<{ product_id: number; group_name: string; method: string }>("SELECT product_id, group_name, method FROM tcg_tcgplayer_link")).rows;
+    expect(links).toEqual([{ product_id: 555, group_name: "SV06: Twilight Masquerade", method: "tcc_answer" }]);
+  });
+
   it("is off unless enabled, and waits for the evening update", async () => {
     const { db } = await setup();
     const { transport, urls } = fakeTcgcsv();
     expect(await syncTcgcsvDaily(db, { env: {}, transport, now: EVENING })).toMatchObject({ status: "skipped", reason: "disabled" });
-    expect(
-      await syncTcgcsvDaily(db, { env: ENABLED, transport, now: new Date("2026-11-20T15:00:00Z") }),
-    ).toMatchObject({ status: "skipped", reason: "before_start_hour" });
+    expect(await syncTcgcsvDaily(db, { env: ENABLED, transport, now: new Date("2026-11-20T15:00:00Z") })).toMatchObject({
+      status: "skipped",
+      reason: "before_start_hour",
+    });
     expect(urls).toHaveLength(0);
   });
 
-  it("prices known printings once a day from one file per set, with a clear name and spacing", async () => {
-    const { client, db } = await setup();
+  it("prices linked printings once per build from one file per set, with a clear name and spacing", async () => {
+    const { client, db, printingId } = await setup();
     const { transport, urls, agents } = fakeTcgcsv();
     const waits: number[] = [];
     const report = await syncTcgcsvDaily(db, { env: ENABLED, transport, now: EVENING, sleep: async (ms) => void waits.push(ms) });
-    expect(report).toMatchObject({ status: "completed", targets: 1, groups: 1, requests: 4, priced: 1, written: 1 });
+    expect(report).toMatchObject({ status: "completed", groups: 1, linked: 1, priced: 1, written: 1, linksResolved: 1, requests: 4 });
     expect(urls).toEqual([
       "https://tcgcsv.com/last-updated.txt",
       "https://tcgcsv.com/tcgplayer/categories",
@@ -105,30 +135,32 @@ describe("tcgcsv daily prices", () => {
       "https://tcgcsv.com/tcgplayer/3/23473/prices",
     ]);
     expect(new Set(agents)).toEqual(new Set([TCGCSV_USER_AGENT]));
-    expect(waits).toEqual([1000, 1000]);
+    expect(waits).toEqual([250, 250, 250]);
+    const link = (await client.query<{ group_id: number; category_id: number }>("SELECT group_id, category_id FROM tcg_tcgplayer_link")).rows[0]!;
+    expect(link).toMatchObject({ group_id: 23473, category_id: 3 });
+    // Slim row, read through the combined view like every price reader does.
     const rows = (
-      await client.query<{ source_key: string; price: string; source_record_id: string }>(
-        "SELECT source_key, price, source_record_id FROM tcg_market_snapshot WHERE source_key = 'tcgplayer'",
+      await client.query<{ source_key: string; price: string; observed_at: Date; source_record_id: string; printing_id: string }>(
+        "SELECT source_key, price, observed_at, source_record_id, printing_id FROM tcg_market_price_all WHERE source_key = 'tcgplayer'",
       )
     ).rows;
     expect(rows).toHaveLength(1);
     expect(Number(rows[0]!.price)).toBe(42.5);
-    expect(rows[0]!.source_record_id).toMatch(/^tcgcsv:daily:.+:2026-11-20$/);
+    expect(rows[0]!.printing_id).toBe(printingId);
+    expect(new Date(rows[0]!.observed_at).toISOString()).toBe("2026-11-20T20:00:00.000Z");
+    expect(rows[0]!.source_record_id).toBe(`tcgcsv:daily:${printingId}:2026-11-20`);
+    expect((await client.query("SELECT 1 FROM tcg_market_snapshot WHERE source_key = 'tcgplayer'")).rows).toHaveLength(0);
 
-    // Same day again: nothing is asked.
+    // Same build again: only last-updated.txt is read.
     const again = await syncTcgcsvDaily(db, { env: ENABLED, transport, now: new Date("2026-11-20T23:00:00Z"), sleep: async () => {} });
-    expect(again).toMatchObject({ status: "skipped", reason: "done_today" });
-    expect(urls).toHaveLength(4);
-
-    // Next day, but tcgcsv has not published a new build: only last-updated.txt is read.
-    const stale = await syncTcgcsvDaily(db, { env: ENABLED, transport, now: new Date("2026-11-21T22:00:00Z"), sleep: async () => {} });
-    expect(stale).toMatchObject({ status: "skipped", reason: "no_new_build" });
+    expect(again).toMatchObject({ status: "skipped", reason: "no_new_build" });
     expect(urls.slice(4)).toEqual(["https://tcgcsv.com/last-updated.txt"]);
 
-    // A new build: the day is pulled.
+    // A new build: catalog once more, then the set's price file.
     const fresh = fakeTcgcsv({ build: "2026-11-21T20:04:00+0000" });
     const next = await syncTcgcsvDaily(db, { env: ENABLED, transport: fresh.transport, now: new Date("2026-11-21T22:00:00Z"), sleep: async () => {} });
-    expect(next).toMatchObject({ status: "completed", written: 1 });
+    expect(next).toMatchObject({ status: "completed", written: 1, groups: 1 });
+    expect((await client.query("SELECT 1 FROM tcg_daily_price")).rows).toHaveLength(2);
   });
 
   it("stops at the first refusal and stays away for a week", async () => {
@@ -141,25 +173,5 @@ describe("tcgcsv daily prices", () => {
     const nextDay = await syncTcgcsvDaily(db, { env: ENABLED, transport: ok.transport, now: new Date("2026-11-22T22:00:00Z") });
     expect(nextDay).toMatchObject({ status: "skipped", reason: "refused_recently" });
     expect(ok.urls).toHaveLength(0);
-  });
-
-  it("never passes the request cap", async () => {
-    const { transport, urls } = fakeTcgcsv();
-    const target: TcgcsvTarget = {
-      printingId: "p1",
-      game: "pokemon",
-      setKey: "twm",
-      collectorNumber: "214/167",
-      language: "en",
-      variant: "normal",
-      productId: 555,
-      groupName: "SV06: Twilight Masquerade",
-      subType: "Normal",
-    };
-    const { report, records } = await collectTcgcsvDaily({ targets: [target], transport, now: EVENING, maxRequests: 2, sleep: async () => {} });
-    expect(report).toMatchObject({ status: "stopped", reason: "request_cap", requests: 2 });
-    expect(records).toHaveLength(0);
-    expect(urls).toHaveLength(2);
-    expect(tcgcsvDailyRecordId("p1", "2026-11-20")).toBe("tcgcsv:daily:p1:2026-11-20");
   });
 });

@@ -1,7 +1,8 @@
 /**
- * Past TCGplayer market prices from tcgcsv.com's price archive, for the same
- * printings the daily tcgcsv step prices (English Pokemon / One Piece with a
- * known TCGplayer product). OFF unless TCGCSV_HISTORY_ENABLED=1.
+ * Past TCGplayer market prices from tcgcsv.com's price archive, for every
+ * printing linked to a TCGplayer product (tcg_tcgplayer_link), written to the
+ * slim tcg_daily_price table (source `archive`). OFF unless
+ * TCGCSV_HISTORY_ENABLED=1.
  *
  * Each archive (https://tcgcsv.com/archive/tcgplayer/prices-<date>.ppmd.7z,
  * 2-4 MB, from 2024-02-08) holds every set's prices for that date. tcgcsv's
@@ -13,16 +14,16 @@
  * - Downloading the whole archive once is fine; downloading archives day
  *   after day instead of the daily price files is not. So this step only
  *   walks backwards from yesterday to TCGCSV_HISTORY_FROM (default
- *   2025-11-09, a year) and then stops for good; days the daily step already
+ *   2025-11-09, a year) and then stops for good; days the daily step fully
  *   pulled are skipped. Today's prices always come from the daily step.
  * - Clear User-Agent; TCGCSV_HISTORY_DAYS_PER_RUN (default 2, at most 6)
- *   archives per hourly run, 10 s apart. A 401/403/429 stops the step for 7 days.
+ *   archives per hourly run, 10 s apart. A 401/403/429 stops every tcgcsv
+ *   step for 7 days.
  *
  * Newest days first, so the gap since 2026-11-09 (when TCG Card Central's
- * feed stopped) fills in the first hour. A printing-day that already has a
+ * feed stopped) fills in the first hours. A printing-day that already has a
  * reference price from any source (e.g. TCC history) is skipped, so nothing
- * doubles up. Records use the daily step's ids (`tcgcsv:daily:<printingId>:<date>`),
- * stamped at the end of that day. Needs the `7z` program (7-Zip) on the server.
+ * doubles up. Needs the `7z` program (7-Zip) on the server.
  */
 import { execFile } from "node:child_process";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
@@ -32,17 +33,21 @@ import { promisify } from "node:util";
 import { sql } from "drizzle-orm";
 import type { Database } from "../client.js";
 import { withPlatformContext } from "../rls.js";
-import { providerSyncRun } from "../schema/provider.js";
-import { ingestTcgMarketRecordsBatch } from "../tcg/market-ingest.js";
-import type { TcgMarketRecordInput } from "../tcg/market-identity.js";
 import {
-  TCGCSV_DAILY_TRIGGER,
   TCGCSV_SKIPPED_CATEGORIES,
   TCGCSV_USER_AGENT,
-  listTcgcsvTargets,
+  addDays,
+  envFlag,
+  envInt,
+  insertDailyPrices,
   pickTcgcsvRow,
-  tcgcsvRecord,
-} from "./tcgcsv-daily.js";
+  priceTimeForDay,
+  rowsOf,
+  saveTcgcsvRun,
+  tcgcsvRefusedRecently,
+  utcDay,
+  type TcgcsvPriceRow,
+} from "./tcgcsv-common.js";
 
 export const TCGCSV_ARCHIVE_BASE = "https://tcgcsv.com/archive/tcgplayer";
 export const TCGCSV_ARCHIVE_TRIGGER = "tcgcsv_archive";
@@ -51,13 +56,13 @@ export const DEFAULT_TCGCSV_HISTORY_FROM = "2025-11-09";
 export const DEFAULT_TCGCSV_HISTORY_DAYS_PER_RUN = 2;
 export const TCGCSV_MAX_HISTORY_DAYS_PER_RUN = 6;
 export const TCGCSV_ARCHIVE_SPACING_MS = 10_000;
-export const TCGCSV_ARCHIVE_REFUSED_PAUSE_DAYS = 7;
-/** TCGplayer category ids read from each archive, per Sentiment game (Pokemon 3, One Piece Card Game 68). */
-export const TCGCSV_ARCHIVE_CATEGORIES: Record<string, number> = { pokemon: 3, one_piece: 68 };
+/**
+ * TCGplayer category ids for links whose set is not yet tied to a tcgcsv
+ * group (the daily step's catalog pass fills category ids in).
+ */
+export const TCGCSV_KNOWN_CATEGORIES: Record<string, number> = { magic: 1, yugioh: 2, pokemon: 3, one_piece: 68 };
 
-const DAY_MS = 86_400_000;
-
-type PriceRow = Parameters<typeof pickTcgcsvRow>[0][number];
+type PriceRow = TcgcsvPriceRow;
 
 /** One archive day: price rows by product id, or why there are none. `downloaded` = the file was received (never ask again). */
 export type TcgcsvArchive =
@@ -81,27 +86,14 @@ function emptyReport(): TcgcsvHistoryReport {
   return { status: "completed", reason: null, targets: 0, downloads: 0, days: [], written: 0 };
 }
 
-function envInt(value: string | undefined, fallback: number) {
-  const n = Number(value);
-  return value?.trim() && Number.isFinite(n) ? Math.floor(n) : fallback;
-}
-
 export function tcgcsvHistorySettings(env: NodeJS.ProcessEnv) {
   const raw = env.TCGCSV_HISTORY_FROM?.trim() ?? "";
   const from = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : DEFAULT_TCGCSV_HISTORY_FROM;
   return {
-    enabled: /^(1|true|yes|on)$/i.test(env.TCGCSV_HISTORY_ENABLED?.trim() ?? ""),
+    enabled: envFlag(env.TCGCSV_HISTORY_ENABLED),
     from: from < TCGCSV_FIRST_ARCHIVE_DAY ? TCGCSV_FIRST_ARCHIVE_DAY : from,
-    daysPerRun: Math.max(0, Math.min(envInt(env.TCGCSV_HISTORY_DAYS_PER_RUN, DEFAULT_TCGCSV_HISTORY_DAYS_PER_RUN), TCGCSV_MAX_HISTORY_DAYS_PER_RUN)),
+    daysPerRun: envInt(env.TCGCSV_HISTORY_DAYS_PER_RUN, DEFAULT_TCGCSV_HISTORY_DAYS_PER_RUN, 0, TCGCSV_MAX_HISTORY_DAYS_PER_RUN),
   };
-}
-
-function utcDay(at: Date) {
-  return at.toISOString().slice(0, 10);
-}
-
-function addDays(day: string, n: number) {
-  return utcDay(new Date(Date.parse(`${day}T00:00:00Z`) + n * DAY_MS));
 }
 
 /** Newest-first days before today, back to `from`, that are not done. */
@@ -174,10 +166,6 @@ export const downloadTcgcsvArchive: TcgcsvArchiveReader = async (day, categories
   }
 };
 
-function rowsOf<T>(result: unknown): T[] {
-  return Array.isArray(result) ? (result as T[]) : ((result as { rows?: T[] }).rows ?? []);
-}
-
 /** Printings among `ids` that already have a reference price on `day` (any source). */
 async function pricedOn(db: Database, day: string, ids: string[]): Promise<Set<string>> {
   const out = new Set<string>();
@@ -185,7 +173,7 @@ async function pricedOn(db: Database, day: string, ids: string[]): Promise<Set<s
     const chunk = ids.slice(i, i + 5_000);
     const rows = rowsOf<{ printing_id: string }>(
       await db.execute(sql`
-        SELECT DISTINCT printing_id FROM tcg_market_snapshot
+        SELECT DISTINCT printing_id FROM tcg_market_price_all
         WHERE price_type = 'reference'
           AND observed_at >= ${`${day}T00:00:00.000Z`} AND observed_at < ${`${addDays(day, 1)}T00:00:00.000Z`}
           AND printing_id IN (${sql.join(chunk.map((id) => sql`${id}`), sql`, `)})`),
@@ -196,27 +184,32 @@ async function pricedOn(db: Database, day: string, ids: string[]): Promise<Set<s
 }
 
 async function saveDay(db: Database, now: Date, day: TcgcsvHistoryDay, done: boolean) {
-  const refused = day.status === "refused";
-  const status = done ? "completed" : "failed";
-  const checkpoint = { ...day, refused, downloaded: done };
-  await db
-    .insert(providerSyncRun)
-    .values({
-      id: `tcgcsv_archive_${day.day}`,
-      providerKey: "tcgplayer",
-      mode: "live",
-      trigger: TCGCSV_ARCHIVE_TRIGGER,
-      status,
-      limitCount: day.priced + day.missing + day.skipped,
-      receivedCount: day.written,
-      errorClass: day.status === "ok" ? null : day.reason,
-      completedAt: now,
-      checkpoint,
-    })
-    .onConflictDoUpdate({
-      target: providerSyncRun.id,
-      set: { status, receivedCount: day.written, errorClass: day.status === "ok" ? null : day.reason, startedAt: now, completedAt: now, checkpoint },
-    });
+  await saveTcgcsvRun(db, {
+    id: `tcgcsv_archive_${day.day}`,
+    trigger: "tcgcsv_archive",
+    status: done ? "completed" : "failed",
+    now,
+    received: day.written,
+    errorClass: day.status === "ok" ? null : day.reason,
+    checkpoint: { ...day, refused: day.status === "refused", downloaded: done },
+  });
+}
+
+type LinkTarget = { printingId: string; game: string; categoryId: number | null; productId: number; subType: string };
+
+async function listLinkTargets(db: Database): Promise<LinkTarget[]> {
+  const rows = rowsOf<{ printing_id: string; game_key: string; category_id: number | null; product_id: number; sub_type: string }>(
+    await db.execute(sql`
+      SELECT l.printing_id, p.game_key, l.category_id, l.product_id, l.sub_type
+      FROM tcg_tcgplayer_link l JOIN tcg_printing p ON p.id = l.printing_id`),
+  );
+  return rows.map((r) => ({
+    printingId: r.printing_id,
+    game: r.game_key,
+    categoryId: r.category_id == null ? null : Number(r.category_id),
+    productId: Number(r.product_id),
+    subType: r.sub_type,
+  }));
 }
 
 const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -239,29 +232,23 @@ export async function syncTcgcsvHistory(
   return withPlatformContext(db, async (tx) => {
     const lock = rowsOf<{ locked: boolean }>(await tx.execute(sql`select pg_try_advisory_xact_lock(hashtext('tcgcsv.archive.v1')) as locked`));
     if (!lock[0]?.locked) return { ...emptyReport(), status: "skipped" as const, reason: "overlap" };
-    const state = rowsOf<{ id: string; trigger: string; status: string; refused: boolean; completed_at: string | Date | null }>(
+    if (await tcgcsvRefusedRecently(tx, now)) return { ...emptyReport(), status: "skipped" as const, reason: "refused_recently" };
+    // Done: archive days downloaded once, and days the daily step fully pulled.
+    const state = rowsOf<{ id: string }>(
       await tx.execute(sql`
-        SELECT id, "trigger", status, coalesce((checkpoint->>'refused')::boolean, false) AS refused, completed_at
-        FROM provider_sync_run
-        WHERE provider_key = 'tcgplayer' AND "trigger" IN (${TCGCSV_ARCHIVE_TRIGGER}, ${TCGCSV_DAILY_TRIGGER})`),
+        SELECT id FROM provider_sync_run
+        WHERE provider_key = 'tcgplayer' AND "trigger" IN ('tcgcsv_archive', 'tcgcsv_daily') AND status = 'completed'`),
     );
-    const since = now.getTime() - TCGCSV_ARCHIVE_REFUSED_PAUSE_DAYS * DAY_MS;
-    if (state.some((row) => row.refused && row.completed_at && new Date(row.completed_at).getTime() >= since)) {
-      return { ...emptyReport(), status: "skipped" as const, reason: "refused_recently" };
-    }
-    // Done: archive days downloaded once, and days the daily step pulled.
-    const done = new Set(
-      state
-        .filter((row) => row.status === "completed")
-        .map((row) => row.id.replace(/^tcgcsv_(archive|daily)_/, "")),
-    );
+    const done = new Set(state.map((row) => row.id.replace(/^tcgcsv_(archive|daily)_/, "")));
     const days = plannedArchiveDays({ now, from: settings.from, done, limit: settings.daysPerRun });
     if (days.length === 0) return { ...emptyReport(), status: "skipped" as const, reason: "nothing_due" };
     const report = emptyReport();
-    const targets = await listTcgcsvTargets(tx, now);
+    const targets = await listLinkTargets(tx);
     report.targets = targets.length;
-    if (targets.length === 0) return { ...report, status: "skipped" as const, reason: "nothing_to_price" };
-    const categories = [...new Set(targets.map((t) => TCGCSV_ARCHIVE_CATEGORIES[t.game]).filter((c): c is number => c != null))];
+    if (targets.length === 0) return { ...report, status: "skipped" as const, reason: "nothing_linked" };
+    const categories = [
+      ...new Set(targets.map((t) => t.categoryId ?? TCGCSV_KNOWN_CATEGORIES[t.game]).filter((c): c is number => c != null)),
+    ].sort((a, b) => a - b);
 
     for (const [index, day] of days.entries()) {
       if (index > 0 && spacing > 0) await sleep(spacing);
@@ -280,8 +267,8 @@ export async function syncTcgcsvHistory(
         continue;
       }
       const taken = await pricedOn(tx, day, targets.map((t) => t.printingId));
-      const observedAt = new Date(`${day}T23:59:59.000Z`);
-      const records: TcgMarketRecordInput[] = [];
+      const observedAt = priceTimeForDay(day);
+      const prices = [];
       for (const target of targets) {
         if (taken.has(target.printingId)) {
           dayReport.skipped += 1;
@@ -293,13 +280,9 @@ export async function syncTcgcsvHistory(
           continue;
         }
         dayReport.priced += 1;
-        const record = tcgcsvRecord(target, day, observedAt, point);
-        records.push({ ...record, attributes: { ...record.attributes, price_source: "tcgplayer_market_via_tcgcsv_archive" } });
+        prices.push({ printingId: target.printingId, observedAt, ...point, source: "archive" as const });
       }
-      for (let i = 0; i < records.length; i += 500) {
-        const results = await ingestTcgMarketRecordsBatch(tx, records.slice(i, i + 500));
-        for (const result of results) if (!(result instanceof Error) && result.status === "processed") dayReport.written += 1;
-      }
+      dayReport.written = await insertDailyPrices(tx, prices);
       report.written += dayReport.written;
       await saveDay(tx, now, dayReport, true);
     }

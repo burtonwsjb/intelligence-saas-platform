@@ -29,6 +29,7 @@ import {
   syncTccPriceHistory,
   syncTcgcsvDaily,
   syncTcgcsvHistory,
+  syncTcgcsvMatch,
   retryUnboundDetectedMentions,
   traceSourcePost,
   syncPodcastFeeds,
@@ -42,6 +43,7 @@ import {
   type TccCatalogReport,
   type TcgcsvDailyReport,
   type TcgcsvHistoryReport,
+  type TcgcsvMatchReport,
   type TccPriceHistoryReport,
   type TranscriptBackfillReport,
   type TranscriptFetcher,
@@ -220,6 +222,7 @@ export async function runMarketWork(db: Database, env: NodeJS.ProcessEnv = proce
   await runPostTrace(db, env);
   await runChartCoverage(db);
   await runPriceHistory(db, env);
+  await runTcgcsvMatch(db, env);
   await runTcgcsvDaily(db, env);
   await runTcgcsvHistory(db, env);
   await runCallScoring(db);
@@ -592,24 +595,55 @@ export async function runPriceHistory(
 }
 
 /**
+ * Links cards to TCGplayer products from tcgcsv's card lists, set by set in
+ * the owner's game order. Off unless TCGCSV_MATCH_ENABLED=1.
+ */
+export async function runTcgcsvMatch(db: Database, env: NodeJS.ProcessEnv = process.env): Promise<TcgcsvMatchReport | null> {
+  try {
+    const report = await syncTcgcsvMatch(db, { env });
+    if (report.status === "skipped" || (report.groups === 0 && report.status === "completed")) return report;
+    logQueueEvent(report.status === "stopped" ? "warn" : "info", "worker.tcgcsv_match", {
+      status: report.status,
+      reason: report.reason,
+      build: report.build,
+      requests: report.requests,
+      groups: report.groups,
+      groups_left: report.groupsLeft,
+      candidates: report.candidates,
+      linked: report.linked,
+      ambiguous: report.ambiguous,
+      priced: report.priced,
+      by_game: Object.entries(report.byGame).map(([g, n]) => `${g}:${n}`).join(","),
+    });
+    return report;
+  } catch (error) {
+    logLoopFailure("worker.tcgcsv_match_failed", "tcgcsv_match", error);
+    return null;
+  }
+}
+
+/**
  * Today's TCGplayer market price straight from tcgcsv's daily price files for
- * printings whose TCGplayer product is known. Off unless TCGCSV_DAILY_ENABLED=1;
- * at most one pass per UTC day after TCGCSV_DAILY_START_UTC_HOUR.
+ * every printing linked to a TCGplayer product. Off unless
+ * TCGCSV_DAILY_ENABLED=1; only when tcgcsv has a new build, after
+ * TCGCSV_DAILY_START_UTC_HOUR.
  */
 export async function runTcgcsvDaily(db: Database, env: NodeJS.ProcessEnv = process.env): Promise<TcgcsvDailyReport | null> {
   try {
     const report = await syncTcgcsvDaily(db, { env });
-    if (report.status === "skipped" && report.reason !== "nothing_to_price") return report;
+    if (report.status === "skipped" && report.reason !== "nothing_linked") return report;
     logQueueEvent(report.status === "stopped" ? "warn" : "info", "worker.tcgcsv_daily", {
       status: report.status,
       reason: report.reason,
-      targets: report.targets,
-      groups: report.groups,
+      build: report.build,
       requests: report.requests,
+      groups: report.groups,
+      groups_left: report.groupsLeft,
+      linked: report.linked,
       priced: report.priced,
       missing: report.missing,
-      unmatched_groups: report.unmatchedGroups,
       written: report.written,
+      links_resolved: report.linksResolved,
     });
     return report;
   } catch (error) {

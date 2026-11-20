@@ -4,7 +4,8 @@ import { printingBenchmarkContext, resolveBenchmark } from "./benchmark.js";
 import { getIndexLevelAsOf, indexReturn } from "./index-engine.js";
 import type { Database } from "../client.js";
 import { tcgMarketFeatureSnapshot } from "../schema/analytics.js";
-import { tcgMarketSnapshot } from "../schema/tcg-market.js";
+// Reads every price row: snapshots plus the slim daily tcgcsv prices (migration 0043).
+import { tcgMarketPriceAll as tcgMarketSnapshot } from "../schema/tcg-market.js";
 import { tcgCardConcept, tcgPrinting } from "../schema/tcg.js";
 import { rollingMedian } from "../tcg/market-identity.js";
 import {

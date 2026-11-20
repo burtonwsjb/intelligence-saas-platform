@@ -1,7 +1,8 @@
 import { and, asc, eq, gt, isNotNull, isNull, lte } from "drizzle-orm";
 import type { Database } from "../client.js";
 import { tcgPrediction, tcgPredictionOutcome } from "../schema/prediction.js";
-import { tcgMarketSnapshot } from "../schema/tcg-market.js";
+// Reads every price row: snapshots plus the slim daily tcgcsv prices (migration 0043).
+import { tcgMarketPriceAll as tcgMarketSnapshot } from "../schema/tcg-market.js";
 import { getIndexLevelAsOf, indexReturn } from "../analytics/index-engine.js";
 import { printingBenchmarkContext, resolveBenchmark } from "../analytics/benchmark.js";
 import { CALIBRATION_VERSION, PREDICTION_HORIZON_DAYS, type PredictionHorizon } from "./catalog.js";

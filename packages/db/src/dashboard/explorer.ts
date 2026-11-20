@@ -473,7 +473,7 @@ function headlinePriceSql(now: Date, printingId: SQL = sql`p.id`) {
        ORDER BY ms.observed_at DESC, ms.id DESC LIMIT 1)
       UNION ALL
       (SELECT ms.price, ms.price_type, ms.currency, ms.condition, ms.source_key, ms.observed_at, 1 AS rank
-       FROM tcg_market_snapshot ms
+       FROM tcg_market_price_all ms
        WHERE ms.printing_id = ${printingId} AND ms.price_type = 'reference' AND ms.price IS NOT NULL
          AND ms.outlier_flag = FALSE AND ms.grading_company IS NULL AND ms.observed_at <= ${ts(now)}
        ORDER BY ms.observed_at DESC, ms.id DESC LIMIT 1)
@@ -759,7 +759,7 @@ async function loadComparableSeries(
     SELECT printing_id, observed_at, price, price_type, currency, condition FROM (
       SELECT ms.printing_id, ms.observed_at, ms.price, ms.price_type, ms.currency, ms.condition,
         row_number() OVER (PARTITION BY ms.printing_id, ms.price_type, ms.currency, ms.condition ORDER BY ms.observed_at DESC, ms.id DESC) AS rn
-      FROM tcg_market_snapshot ms
+      FROM tcg_market_price_all ms
       WHERE ms.printing_id IN (${inList(anchorIds)})
         AND ms.price_type IN ('sold', 'reference')
         AND ms.price IS NOT NULL

@@ -31,6 +31,10 @@ async function setup() {
     printing: PRINTING,
     attributes: { tcgplayer_product_id: 555, tcgplayer_group_name: "SV06: Twilight Masquerade", tcgplayer_sub_type: "Normal" },
   });
+  await client.query(
+    `INSERT INTO tcg_tcgplayer_link (printing_id, category_id, group_id, group_name, product_id, sub_type, method)
+     SELECT printing_id, 3, 23473, 'SV06: Twilight Masquerade', 555, 'Normal', 'tcc_answer' FROM tcg_market_snapshot LIMIT 1`,
+  );
   return { client, db };
 }
 
@@ -86,10 +90,11 @@ describe("tcgcsv price archive", () => {
     expect(report.written).toBe(2);
     expect(report.days.find((d) => d.day === "2026-11-09")).toMatchObject({ skipped: 1, written: 0 });
     const rows = (
-      await client.query<{ source_record_id: string; price: string }>(
-        "SELECT source_record_id, price FROM tcg_market_snapshot WHERE source_key = 'tcgplayer' ORDER BY observed_at",
+      await client.query<{ source_record_id: string; price: string; attributes: { price_source: string } }>(
+        "SELECT source_record_id, price, attributes FROM tcg_market_price_all WHERE source_key = 'tcgplayer' ORDER BY observed_at",
       )
     ).rows;
+    expect(rows.every((r) => r.attributes.price_source === "tcgcsv_archive")).toBe(true);
     expect(rows.map((r) => [r.source_record_id.slice(-10), Number(r.price)])).toEqual([
       ["2026-11-10", 50],
       ["2026-11-11", 51],

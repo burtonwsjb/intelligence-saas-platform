@@ -102,7 +102,7 @@ export async function runCardRescoreBatch(
           (d.last_requested_at >= ${requestedSince.toISOString()}::timestamptz
             AND (s.created_at IS NULL OR d.last_requested_at > s.created_at)) AS requested
         FROM (
-          SELECT printing_id, max(created_at) AS arrived_at FROM tcg_market_snapshot
+          SELECT printing_id, max(created_at) AS arrived_at FROM tcg_market_price_all
           WHERE price_type IN ('reference', 'sold') AND price IS NOT NULL AND outlier_flag = false
             AND grading_company IS NULL
             AND observed_at >= ${priceFrom.toISOString()}::timestamptz

@@ -3,7 +3,8 @@ import type { Database } from "../client.js";
 import { tcgPrediction } from "../schema/prediction.js";
 import { computeMarketFeatures, persistMarketFeatureSnapshot } from "../analytics/features.js";
 import { tcgPrinting } from "../schema/tcg.js";
-import { tcgMarketSnapshot } from "../schema/tcg-market.js";
+// Reads every price row: snapshots plus the slim daily tcgcsv prices (migration 0043).
+import { tcgMarketPriceAll as tcgMarketSnapshot } from "../schema/tcg-market.js";
 import { DEFAULT_PREDICTION_VISIBILITY, PREDICTION_MODEL_VERSION, type PredictionHorizon } from "./catalog.js";
 import { getModel, type FrozenFeatures } from "./model.js";
 
