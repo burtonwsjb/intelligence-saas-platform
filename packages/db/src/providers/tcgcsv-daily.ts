@@ -28,11 +28,13 @@ import { withPlatformContext } from "../rls.js";
 import {
   TCGCSV_GAME_ORDER,
   envFlag,
+  envIds,
   envInt,
   errorReason,
   gameForCategory,
   gameRank,
   insertDailyPrices,
+  isTcgcsvCatalogGame,
   normName,
   pickTcgcsvRow,
   priceTimeForDay,
@@ -110,11 +112,23 @@ export async function linkedGames(db: Database): Promise<string[]> {
  * know their set's name the group id (exact normalized name within the
  * link's game; a name shared by two groups is left alone).
  */
-export async function refreshTcgcsvCatalog(db: Database, client: ReturnType<typeof tcgcsvClient>, games: string[]): Promise<number> {
+export async function refreshTcgcsvCatalog(
+  db: Database,
+  client: ReturnType<typeof tcgcsvClient>,
+  games: string[],
+  options: { catalogCategoryIds?: number[]; onCatalogCandidates?: (candidates: string[]) => void } = {},
+): Promise<number> {
   const categories = await client.getList<{ categoryId?: unknown; name?: unknown; displayName?: unknown }>("categories");
-  const wanted = categories
-    .map((c) => ({ id: Number(c.categoryId), game: gameForCategory(c) }))
-    .filter((c): c is { id: number; game: string } => c.game != null && games.includes(c.game))
+  const mapped = categories.map((c) => ({ id: Number(c.categoryId), game: gameForCategory(c), name: String(c.name ?? c.displayName ?? "") }));
+  // Games whose card list is built from tcgcsv: only categories the owner picked by id (a game name such as
+  // "Marvel" can match several product lines), and the candidates are reported so they can be picked.
+  options.onCatalogCandidates?.(
+    mapped.filter((c) => c.game != null && isTcgcsvCatalogGame(c.game)).map((c) => `${c.id}:${c.game}:${c.name}`),
+  );
+  const allowed = new Set(options.catalogCategoryIds ?? []);
+  const wanted = mapped
+    .filter((c): c is { id: number; game: string; name: string } => c.game != null && games.includes(c.game))
+    .filter((c) => !isTcgcsvCatalogGame(c.game) || allowed.has(c.id))
     .sort((a, b) => gameRank(a.game) - gameRank(b.game));
   for (const category of wanted) {
     const groups = await client.getList<{ groupId?: unknown; name?: unknown; abbreviation?: unknown; modifiedOn?: unknown }>(
@@ -206,7 +220,7 @@ export async function syncTcgcsvDaily(
         rowsOf<State>(await tx.execute(sql`SELECT id, status, checkpoint FROM provider_sync_run WHERE id = ${`tcgcsv_daily_${day}`}`))[0],
       );
       if (checkpoint.catalog_build !== build) {
-        report.linksResolved = await refreshTcgcsvCatalog(tx, client, games);
+        report.linksResolved = await refreshTcgcsvCatalog(tx, client, games, { catalogCategoryIds: envIds(env.TCGCSV_CATALOG_CATEGORY_IDS) });
         checkpoint.catalog_build = build;
       }
       const due = rowsOf<{ group_id: number; category_id: number; game_key: string }>(

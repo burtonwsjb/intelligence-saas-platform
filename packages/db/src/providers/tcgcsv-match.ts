@@ -23,11 +23,14 @@ import type { Database } from "../client.js";
 import { withPlatformContext } from "../rls.js";
 import {
   TCGCSV_GAME_ORDER,
+  TCGCSV_CATALOG_GAMES,
   envFlag,
+  envIds,
   envInt,
   errorReason,
   gameRank,
   insertDailyPrices,
+  isTcgcsvCatalogGame,
   normName,
   pickTcgcsvRow,
   priceTimeForDay,
@@ -39,6 +42,7 @@ import {
   type TcgcsvPriceRow,
 } from "./tcgcsv-common.js";
 import { refreshTcgcsvCatalog } from "./tcgcsv-daily.js";
+import { buildCatalogGroup } from "./tcgcsv-catalog.js";
 import { createFetchTransport, type HttpTransport } from "./transport.js";
 
 export const DEFAULT_TCGCSV_MATCH_GROUPS_PER_RUN = 40;
@@ -55,11 +59,13 @@ export type TcgcsvMatchReport = {
   linked: number;
   ambiguous: number;
   priced: number;
+  cardsAdded: number;
+  catalogCandidates: string[];
   byGame: Record<string, number>;
 };
 
 function emptyReport(): TcgcsvMatchReport {
-  return { status: "completed", reason: null, build: null, requests: 0, groups: 0, groupsLeft: 0, candidates: 0, linked: 0, ambiguous: 0, priced: 0, byGame: {} };
+  return { status: "completed", reason: null, build: null, requests: 0, groups: 0, groupsLeft: 0, candidates: 0, linked: 0, ambiguous: 0, priced: 0, cardsAdded: 0, catalogCandidates: [], byGame: {} };
 }
 
 export function tcgcsvMatchSettings(env: NodeJS.ProcessEnv) {
@@ -210,7 +216,11 @@ export async function syncTcgcsvMatch(
     const lock = rowsOf<{ locked: boolean }>(await tx.execute(sql`select pg_try_advisory_xact_lock(hashtext('tcgcsv.v1')) as locked`));
     if (!lock[0]?.locked) return { ...emptyReport(), status: "skipped" as const, reason: "overlap" };
     if (await tcgcsvRefusedRecently(tx, now)) return { ...emptyReport(), status: "skipped" as const, reason: "refused_recently" };
-    const games = (await catalogGames(tx)).filter((g) => (TCGCSV_GAME_ORDER as readonly string[]).includes(g));
+    const catalogCategoryIds = envIds(env.TCGCSV_CATALOG_CATEGORY_IDS);
+    // Games built from tcgcsv's own card lists join as soon as one of their categories is picked.
+    const games = [...new Set([...(await catalogGames(tx)), ...(catalogCategoryIds.length > 0 ? TCGCSV_CATALOG_GAMES : [])])]
+      .filter((g) => (TCGCSV_GAME_ORDER as readonly string[]).includes(g))
+      .sort((a, b) => gameRank(a) - gameRank(b));
     if (games.length === 0) return { ...emptyReport(), status: "skipped" as const, reason: "no_catalog" };
 
     const report = emptyReport();
@@ -231,7 +241,13 @@ export async function syncTcgcsvMatch(
       )[0];
       checkpoint = typeof state?.checkpoint === "string" ? JSON.parse(state.checkpoint) : (state?.checkpoint ?? {});
       if (checkpoint.catalog_build !== build) {
-        await refreshTcgcsvCatalog(tx, client, games);
+        await refreshTcgcsvCatalog(tx, client, games, {
+          catalogCategoryIds,
+          onCatalogCandidates: (candidates) => {
+            report.catalogCandidates = candidates;
+            checkpoint.catalog_candidates = candidates;
+          },
+        });
         checkpoint.catalog_build = build;
       }
       const due = rowsOf<{ group_id: number; category_id: number; game_key: string; name: string; abbreviation: string | null; modified_on: string | null }>(
@@ -253,10 +269,16 @@ export async function syncTcgcsvMatch(
               .map((n) => n.toUpperCase()),
           ),
         ];
+        let prices: TcgcsvPriceRow[] | null = null;
+        if (isTcgcsvCatalogGame(group.game_key)) {
+          prices = await client.getList<TcgcsvPriceRow>(`${group.category_id}/${group.group_id}/prices`);
+          const built = await buildCatalogGroup(tx, group, products, prices);
+          report.cardsAdded += built.printings;
+        }
         const candidates = await candidatesFor(tx, group, prefixed);
         report.candidates += candidates.length;
         if (candidates.length > 0) {
-          const prices = await client.getList<TcgcsvPriceRow>(`${group.category_id}/${group.group_id}/prices`);
+          prices ??= await client.getList<TcgcsvPriceRow>(`${group.category_id}/${group.group_id}/prices`);
           const { links, ambiguous } = matchGroup(candidates, products, prices);
           report.ambiguous += ambiguous;
           for (let i = 0; i < links.length; i += 500) {

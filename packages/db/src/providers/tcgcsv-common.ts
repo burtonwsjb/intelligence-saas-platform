@@ -48,6 +48,25 @@ export const TCGCSV_GAME_ORDER = [
   "star_wars_unlimited",
 ] as const;
 
+/**
+ * Games Sentiment has no card list for from TCG Card Central: their sets,
+ * cards and printings are built from tcgcsv's own card lists (tcgcsv-match),
+ * only for the TCGplayer categories named in TCGCSV_CATALOG_CATEGORY_IDS.
+ */
+export const TCGCSV_CATALOG_GAMES = ["marvel", "union_arena", "my_little_pony"] as const;
+
+export function isTcgcsvCatalogGame(game: string): boolean {
+  return (TCGCSV_CATALOG_GAMES as readonly string[]).includes(game);
+}
+
+/** TCGplayer category ids from a comma-separated env value. */
+export function envIds(value: string | undefined): number[] {
+  return (value ?? "")
+    .split(",")
+    .map((v) => Number(v.trim()))
+    .filter((n) => Number.isInteger(n) && n > 0 && !TCGCSV_SKIPPED_CATEGORIES.has(n));
+}
+
 const DAY_MS = 86_400_000;
 
 export function normName(value: string | null | undefined): string {
