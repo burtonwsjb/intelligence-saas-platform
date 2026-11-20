@@ -483,6 +483,19 @@ function headlinePriceSql(now: Date, printingId: SQL = sql`p.id`) {
   `;
 }
 
+let latestScoreSeen = false;
+let latestScoreCheckedAt = 0;
+
+/** True once migration 0043 (tcg_score_latest) is applied. A missing table is checked again every 10 minutes. */
+export async function latestScoreReady(db: Database): Promise<boolean> {
+  if (latestScoreSeen) return true;
+  if (latestScoreCheckedAt > 0 && Date.now() - latestScoreCheckedAt < 600_000) return false;
+  const [row] = asRows(await db.execute(sql`SELECT to_regclass('tcg_score_latest')::text AS name`));
+  latestScoreCheckedAt = Date.now();
+  latestScoreSeen = row?.name != null;
+  return latestScoreSeen;
+}
+
 /**
  * One bounded page of exact printings with their latest persisted score and
  * headline price (see headlinePriceSql). Filtering, sorting and paging run in SQL so the
@@ -513,17 +526,23 @@ export async function listCardExplorerPage(
       s.components ->> 'hype_unconfirmed' AS hype_unconfirmed,
       COALESCE(s.components @? '$.opportunity[*] ? (@.present == true)', FALSE) AS opportunity_measured,
       s.explanations AS explanations`;
-  // Latest score per printing as one pass over the score table and a hash join:
-  // a per-printing lateral lookup costs ~2s across the 100k+ printing catalog.
+  // Latest score per printing. Live reads use tcg_score_latest (0043), one row
+  // per printing kept by a trigger; re-deriving it from the full score history
+  // sorted 156k rows on disk per query (0.5-2.3s, four times per overview).
+  // Reads "as of" an earlier moment, or before 0043 is applied, still derive it.
+  const latestScores =
+    options.now == null && (await latestScoreReady(db))
+      ? sql`tcg_score_latest`
+      : sql`(
+      SELECT DISTINCT ON (ss.printing_id) * FROM tcg_score_snapshot ss
+      WHERE ss.as_of <= ${ts(now)}
+      ORDER BY ss.printing_id, ss.as_of DESC, ss.created_at DESC, ss.id DESC
+    )`;
   const fromClause = sql`
     FROM tcg_printing p
     JOIN tcg_card_concept c ON c.id = p.card_id
     JOIN tcg_set st ON st.id = p.set_id
-    LEFT JOIN (
-      SELECT DISTINCT ON (ss.printing_id) * FROM tcg_score_snapshot ss
-      WHERE ss.as_of <= ${ts(now)}
-      ORDER BY ss.printing_id, ss.as_of DESC, ss.created_at DESC, ss.id DESC
-    ) s ON s.printing_id = p.id`;
+    LEFT JOIN ${latestScores} s ON s.printing_id = p.id`;
   const pricedWhere = Boolean(query.priceCurrency) && (query.minPrice != null || query.maxPrice != null);
   let raw: Record<string, unknown>[];
   let total: number;
@@ -1394,6 +1413,36 @@ export type ExplorerFacets = {
 };
 
 /** Bounded option lists for the filter bar. */
+const CURRENCY_TTL_MS = 600_000;
+const currencyCache = new WeakMap<object, { values: string[]; at: number }>();
+
+/**
+ * Distinct currencies of sold and reference prices, for the price filter.
+ * Walks tcg_market_snapshot_currency_idx (0044) one value at a time instead of
+ * reading the whole price history (55s on staging). Kept per connection for
+ * 10 minutes: currencies change only when a new price source is added.
+ */
+export async function listPriceCurrencies(db: Database): Promise<string[]> {
+  const cached = currencyCache.get(db);
+  if (cached && Date.now() - cached.at < CURRENCY_TTL_MS) return cached.values;
+  const result = await db.execute(sql`
+    WITH RECURSIVE walk AS (
+      (SELECT ms.currency FROM tcg_market_snapshot ms
+       WHERE ms.price_type IN ('sold', 'reference') ORDER BY ms.currency LIMIT 1)
+      UNION ALL
+      SELECT (
+        SELECT ms.currency FROM tcg_market_snapshot ms
+        WHERE ms.price_type IN ('sold', 'reference') AND ms.currency > walk.currency
+        ORDER BY ms.currency LIMIT 1
+      ) FROM walk WHERE walk.currency IS NOT NULL
+    )
+    SELECT currency FROM walk WHERE currency IS NOT NULL LIMIT 20
+  `);
+  const values = asRows(result).map((row) => String(row.currency));
+  currencyCache.set(db, { values, at: Date.now() });
+  return values;
+}
+
 export async function listExplorerFacets(db: Database, input: { game?: string } = {}): Promise<ExplorerFacets> {
   const [games, languages, sets, variants, currencies] = await Promise.all([
     db.execute(sql`SELECT game_key, display_name FROM tcg_game WHERE status = 'active' ORDER BY display_name LIMIT 50`),
@@ -1404,14 +1453,14 @@ export async function listExplorerFacets(db: Database, input: { game?: string } 
       ORDER BY release_date DESC NULLS LAST, name ASC LIMIT 200
     `),
     db.execute(sql`SELECT DISTINCT variant_key FROM tcg_printing WHERE status = 'active' ORDER BY variant_key LIMIT 50`),
-    db.execute(sql`SELECT DISTINCT currency FROM tcg_market_snapshot WHERE price_type IN ('sold', 'reference') ORDER BY currency LIMIT 20`),
+    listPriceCurrencies(db),
   ]);
   return {
     games: asRows(games).map((row) => ({ key: String(row.game_key), label: String(row.display_name) })),
     languages: asRows(languages).map((row) => ({ key: String(row.language_code), label: String(row.display_name) })),
     sets: asRows(sets).map((row) => ({ key: String(row.canonical_set_key), label: String(row.name) })),
     variants: asRows(variants).map((row) => String(row.variant_key)),
-    currencies: asRows(currencies).map((row) => String(row.currency)),
+    currencies,
   };
 }
 

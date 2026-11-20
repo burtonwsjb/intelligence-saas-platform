@@ -302,8 +302,19 @@ export async function listRecentCreatorCalls(db: Database, limit = 8) {
     .limit(limit);
 }
 
-export async function countCatalog(db: Database) {
+const CATALOG_COUNT_TTL_MS = 600_000;
+const catalogCounts = new WeakMap<object, { printings: number; at: number }>();
+
+/**
+ * How many printings the catalog holds, for the overview's "Cards tracked" tile.
+ * Counting 260k printings takes ~1s on staging and the number moves once a day
+ * (catalog import), so it is kept per connection for 10 minutes.
+ */
+export async function countCatalog(db: Database): Promise<{ printings: number }> {
+  const cached = catalogCounts.get(db);
+  if (cached && Date.now() - cached.at < CATALOG_COUNT_TTL_MS) return { printings: cached.printings };
   const printings = await db.select({ count: sql<number>`count(*)::int` }).from(tcgPrinting);
-  const scores = await db.select({ count: sql<number>`count(*)::int` }).from(tcgScoreSnapshot);
-  return { printings: printings[0]?.count ?? 0, scores: scores[0]?.count ?? 0 };
+  const count = printings[0]?.count ?? 0;
+  catalogCounts.set(db, { printings: count, at: Date.now() });
+  return { printings: count };
 }
