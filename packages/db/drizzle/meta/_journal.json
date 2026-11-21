@@ -330,6 +330,13 @@
       "when": 46,
       "tag": "0047_api_key_limits",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 47,
+      "tag": "0048_latest_price",
+      "breakpoints": true
     }
   ]
 }

@@ -94,6 +94,55 @@ describe("card explorer on PostgreSQL as app_user", () => {
     const [count] = (await admin.execute(sql`SELECT count(*)::int AS n FROM tcg_score_latest`)) as unknown as { n: number }[];
     expect(count!.n).toBeGreaterThan(0);
   });
+  it("prices from tcg_price_latest exactly as from the full history", async () => {
+    const db = appConn!.db;
+    const [count] = (await adminConn!.db.execute(sql`SELECT count(*)::int AS n FROM tcg_price_latest`)) as unknown as { n: number }[];
+    expect(count!.n).toBeGreaterThan(0);
+    const priceOf = (page: Awaited<ReturnType<typeof listCardExplorerPage>>) =>
+      page.rows.map((row) => [row.printingId, row.price?.amount ?? null, row.price?.quoteType ?? null, row.price?.observedAt.toISOString() ?? null]);
+    for (const params of [
+      { sort: "price_high", pageSize: "48" },
+      { sort: "price_low", pageSize: "48" },
+      { minPrice: "1", maxPrice: "100000", sort: "market_buy", pageSize: "48" },
+    ]) {
+      // Live reads use tcg_price_latest; a read "as of" a moment walks the history.
+      const fast = await listCardExplorerPage(db, parseExplorerQuery(params));
+      const slow = await listCardExplorerPage(db, parseExplorerQuery(params), { now: new Date() });
+      expect(fast.total, JSON.stringify(params)).toBe(slow.total);
+      expect(priceOf(fast), JSON.stringify(params)).toEqual(priceOf(slow));
+    }
+    const ranged = await listCardExplorerPage(db, parseExplorerQuery({ minPrice: "1", maxPrice: "100000" }));
+    for (const row of ranged.rows) {
+      expect(row.price?.currency).toBe("USD");
+      expect(Number(row.price?.amount)).toBeGreaterThanOrEqual(1);
+    }
+    // A newer price inserted later moves the latest-price row through the trigger.
+    const target = ranged.rows[0]!.printingId;
+    const yesterday = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate() - 1, 20));
+    const before = ranged.rows[0]!.price!.observedAt;
+    if (before < yesterday) {
+      await adminConn!.db.execute(sql`
+        INSERT INTO tcg_daily_price (printing_id, observed_at, market, low, mid, high, source)
+        VALUES (${target}, ${yesterday.toISOString()}::timestamptz, 123.45, NULL, NULL, NULL, 'daily')
+        ON CONFLICT DO NOTHING`);
+      const after = await listCardExplorerPage(db, parseExplorerQuery({ q: ranged.rows[0]!.canonicalPrintingKey }));
+      const row = after.rows.find((item) => item.printingId === target);
+      expect(row?.price?.amount && Number(row.price.amount)).toBe(123.45);
+    }
+  });
+  it("lists chase cards and most-talked-about cards", async () => {
+    const db = appConn!.db;
+    const chase = await listCardExplorerPage(db, parseExplorerQuery({ view: "chase", pageSize: "48" }));
+    const all = await listCardExplorerPage(db, parseExplorerQuery({ pageSize: "48" }));
+    expect(chase.total).toBeLessThanOrEqual(all.total);
+    const talked = await listCardExplorerPage(db, parseExplorerQuery({ view: "talked", sort: "social_posts", window: "90d", pageSize: "48" }));
+    for (const row of talked.rows) expect(row.sentiment.classified + row.sentiment.unknown).toBeGreaterThanOrEqual(0);
+    expect(talked.total).toBeLessThanOrEqual(all.total);
+    const dated = await listCardExplorerPage(db, parseExplorerQuery({ releasedFrom: "1990-01-01", releasedTo: "2100-01-01" }));
+    const none = await listCardExplorerPage(db, parseExplorerQuery({ releasedFrom: "2099-01-01" }));
+    expect(dated.total).toBeLessThanOrEqual(all.total);
+    expect(none.total).toBe(0);
+  });
   it("pages through ties exactly as one whole-catalog sort would", async () => {
     const db = appConn!.db;
     // One big tie: every card shares the same scores, so pages cut through the
