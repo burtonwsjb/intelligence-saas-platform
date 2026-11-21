@@ -74,6 +74,12 @@ export async function recordCreatorTrust(
   });
 }
 
+/** The printing a card-level call was graded on, from its outcome's data quality ("...+headline_printing:prn_x"). */
+export function headlinePrintingOf(dataQuality: string | null | undefined): string | null {
+  const match = /(?:^|\+)headline_printing:([^+]+)/.exec(dataQuality ?? "");
+  return match?.[1] ?? null;
+}
+
 export async function recomputeCreatorAuthority(db: Database, creatorId: string, asOf = new Date()) {
   const excluded = (await latestTrustState(db, creatorId)) === "excluded";
   const rows = await db
@@ -86,7 +92,9 @@ export async function recomputeCreatorAuthority(db: Database, creatorId: string,
       row.outcome.evaluationStatus === "evaluated" &&
       ((row.call.printingId &&
         (row.call.resolutionStatus === "exact" || row.call.resolutionStatus === "high_confidence")) ||
-        (row.call.assetId && row.call.resolutionStatus === ASSET_CALL_RESOLUTION)),
+        (row.call.assetId && row.call.resolutionStatus === ASSET_CALL_RESOLUTION) ||
+        // A call that named the card but not the printing, graded on its headline printing.
+        (!row.call.printingId && !row.call.assetId && headlinePrintingOf(row.outcome.dataQuality) != null)),
   );
   const assetKeys = new Map(
     (await db.select({ id: marketAsset.id, assetKey: marketAsset.assetKey }).from(marketAsset)).map((row) => [
@@ -128,7 +136,7 @@ export async function recomputeCreatorAuthority(db: Database, creatorId: string,
       buckets.set(perAsset, [...(buckets.get(perAsset) ?? []), row]);
       continue;
     }
-    const ctx = await printingContext(db, row.call.printingId!);
+    const ctx = await printingContext(db, (row.call.printingId ?? headlinePrintingOf(row.outcome.dataQuality))!);
     const slice: SliceKey = {
       gameKey: ctx?.gameKey ?? null,
       languageCode: ctx?.languageCode ?? null,

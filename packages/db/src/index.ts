@@ -313,6 +313,7 @@ export {
   ensureCreatorForSourceAccount,
   extractCreatorCallsFromContent,
   linkCreatorAccount,
+  relinkCreatorCall,
   reviseCreatorCall,
 } from "./creator/ingest.js";
 export {
@@ -374,10 +375,18 @@ export {
   FLAT_BAND,
   SET_BASKET_MIN_PRINTINGS,
   evaluateCreatorCallOutcome,
+  headlinePrintingForConcept,
   earlyCallScore,
   setBasketMove,
 } from "./creator/outcomes.js";
 export { scoreDueCreatorCalls, type DueCallScoringReport } from "./creator/due.js";
+export {
+  CALL_RECHECK_DEFAULT_LIMIT,
+  CALL_RELINK_DEFAULT_LIMIT,
+  GENERAL_MARKET_TALK,
+  relinkUnboundCalls,
+  type CallRelinkReport,
+} from "./creator/relink.js";
 export {
   ASSET_CALL_RESOLUTION,
   extractAssetCallsFromContent,

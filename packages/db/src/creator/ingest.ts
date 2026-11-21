@@ -269,3 +269,56 @@ export async function reviseCreatorCall(
     revisesCallId: original.id,
   });
 }
+
+/**
+ * Re-binds a call to what the resolver now reads its mention as. Calls are
+ * immutable, so this writes a revision (revises_call_id) carrying the new
+ * printing / card and the same direction, horizon and targets; scoring and
+ * the leaderboard then read the revision instead of the original.
+ */
+export async function relinkCreatorCall(
+  db: Database,
+  input: {
+    callId: string;
+    printingId: string | null;
+    conceptId: string | null;
+    resolutionAttemptId: string;
+    resolutionStatus: string;
+    resolutionConfidence: string | null;
+  },
+) {
+  const [original] = await db.select().from(creatorCall).where(eq(creatorCall.id, input.callId)).limit(1);
+  if (!original) {
+    throw new Error("creator call not found.");
+  }
+  const evidence = (original.evidence ?? {}) as Record<string, unknown>;
+  const extractorEvidence = Array.isArray(evidence.extractor_evidence)
+    ? evidence.extractor_evidence.map(String)
+    : [];
+  return persistCall(db, {
+    creatorId: original.creatorId,
+    sourceAccountId: original.sourceAccountId,
+    contentId: original.contentId,
+    segmentId: original.segmentId,
+    mentionId: original.mentionId,
+    publishedAt: original.publishedAt,
+    printingId: input.printingId,
+    conceptId: input.conceptId,
+    resolutionAttemptId: input.resolutionAttemptId,
+    resolutionStatus: input.resolutionStatus,
+    resolutionConfidence: input.resolutionConfidence,
+    candidate: {
+      is_call: true,
+      direction: original.direction as ExtractedCallCandidate["direction"],
+      target_price: original.targetPrice == null ? null : Number(original.targetPrice),
+      target_percent: original.targetPercent == null ? null : Number(original.targetPercent),
+      horizon_code: original.horizonCode as ExtractedCallCandidate["horizon_code"],
+      horizon_custom_days: original.horizonCustomDays == null ? null : Number(original.horizonCustomDays),
+      stated_confidence: original.statedConfidence == null ? null : Number(original.statedConfidence),
+      extraction_confidence: Number(original.extractionConfidence),
+      evidence: extractorEvidence,
+    },
+    evidence: { ...evidence, revision_note: "relinked by resolver" },
+    revisesCallId: original.id,
+  });
+}

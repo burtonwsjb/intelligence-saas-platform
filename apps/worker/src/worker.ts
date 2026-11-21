@@ -31,6 +31,7 @@ import {
   syncTcgcsvHistory,
   syncTcgcsvMatch,
   retryUnboundDetectedMentions,
+  relinkUnboundCalls,
   traceSourcePost,
   syncPodcastFeeds,
   syncWebFeeds,
@@ -49,6 +50,7 @@ import {
   type TranscriptFetcher,
   type WebBackfillReport,
   type MentionRetryReport,
+  type CallRelinkReport,
   type AssetCallRescanReport,
   type ScopeTalkRescanReport,
   type PodcastFeedSyncReport,
@@ -225,6 +227,7 @@ export async function runMarketWork(db: Database, env: NodeJS.ProcessEnv = proce
   await runTcgcsvMatch(db, env);
   await runTcgcsvDaily(db, env);
   await runTcgcsvHistory(db, env);
+  await runCallRelink(db);
   await runCallScoring(db);
   await runCardRescore(db, env);
   await runChartSentiment(db, env);
@@ -673,6 +676,34 @@ export async function runTcgcsvHistory(db: Database, env: NodeJS.ProcessEnv = pr
     return report;
   } catch (error) {
     logLoopFailure("worker.tcgcsv_history_failed", "tcgcsv_history", error);
+    return null;
+  }
+}
+
+/**
+ * Gives ungradable calls another chance before scoring: relinks calls whose
+ * card the resolver can now read, and puts calls that lacked prices back in
+ * the queue once a week while price history backfills. Database only.
+ */
+export async function runCallRelink(db: Database): Promise<CallRelinkReport | null> {
+  try {
+    const report = await relinkUnboundCalls(db);
+    if (report.considered > 0 || report.rechecked > 0) {
+      logQueueEvent("info", "worker.call_relink", {
+        status: "ok",
+        considered: report.considered,
+        bound: report.bound,
+        card_only: report.cardOnly,
+        general_talk: report.generalTalk,
+        still_unbound: report.stillUnbound,
+        superseded: report.superseded,
+        failed: report.failed,
+        rechecked: report.rechecked,
+      });
+    }
+    return report;
+  } catch (error) {
+    logLoopFailure("worker.call_relink_failed", "call_relink", error);
     return null;
   }
 }

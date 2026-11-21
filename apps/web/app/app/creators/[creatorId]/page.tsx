@@ -171,9 +171,10 @@ export default async function CreatorDetailPage({
                   </span>
                 </span>
                 <CallOutcomeBadge
-                  identified={call.printingId != null || call.assetName != null}
+                  identified={call.printingId != null || call.assetName != null || call.cardName != null}
                   outcomeStatus={call.outcomeStatus}
                   directionalCorrect={call.directionalCorrect}
+                  dataQuality={call.dataQuality}
                 />
               </li>
             ))}

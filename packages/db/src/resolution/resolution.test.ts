@@ -44,7 +44,7 @@ describe("entity resolution", () => {
     });
     expect(byId.attempt.status).toBe("exact");
     expect(byId.attempt.chosenPrintingId).toBe(seeded.printings.greninjaEnNormal.id);
-    expect(byId.attempt.resolverVersion).toBe("resolver.v1");
+    expect(byId.attempt.resolverVersion).toBe("resolver.v2");
     expect(byId.candidates[0]?.evidence).toContain("external_id_exact");
 
     const structured = await resolveEntity(db, {
@@ -434,5 +434,32 @@ describe("entity resolution", () => {
 
   it("blanks prices, percentages and years in segment context", () => {
     expect(withoutNonCollectorNumbers("worth $1,200 or 20% more in 2024, 15 dollars, #199")).toBe("worth or more in , , #199");
+  });
+
+  it("drops a collector number guessed from the video's wording when no such card carries the name", async () => {
+    const { db, seeded } = await setup();
+    const ingested = await ingestSourceContentRecord(db, {
+      provider: "youtube",
+      provider_record_id: "day50_video",
+      event_type: "source.content.ingested",
+      account: { external_account_id: "day50_channel" },
+      content: {
+        external_content_id: "day50_video",
+        content_type: "video",
+        published_at: "2026-09-01T00:00:00Z",
+        title: "Opening packs every day (Day 50)",
+        canonical_url: "https://www.youtube.com/watch?v=day50_video",
+        license_status: "bounded_excerpt",
+        retention_policy: "bounded_excerpt",
+      },
+      segments: [{ kind: "timestamp_range", start_ref: "t=1", end_ref: "t=9", excerpt: "Day 50 and still no Greninja" }],
+      mentions: [{ raw_entity_text: "Greninja", segment_index: 0 }],
+    });
+    const [mention] = await listSourceMentions(db, ingested.contentId!);
+    const resolved = await resolveSourceMention(db, mention!.id);
+    expect(resolved.attempt.inputSignals).not.toHaveProperty("collector_number", "50");
+    expect(resolved.attempt.status).not.toBe("unresolved");
+    expect(resolved.attempt.chosenConceptId).toBe(seeded.concepts.greninja.id);
+    expect(resolved.attempt.resolverVersion).toBe("resolver.v2");
   });
 });

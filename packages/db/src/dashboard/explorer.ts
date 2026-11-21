@@ -1623,6 +1623,8 @@ export type CreatorCallHistoryItem = {
   /** correct | incorrect | neutral | ..., only for evaluated calls. */
   directionalCorrect: string | null;
   returnPct: number | null;
+  /** Why an outcome could not be graded, e.g. general_market_talk. */
+  dataQuality: string | null;
   contentUrl: string | null;
 };
 
@@ -1687,15 +1689,18 @@ export async function listCreatorCallHistory(
     await db.execute(sql`
       SELECT cc.id, cc.published_at, cc.direction, cc.horizon_code, cc.printing_id, cc.price_at_call, cc.price_currency,
         c.canonical_name AS card_name, st.name AS set_name, p.language_code, ma.display_name AS asset_name, cc.evidence -> 'grade' AS grade,
-        o.evaluation_status, o.directional_correct, o.return_pct, sc.canonical_url
+        o.evaluation_status, o.directional_correct, o.return_pct, o.data_quality, sc.canonical_url
       FROM creator_call cc
       LEFT JOIN market_asset ma ON ma.id = cc.asset_id
       LEFT JOIN tcg_printing p ON p.id = cc.printing_id
-      LEFT JOIN tcg_card_concept c ON c.id = p.card_id
+      -- A call that names the card but not the printing still shows the card.
+      LEFT JOIN tcg_card_concept c ON c.id = COALESCE(p.card_id, cc.concept_id)
       LEFT JOIN tcg_set st ON st.id = p.set_id
       LEFT JOIN creator_call_outcome o ON o.call_id = cc.id
       LEFT JOIN source_content sc ON sc.id = cc.content_id
       WHERE cc.creator_id = ${creatorId}
+        -- A relinked call shows once, as its revision.
+        AND NOT EXISTS (SELECT 1 FROM creator_call r WHERE r.revises_call_id = cc.id)
       ORDER BY cc.published_at DESC, cc.id DESC
       LIMIT ${EVIDENCE_PAGE_SIZE + 1} OFFSET ${(page - 1) * EVIDENCE_PAGE_SIZE}
     `),
@@ -1719,6 +1724,7 @@ export async function listCreatorCallHistory(
       outcomeStatus: row.evaluation_status == null ? null : String(row.evaluation_status),
       directionalCorrect: row.directional_correct == null ? null : String(row.directional_correct),
       returnPct: row.return_pct == null || !Number.isFinite(Number(row.return_pct)) ? null : Number(row.return_pct),
+      dataQuality: row.data_quality == null ? null : String(row.data_quality),
       contentUrl: row.canonical_url == null ? null : String(row.canonical_url),
     })),
   };

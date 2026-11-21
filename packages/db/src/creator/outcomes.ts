@@ -7,8 +7,66 @@ import { tcgMarketPriceAll as tcgMarketSnapshot } from "../schema/tcg-market.js"
 import { tcgPrinting, tcgSet } from "../schema/tcg.js";
 import { assetPriceAt, assetPricesBetween } from "./assets.js";
 import { callGradeFromEvidence, type CallGrade } from "./grade.js";
+import { gradedPriceAtCall, priceAtCall } from "./price-at-call.js";
 
-export const OUTCOME_VERSION = "outcome.v2";
+/** v3: a call that names a card but not which printing is graded on that card's headline printing. */
+export const OUTCOME_VERSION = "outcome.v3";
+
+/** A headline printing must be worth at least this much at the call, so bulk copies never stand for the card. */
+export const HEADLINE_MIN_PRICE = 1;
+/** Prices up to this long before the post (or START_PRICE_GRACE_MS after) pick the headline printing. */
+const HEADLINE_LOOKBACK_MS = 14 * 86_400_000;
+
+function rowsOfOutcome<T>(result: unknown): T[] {
+  return (Array.isArray(result) ? result : ((result as { rows?: T[] }).rows ?? [])) as T[];
+}
+
+/**
+ * "Mewtwo ex is going up" names a card, not a printing. The market reads that
+ * as the card's headline copy: the most valuable raw printing around the time
+ * of the post. When the resolver kept candidates of this card (for example the
+ * printings in the set the post names), only those are considered; otherwise
+ * every printing of the card in the post's language. Only prices from before
+ * the post, or within the start grace after it, are read.
+ */
+export async function headlinePrintingForConcept(
+  db: Database,
+  input: { conceptId: string; publishedAt: Date; resolutionAttemptId: string | null; language?: string | null },
+): Promise<string | null> {
+  const fromIso = new Date(input.publishedAt.getTime() - HEADLINE_LOOKBACK_MS).toISOString();
+  const toIso = new Date(input.publishedAt.getTime() + START_PRICE_GRACE_MS).toISOString();
+  const language = input.language ?? "en";
+  const rows = rowsOfOutcome<{ printing_id: string }>(
+    await db.execute(sql`
+      WITH candidates AS (
+        SELECT rc.printing_id FROM entity_resolution_candidate rc
+        JOIN tcg_printing p ON p.id = rc.printing_id
+        WHERE ${input.resolutionAttemptId}::text IS NOT NULL
+          AND rc.attempt_id = ${input.resolutionAttemptId}
+          AND p.card_id = ${input.conceptId}
+      ), pool AS (
+        SELECT p.id FROM tcg_printing p
+        WHERE p.card_id = ${input.conceptId}
+          AND (EXISTS (SELECT 1 FROM candidates) AND p.id IN (SELECT printing_id FROM candidates)
+               OR NOT EXISTS (SELECT 1 FROM candidates))
+          AND p.language_code = ${language}
+      )
+      SELECT m.printing_id
+      FROM tcg_market_price_all m
+      WHERE m.printing_id IN (SELECT id FROM pool)
+        AND m.grading_company IS NULL
+        AND m.outlier_flag = false
+        AND m.price_type IN ('sold', 'reference')
+        AND m.observed_at >= ${fromIso}::timestamptz
+        AND m.observed_at <= ${toIso}::timestamptz
+      GROUP BY m.printing_id
+      HAVING max(m.price) >= ${HEADLINE_MIN_PRICE}
+      ORDER BY max(m.price) DESC, m.printing_id
+      LIMIT 1
+    `),
+  );
+  return rows[0]?.printing_id ?? null;
+}
 
 /**
  * A move smaller than this share of the starting price either way is "flat":
@@ -120,19 +178,30 @@ export async function evaluateCreatorCallOutcome(
   if (call.assetId) {
     return evaluateAssetCall(db, { call, outcomeId: outcome.id, days, defaultHorizon, asOf });
   }
-  if (!call.printingId || days == null) {
+  // A call that names the card but not the printing is graded on its headline printing.
+  let printingId = call.printingId;
+  let headline = false;
+  if (!printingId && call.conceptId && days != null) {
+    printingId = await headlinePrintingForConcept(db, {
+      conceptId: call.conceptId,
+      publishedAt: call.publishedAt,
+      resolutionAttemptId: call.resolutionAttemptId,
+    });
+    headline = printingId != null;
+  }
+  if (!printingId || days == null) {
     await db
       .update(creatorCallOutcome)
       .set({
         evaluationStatus: "insufficient_data",
-        dataQuality: "missing_identity_price_or_horizon",
+        dataQuality: call.conceptId ? "missing_market_data" : "missing_identity_price_or_horizon",
         methodVersion: OUTCOME_VERSION,
         evaluatedAt: asOf,
       })
       .where(eq(creatorCallOutcome.id, outcome.id));
     return getOutcome(db, callId);
   }
-  if (!["exact", "high_confidence"].includes(call.resolutionStatus)) {
+  if (!headline && !["exact", "high_confidence"].includes(call.resolutionStatus)) {
     await db
       .update(creatorCallOutcome)
       .set({
@@ -155,11 +224,20 @@ export async function evaluateCreatorCallOutcome(
   const callGrade = callGradeFromEvidence(call.evidence);
   // Without a price from before the post, a raw card call may start from the
   // first price seen shortly after it; the data quality records that it did.
-  let startingPrice = call.priceAtCall;
+  let startingPrice = headline ? null : call.priceAtCall;
+  if (startingPrice == null) {
+    // The price may have arrived after the call was read (a history backfill).
+    const atCall = callGrade
+      ? await gradedPriceAtCall(db, { printingId, publishedAt: call.publishedAt, grade: callGrade })
+      : await priceAtCall(db, { printingId, publishedAt: call.publishedAt });
+    // A price from long before the post says nothing about the price at the post.
+    const fresh = atCall && call.publishedAt.getTime() - atCall.observedAt.getTime() <= HEADLINE_LOOKBACK_MS;
+    startingPrice = fresh ? atCall.price : null;
+  }
   let startAfterCall = false;
   if (startingPrice == null && !callGrade) {
     const [first] = await rawPricesInWindow(db, {
-      printingId: call.printingId,
+      printingId,
       from: call.publishedAt,
       to: new Date(Math.min(call.publishedAt.getTime() + START_PRICE_GRACE_MS, endAt.getTime())),
     });
@@ -182,7 +260,7 @@ export async function evaluateCreatorCallOutcome(
   }
   const start = Number(startingPrice);
   const windowSold = await soldInWindow(db, {
-    printingId: call.printingId,
+    printingId,
     from: call.publishedAt,
     to: endAt,
     nmOnly: true,
@@ -194,7 +272,7 @@ export async function evaluateCreatorCallOutcome(
   // need sales of their grade.
   let referencePrice = false;
   if (usable.length === 0 && !callGrade) {
-    usable = await rawPricesInWindow(db, { printingId: call.printingId, from: call.publishedAt, to: endAt, priceType: "reference" });
+    usable = await rawPricesInWindow(db, { printingId, from: call.publishedAt, to: endAt, priceType: "reference" });
     referencePrice = usable.length > 0;
   }
   const endRow = usable.at(-1);
@@ -236,6 +314,7 @@ export async function evaluateCreatorCallOutcome(
         defaultHorizon ? "complete_default_horizon" : "complete",
         referencePrice ? "market_price" : null,
         startAfterCall ? "start_after_call" : null,
+        headline ? `headline_printing:${printingId}` : null,
       ]
         .filter(Boolean)
         .join("+"),
