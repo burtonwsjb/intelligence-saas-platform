@@ -329,6 +329,9 @@ describe("persisted scores and decision records", () => {
       await ingestTcgMarketRecord(db, record);
     }
     const asOf = new Date("2026-01-10T00:00:00.000Z");
+    // A run past its time budget stops before the next card.
+    const late = await runCardRescoreBatch(db, { asOf, timeBudgetMs: -1 });
+    expect(late).toMatchObject({ scored: 0, reason: "time_budget" });
     const first = await runCardRescoreBatch(db, { asOf });
     expect(first.considered).toBeGreaterThan(0);
     expect(first.failed).toBe(0);
@@ -383,6 +386,31 @@ describe("persisted scores and decision records", () => {
     expect(stale).toMatchObject({ considered: 1, requested: 0, scored: 1 });
     const popularScores = await db.select().from(tcgScoreSnapshot).where(eq(tcgScoreSnapshot.printingId, popular));
     expect(popularScores.length).toBe(2);
+  });
+
+  it("keeps half of each batch for never-scored cards even when many cards were just requested", async () => {
+    const client = new PGlite();
+    await client.exec(await readMigrationSql());
+    const db = drizzle(client) as unknown as Database;
+    await seedTcgIdentityFixtures(db);
+    for (const record of tcgMarketFixtureRecords()) {
+      await ingestTcgMarketRecord(db, record);
+    }
+    await runCardRescoreBatch(db, { asOf: new Date("2026-01-10T00:00:00.000Z") });
+    const printingIds = [...new Set((await db.select().from(tcgScoreSnapshot)).map((row) => row.printingId))].sort();
+    expect(printingIds.length).toBeGreaterThan(3);
+    const fresh = printingIds[0]!;
+    const asked = printingIds.slice(1);
+    // One card has never been scored (a newly priced game); every other card was just asked about.
+    await client.exec(`SET session_replication_role = replica;
+      DELETE FROM tcg_score_snapshot WHERE printing_id = '${fresh}';
+      UPDATE tcg_score_snapshot SET created_at = '2026-01-09T21:00:00Z';
+      UPDATE tcg_market_snapshot SET created_at = '2026-01-09T20:00:00Z';
+      SET session_replication_role = DEFAULT;`);
+    await recordPrintingDemand(db, asked, new Date("2026-01-09T23:00:00.000Z"));
+    const run = await runCardRescoreBatch(db, { asOf: new Date("2026-01-10T00:05:00.000Z"), batchSize: 2 });
+    expect(run).toMatchObject({ considered: 2, requested: 1, scored: 2 });
+    expect(await db.select().from(tcgScoreSnapshot).where(eq(tcgScoreSnapshot.printingId, fresh))).toHaveLength(1);
   });
 
   it("keeps rescoring when the request table has not been created yet", async () => {

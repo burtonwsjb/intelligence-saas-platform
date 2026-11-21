@@ -29,13 +29,16 @@ export function CallOutcomeBadge({
   identified,
   outcomeStatus,
   directionalCorrect,
+  dataQuality = null,
   unidentifiedLabel = "Card not identified",
 }: {
   identified: boolean;
   outcomeStatus: string | null;
   directionalCorrect: string | null;
+  dataQuality?: string | null;
   unidentifiedLabel?: string;
 }) {
+  if (dataQuality === "general_market_talk") return <Badge>General market talk</Badge>;
   if (!identified) return <Badge>{unidentifiedLabel}</Badge>;
   if (outcomeStatus === "evaluated") {
     if (directionalCorrect === "correct") return <StatusBadge tone="good" label="Came true" />;

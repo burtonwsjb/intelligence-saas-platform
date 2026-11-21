@@ -14,7 +14,7 @@ import {
   type ResolutionSignals,
   type ScoredCandidate,
 } from "./identity.js";
-import { inferSignalsFromText, mergeSignals, type CatalogHints } from "./signals.js";
+import { inferSignalsFromText, mergeSignals, stripIdentityTokens, type CatalogHints } from "./signals.js";
 import {
   persistResolution,
   getSourceMentionRecord,
@@ -606,6 +606,54 @@ function decideStatus(
   };
 }
 
+/**
+ * A set or collector number read only from the surrounding text (a video
+ * description's "Day 50", a promo code "beard25", a set named in passing) is a
+ * guess. When the printings it points at carry none of the named card, the
+ * guess is dropped, number first and then set, so the card's own name decides.
+ * Signals the caller passed explicitly are never dropped.
+ */
+async function relaxContextOnlyIdentity(
+  db: Database,
+  signals: ResolutionSignals,
+  explicit: ResolutionSignals,
+  game: string | undefined,
+  hints: CatalogHints,
+): Promise<ResolutionSignals> {
+  if (!optionalSignal(signals.card_name) || signals.external_id) return signals;
+  const droppable: ("collector_number" | "set")[] = [];
+  if (optionalSignal(signals.collector_number) && !optionalSignal(explicit.collector_number)) droppable.push("collector_number");
+  if (optionalSignal(signals.set) && !optionalSignal(explicit.set)) droppable.push("set");
+  if (droppable.length === 0) return signals;
+  const nameFits = async (candidate: ResolutionSignals) => {
+    if (!optionalSignal(candidate.set) && !optionalSignal(candidate.collector_number)) return true;
+    const catalog = await loadCandidates(db, candidate, { game });
+    // "Pikachu 025" names Pikachu: the number is compared by the filter, not the name.
+    // "English Twilight Masquerade Greninja 214 normal" names Greninja once set, language and finish are read off.
+    const bareName = stripIdentityTokens(candidate.card_name ?? "", hints)
+      .replace(/(^|\s)#?\d+[a-z]?(?:\/\d+)?(?=\s|$)/gi, " ")
+      .trim();
+    const named = { ...candidate, card_name: bareName || candidate.card_name };
+    // "Greninja ex 214/167 Twilight Masquerade, buying now" names Greninja ex:
+    // the card's whole name appears in the text, word for word.
+    const words = (value: string) => ` ${value.normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()} `;
+    const text = words(candidate.card_name ?? "");
+    return hardFilter(catalog.printings, candidate).some(
+      (printing) =>
+        (words(printing.canonicalName).trim() !== "" && text.includes(words(printing.canonicalName))) ||
+        scorePrinting(printing, candidate, catalog.aliases).nameSimilarity >= FUZZY_PROBABLE_THRESHOLD ||
+        scorePrinting(printing, named, catalog.aliases).nameSimilarity >= FUZZY_PROBABLE_THRESHOLD,
+    );
+  };
+  let current = signals;
+  if (await nameFits(current)) return current;
+  for (const key of droppable) {
+    current = { ...current, [key]: undefined };
+    if (await nameFits(current)) return current;
+  }
+  return current;
+}
+
 export async function resolveEntity(
   db: Database,
   input: {
@@ -624,7 +672,7 @@ export async function resolveEntity(
     .join(" ");
   const hints: CatalogHints = { sets: contextText ? await loadSetHints(db, contextText, game) : [] };
   const inferred = contextText ? inferSignalsFromText(contextText, hints) : {};
-  const signals = mergeSignals(input.signals, inferred);
+  const signals = await relaxContextOnlyIdentity(db, mergeSignals(input.signals, inferred), input.signals, game, hints);
 
   const mapped = signals.external_id
     ? await findTcgPrintingIdentifier(db, {

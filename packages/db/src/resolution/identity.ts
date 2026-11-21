@@ -24,7 +24,8 @@ export const ENTITY_RESOLUTION_REVIEW_ACTIONS = [
 ] as const;
 export type EntityResolutionReviewAction = (typeof ENTITY_RESOLUTION_REVIEW_ACTIONS)[number];
 
-export const RESOLVER_VERSION = "resolver.v1";
+/** v2: a set or collector number guessed from context gives way to the card name (relaxContextOnlyIdentity). */
+export const RESOLVER_VERSION = "resolver.v2";
 export const FUZZY_HIGH_THRESHOLD = 0.85;
 export const FUZZY_PROBABLE_THRESHOLD = 0.78;
 

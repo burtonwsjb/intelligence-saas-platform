@@ -3,7 +3,9 @@ import type { Database } from "../client.js";
 import { scoreAndPersist } from "./persist.js";
 import { SCORE_MODEL_REVISION } from "./weights.js";
 
-export const DEFAULT_CARD_RESCORE_BATCH_SIZE = 300;
+export const DEFAULT_CARD_RESCORE_BATCH_SIZE = 900;
+/** A run stops starting new cards after this long, so a slow database never stalls the hourly market step. */
+export const CARD_RESCORE_TIME_BUDGET_MS = 15 * 60_000;
 export const CARD_RESCORE_MAX_BATCH_SIZE = 2_000;
 /** A card with a price this recent is worth keeping scored. */
 export const CARD_RESCORE_PRICE_DAYS = 30;
@@ -65,8 +67,11 @@ async function hasDemandTable(db: Database): Promise<boolean> {
  */
 export async function runCardRescoreBatch(
   db: Database,
-  input: { asOf?: Date; batchSize?: number; exclusive?: boolean } = {},
+  input: { asOf?: Date; batchSize?: number; exclusive?: boolean; timeBudgetMs?: number; clock?: () => number } = {},
 ): Promise<CardRescoreReport> {
+  const clock = input.clock ?? Date.now;
+  const startedAt = clock();
+  const budget = input.timeBudgetMs ?? CARD_RESCORE_TIME_BUDGET_MS;
   const report: CardRescoreReport = { status: "completed", reason: null, considered: 0, requested: 0, scored: 0, failed: 0 };
   const batchSize = Math.max(0, Math.min(input.batchSize ?? DEFAULT_CARD_RESCORE_BATCH_SIZE, CARD_RESCORE_MAX_BATCH_SIZE));
   if (batchSize === 0) return { ...report, status: "skipped", reason: "disabled" };
@@ -130,8 +135,10 @@ export async function runCardRescoreBatch(
       )
       SELECT printing_id, COALESCE(requested_rank <= ${reserve}, false) AS requested
       FROM ranked
+      -- Only the reserved share goes ahead by request; requested cards past it
+      -- wait their turn with the rest, so never-scored cards are not starved.
       ORDER BY COALESCE(requested_rank <= ${reserve}, false) DESC,
-        requested_rank ASC NULLS LAST,
+        CASE WHEN requested_rank <= ${reserve} THEN requested_rank END ASC NULLS LAST,
         scored_at IS NULL DESC,
         old_revision DESC,
         requests_30d DESC,
@@ -143,6 +150,10 @@ export async function runCardRescoreBatch(
   report.considered = due.length;
   report.requested = due.filter((row) => row.requested === true).length;
   for (const row of due) {
+    if (clock() - startedAt > budget) {
+      report.reason = "time_budget";
+      break;
+    }
     try {
       // A savepoint per card, so one failure does not abort the rest of the batch.
       await db.transaction((tx) => scoreAndPersist(tx as unknown as Database, { printingId: row.printing_id, asOf }));
