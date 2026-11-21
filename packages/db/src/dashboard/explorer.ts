@@ -11,11 +11,22 @@ import { SCOPE_TALK_VERSION } from "../source/scope-talk.js";
 // filters, pages, and summarizes what the canonical pipeline already wrote.
 
 export const EXPLORER_PAGE_SIZES = [12, 24, 48] as const;
+/** The currency a price range uses when none is chosen: TCGplayer market prices are USD. */
+export const EXPLORER_DEFAULT_CURRENCY = "USD";
+
+/** One-click price ranges for the card list, in EXPLORER_DEFAULT_CURRENCY. */
+export const EXPLORER_PRICE_PRESETS: { label: string; min?: number; max?: number }[] = [
+  { label: "Under $25", max: 25 },
+  { label: "$25–$100", min: 25, max: 100 },
+  { label: "$100–$200", min: 100, max: 200 },
+  { label: "$200–$500", min: 200, max: 500 },
+  { label: "$500+", min: 500 },
+];
 export const EXPLORER_DEFAULT_PAGE_SIZE = 24;
 export const EXPLORER_MAX_PAGE_SIZE = 48;
 export const EXPLORER_MAX_PAGE = 500;
 
-export const EXPLORER_VIEWS = ["all", "opportunities", "confirmed", "social", "caution"] as const;
+export const EXPLORER_VIEWS = ["all", "opportunities", "chase", "talked", "confirmed", "social", "caution"] as const;
 export type ExplorerView = (typeof EXPLORER_VIEWS)[number];
 
 export const EXPLORER_SORTS = [
@@ -74,6 +85,15 @@ export const EXPLORER_VIEW_DEFINITIONS: Record<ExplorerView, { label: string; de
   opportunities: {
     label: "Opportunities",
     description: "Opportunity score 60 or higher with enough evidence to score.",
+  },
+  chase: {
+    label: "Chase cards",
+    description:
+      "The rarities collectors chase: special illustration, illustration, hyper, secret and ultra rares in Pokémon; secret, treasure and parallel (alternate art) super rares and leaders in One Piece.",
+  },
+  talked: {
+    label: "Most talked about",
+    description: "Cards that influencers and posts named in the price window, most posts first. Attention is not confirmation.",
   },
   confirmed: {
     label: "Market price tracked",
@@ -164,7 +184,10 @@ export function parseExplorerQuery(raw: RawParams): ExplorerQuery {
       ? pageSizeRaw
       : EXPLORER_DEFAULT_PAGE_SIZE;
   const page = Math.trunc(bounded(raw.page, 1, EXPLORER_MAX_PAGE) ?? 1);
-  const priceCurrency = token(raw.priceCurrency, 3)?.toUpperCase();
+  // Prices are TCGplayer market prices in US dollars unless a currency is chosen,
+  // so a bare price range ("$100 to $200") reads as USD.
+  const hasPriceBound = first(raw.minPrice) != null || first(raw.maxPrice) != null;
+  const priceCurrency = token(raw.priceCurrency, 3)?.toUpperCase() ?? (hasPriceBound ? EXPLORER_DEFAULT_CURRENCY : undefined);
   const currencyOk = priceCurrency != null && /^[A-Z]{3}$/.test(priceCurrency);
   const recommendation = first(raw.recommendation);
   return {
@@ -183,7 +206,7 @@ export function parseExplorerQuery(raw: RawParams): ExplorerQuery {
     maxRisk: bounded(raw.maxRisk, 0, 100),
     minConfidence: bounded(raw.minConfidence, 0, 100),
     minLiquidity: bounded(raw.minLiquidity, 0, 100),
-    // A price bound without an explicit currency would silently mix currencies.
+    // A price bound always carries one currency, so currencies are never mixed.
     priceCurrency: currencyOk ? priceCurrency : undefined,
     minPrice: currencyOk ? bounded(raw.minPrice, 0, 1e9) : undefined,
     maxPrice: currencyOk ? bounded(raw.maxPrice, 0, 1e9) : undefined,
@@ -241,8 +264,6 @@ export function countAdvancedFilters(query: ExplorerQuery): number {
     query.maxRisk,
     query.minConfidence,
     query.minLiquidity,
-    query.minPrice,
-    query.maxPrice,
   ].filter((value) => value != null).length;
 }
 
@@ -341,8 +362,22 @@ function inList(ids: string[]): SQL {
   );
 }
 
+/**
+ * Rarities collectors chase, matched case-insensitively against the catalog's
+ * rarity text (TCGplayer and set-list spellings differ: "Special illustration
+ * rare", "SEC", "TR"). One Piece alternate arts are the "parallel" printing of
+ * a super rare, secret rare or leader.
+ */
+export const CHASE_RARITY_PATTERN =
+  "(special illustration|illustration rare|hyper rare|secret|ultra rare|rare ultra|full art|gold|starlight|ghost|quarter century|collector|manga|treasure|^sec$|^tr$|^sp$|^ssp$)";
+export const CHASE_PARALLEL_PATTERN = "(super rare|secret|leader|^sr$|^sec$|^l$)";
+
 function viewPredicate(view: ExplorerView): SQL {
   switch (view) {
+    case "chase":
+      return sql`(p.rarity ~* ${CHASE_RARITY_PATTERN} OR (p.variant_key = 'parallel' AND p.rarity ~* ${CHASE_PARALLEL_PATTERN}))`;
+    case "talked":
+      return sql`so.posts > 0`;
     case "opportunities":
       return sql`s.opportunity_score >= 60 AND s.data_quality <> 'insufficient_data'`;
     case "confirmed":
@@ -363,7 +398,7 @@ const MARKET_STEP = sql.raw(`(CASE s.recommendation
 
 /** Whether the query reads per-printing social sentiment (alias so). */
 function needsSocial(query: ExplorerQuery): boolean {
-  return query.social != null || query.sort.startsWith("social_");
+  return query.social != null || query.sort.startsWith("social_") || query.view === "talked";
 }
 
 /**
@@ -387,7 +422,13 @@ function sortKeys(sort: ExplorerSort): { keys: SQL; pricedFirst: boolean; byPric
     case "recent":
       return { keys: sql`s.as_of DESC NULLS LAST`, pricedFirst: false, byPrice: false };
     case "market_buy":
-      return { keys: sql`${MARKET_STEP} DESC NULLS LAST, s.opportunity_score DESC NULLS LAST`, pricedFirst: false, byPrice: false };
+      // "Best investment": the strongest buy reading first, then the highest
+      // opportunity, then the reading the evidence backs most firmly.
+      return {
+        keys: sql`${MARKET_STEP} DESC NULLS LAST, s.opportunity_score DESC NULLS LAST, s.confidence_score DESC NULLS LAST`,
+        pricedFirst: false,
+        byPrice: false,
+      };
     case "market_sell":
       return { keys: sql`${MARKET_STEP} ASC NULLS LAST, s.opportunity_score ASC NULLS LAST`, pricedFirst: false, byPrice: false };
     case "social_positive":
@@ -432,6 +473,9 @@ function filterClauses(query: ExplorerQuery): SQL[] {
     clauses.push(sql`m.currency = ${query.priceCurrency}`);
     if (query.minPrice != null) clauses.push(sql`m.price >= ${query.minPrice}`);
     if (query.maxPrice != null) clauses.push(sql`m.price <= ${query.maxPrice}`);
+    // Before a set's release day its prices are presale guesses, not a market,
+    // so a card from an unreleased set never lands in a price range.
+    clauses.push(sql`(st.release_date IS NULL OR m.observed_at >= st.release_date::timestamp AT TIME ZONE 'UTC')`);
   }
   if (query.q) {
     const pattern = likePattern(query.q);
@@ -481,6 +525,56 @@ function headlinePriceSql(now: Date, printingId: SQL = sql`p.id`) {
     ORDER BY q.rank
     LIMIT 1
   `;
+}
+
+/**
+ * The same headline price read from tcg_price_latest (0048): one row per
+ * printing holding its newest sale and newest reference price, so pricing the
+ * whole catalog is a hash join over a slim table instead of two index probes
+ * per printing. Joined as `m` on m.printing_id.
+ */
+function latestPriceSql(now: Date) {
+  const soldFrom = new Date(now.getTime() - HEADLINE_SOLD_MAX_AGE_DAYS * 86_400_000);
+  const useSold = sql`(pl.sold_observed_at > ${ts(soldFrom)} AND pl.sold_observed_at <= ${ts(now)})`;
+  const useRef = sql`(pl.ref_observed_at <= ${ts(now)})`;
+  const pick = (sold: string, ref: string) =>
+    sql`CASE WHEN ${useSold} THEN pl.${sql.raw(sold)} WHEN ${useRef} THEN pl.${sql.raw(ref)} END`;
+  return sql`
+    SELECT pl.printing_id,
+      ${pick("sold_price", "ref_price")} AS price,
+      CASE WHEN ${useSold} THEN 'sold' WHEN ${useRef} THEN 'reference' END AS price_type,
+      ${pick("sold_currency", "ref_currency")} AS currency,
+      ${pick("sold_condition", "ref_condition")} AS condition,
+      ${pick("sold_source_key", "ref_source_key")} AS source_key,
+      ${pick("sold_observed_at", "ref_observed_at")} AS observed_at
+    FROM tcg_price_latest pl
+  `;
+}
+
+/** The headline price joined as `m` for the printing in `printingId`, by whichever source is ready. */
+function priceJoin(now: Date, fast: boolean, printingId: SQL = sql`p.id`): SQL {
+  return fast
+    ? sql`LEFT JOIN (${latestPriceSql(now)}) m ON m.printing_id = ${printingId}`
+    : sql`LEFT JOIN LATERAL (${headlinePriceSql(now, printingId)}) m ON TRUE`;
+}
+
+const tableSeen = new Map<string, boolean>();
+const tableCheckedAt = new Map<string, number>();
+
+/** True once a migration-made table exists. A missing table is checked again every 10 minutes. */
+async function tableReady(db: Database, name: string): Promise<boolean> {
+  if (tableSeen.get(name)) return true;
+  const checkedAt = tableCheckedAt.get(name) ?? 0;
+  if (checkedAt > 0 && Date.now() - checkedAt < 600_000) return false;
+  const [row] = asRows(await db.execute(sql`SELECT to_regclass(${name})::text AS name`));
+  tableCheckedAt.set(name, Date.now());
+  tableSeen.set(name, row?.name != null);
+  return row?.name != null;
+}
+
+/** True once migration 0048 (tcg_price_latest) is applied. */
+export async function latestPriceReady(db: Database): Promise<boolean> {
+  return tableReady(db, "tcg_price_latest");
 }
 
 let latestScoreSeen = false;
@@ -544,6 +638,9 @@ export async function listCardExplorerPage(
     JOIN tcg_set st ON st.id = p.set_id
     LEFT JOIN ${latestScores} s ON s.printing_id = p.id`;
   const pricedWhere = Boolean(query.priceCurrency) && (query.minPrice != null || query.maxPrice != null);
+  // Live reads price from tcg_price_latest once 0048 is applied; reads "as of"
+  // an earlier moment still derive the price from the history.
+  const fastPrice = options.now == null && (await latestPriceReady(db));
   let raw: Record<string, unknown>[];
   let total: number;
   if (sort.byPrice || pricedWhere) {
@@ -554,7 +651,7 @@ export async function listCardExplorerPage(
           m.price, m.price_type, m.currency, m.condition, m.source_key, m.observed_at,
           count(*) OVER () AS total
         ${fromClause}
-        LEFT JOIN LATERAL (${headlinePriceSql(now)}) m ON TRUE
+        ${priceJoin(now, fastPrice)}
         ${socialJoin}
         WHERE ${where}
         ORDER BY ${orderBy(query.sort)}, p.id ASC
@@ -584,7 +681,7 @@ export async function listCardExplorerPage(
         SELECT r.*, m.price, m.price_type, m.currency, m.condition, m.source_key, m.observed_at
         FROM ranked r
         JOIN bounds b ON r.sort_group BETWEEN b.lo AND b.hi
-        LEFT JOIN LATERAL (${headlinePriceSql(now, sql`r.printing_id`)}) m ON TRUE
+        ${priceJoin(now, fastPrice, sql`r.printing_id`)}
         ORDER BY r.sort_group${sort.pricedFirst ? sql`, (m.price IS NULL) ASC` : sql``}, r.printing_id ASC
         LIMIT ${pageSize} OFFSET ${offset} - (SELECT lo - 1 FROM bounds)
       `),
@@ -597,7 +694,7 @@ export async function listCardExplorerPage(
       await db.execute(sql`
         SELECT count(*) AS total
         ${fromClause}
-        ${pricedWhere ? sql`LEFT JOIN LATERAL (${headlinePriceSql(now)}) m ON TRUE` : sql``}
+        ${pricedWhere ? priceJoin(now, fastPrice) : sql``}
         ${socialJoin}
         WHERE ${where}
       `),

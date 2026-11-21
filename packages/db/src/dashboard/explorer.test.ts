@@ -48,11 +48,22 @@ describe("explorer query parsing", () => {
     expect(query.minOpportunity).toBeUndefined();
     expect(query.maxRisk).toBe(40);
     expect(query.game).toBeUndefined();
-    // A price bound without a currency would mix currencies, so it is ignored.
-    expect(query.minPrice).toBeUndefined();
+    // A bare price bound reads as US dollars (TCGplayer market prices), never as a mix of currencies.
+    expect(query.minPrice).toBe(10);
+    expect(query.priceCurrency).toBe("USD");
   });
 
-  it("keeps price bounds only with an explicit currency and round-trips URL state", () => {
+  it("reads a bare price range as USD and keeps a chosen currency", () => {
+    const range = parseExplorerQuery({ minPrice: "100", maxPrice: "200", view: "chase", sort: "market_buy" });
+    expect(range).toMatchObject({ minPrice: 100, maxPrice: 200, priceCurrency: "USD", view: "chase", sort: "market_buy" });
+    expect(explorerQueryToSearch(range)).toBe("?view=chase&priceCurrency=USD&minPrice=100&maxPrice=200&sort=market_buy");
+    expect(parseExplorerQuery({ priceCurrency: "eur", maxPrice: "50" }).priceCurrency).toBe("EUR");
+    // No bound, no currency: nothing is filtered.
+    expect(parseExplorerQuery({}).priceCurrency).toBeUndefined();
+    expect(parseExplorerQuery({ view: "talked" }).view).toBe("talked");
+  });
+
+  it("keeps price bounds with their currency and round-trips URL state", () => {
     const query = parseExplorerQuery({ priceCurrency: "usd", minPrice: "5", view: "caution", mode: "table", page: "3" });
     expect(query.priceCurrency).toBe("USD");
     expect(query.minPrice).toBe(5);

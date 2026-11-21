@@ -1,5 +1,7 @@
 import {
+  EXPLORER_DEFAULT_CURRENCY,
   EXPLORER_MARKET_SENTIMENTS,
+  EXPLORER_PRICE_PRESETS,
   EXPLORER_RECOMMENDATIONS,
   EXPLORER_SOCIAL_SENTIMENTS,
   EXPLORER_SORTS,
@@ -23,7 +25,7 @@ const SORT_TEXT: Record<(typeof EXPLORER_SORTS)[number], string> = {
   price_low: "Price: low to high",
   name: "Name A–Z",
   recent: "Recently scored",
-  market_buy: "Market: strongest buy",
+  market_buy: "Best investment (strongest buy)",
   market_sell: "Market: strongest sell",
   social_positive: "Social: most positive",
   social_negative: "Social: most negative",
@@ -47,6 +49,21 @@ const SOCIAL_TEXT: Record<(typeof EXPLORER_SOCIAL_SENTIMENTS)[number], string> =
 
 const WINDOW_TEXT = { "7d": "7 days", "30d": "30 days", "90d": "90 days" } as const;
 
+/** One-click lists for the questions collectors ask most. */
+const QUICK_PICKS: { label: string; overrides: Partial<ExplorerQuery> }[] = [
+  {
+    label: "Best buys $100–$200",
+    overrides: { view: "all", market: "buy", sort: "market_buy", minPrice: 100, maxPrice: 200, priceCurrency: EXPLORER_DEFAULT_CURRENCY },
+  },
+  { label: "Chase cards, highest price", overrides: { view: "chase", sort: "price_high" } },
+  { label: "Best chase buys", overrides: { view: "chase", market: "buy", sort: "market_buy" } },
+  { label: "Most talked-about buys", overrides: { view: "talked", market: "buy", sort: "social_posts" } },
+];
+
+function sameRange(query: ExplorerQuery, min?: number, max?: number): boolean {
+  return query.minPrice === min && query.maxPrice === max && (query.minPrice != null || query.maxPrice != null);
+}
+
 /**
  * GET form: every filter, sort, window and view lives in the URL, so a link,
  * a refresh or the back button restores the same list. Preset and mode
@@ -60,7 +77,12 @@ export function FilterBar({ query, facets, basePath }: { query: ExplorerQuery; f
         {EXPLORER_VIEWS.map((view) => (
           <Link
             key={view}
-            href={`${basePath}${explorerQueryToSearch(query, { view, page: 1 })}`}
+            href={`${basePath}${explorerQueryToSearch(query, {
+              view,
+              page: 1,
+              // "Most talked about" means most posts first unless another sort was picked.
+              ...(view === "talked" && query.sort === "opportunity" ? { sort: "social_posts" as const } : {}),
+            })}`}
             aria-current={query.view === view ? "page" : undefined}
             title={EXPLORER_VIEW_DEFINITIONS[view].description}
           >
@@ -68,10 +90,62 @@ export function FilterBar({ query, facets, basePath }: { query: ExplorerQuery; f
           </Link>
         ))}
       </nav>
+      <div className="quick-picks" aria-label="Quick picks">
+        <span className="quick-picks-label">Popular</span>
+        {QUICK_PICKS.map((pick) => (
+          <Link
+            key={pick.label}
+            className="pill-link"
+            href={`${basePath}${explorerQueryToSearch({ ...query, ...CLEARED, ...pick.overrides })}`}
+          >
+            {pick.label}
+          </Link>
+        ))}
+      </div>
       <form method="get" action={basePath} role="search" aria-label="Filter cards">
         <input type="hidden" name="view" value={query.view} />
         <input type="hidden" name="mode" value={query.mode} />
         <input type="hidden" name="pageSize" value={query.pageSize} />
+        <div className="quick-picks" aria-label="Price range">
+          <span className="quick-picks-label">Price</span>
+          {EXPLORER_PRICE_PRESETS.map((preset) => {
+            const active = sameRange(query, preset.min, preset.max) && query.priceCurrency === EXPLORER_DEFAULT_CURRENCY;
+            return (
+              <Link
+                key={preset.label}
+                className="pill-link"
+                aria-pressed={active}
+                href={`${basePath}${explorerQueryToSearch(query, {
+                  minPrice: active ? undefined : preset.min,
+                  maxPrice: active ? undefined : preset.max,
+                  priceCurrency: active ? undefined : EXPLORER_DEFAULT_CURRENCY,
+                  page: 1,
+                })}`}
+              >
+                {preset.label}
+              </Link>
+            );
+          })}
+          <span className="price-inputs">
+            <label>
+              <span className="visually-hidden">Min price in dollars</span>
+              <input name="minPrice" type="number" min={0} step="0.01" inputMode="decimal" placeholder="Min $" defaultValue={query.minPrice ?? ""} />
+            </label>
+            <span aria-hidden="true">to</span>
+            <label>
+              <span className="visually-hidden">Max price in dollars</span>
+              <input name="maxPrice" type="number" min={0} step="0.01" inputMode="decimal" placeholder="Max $" defaultValue={query.maxPrice ?? ""} />
+            </label>
+          </span>
+          {query.minPrice != null || query.maxPrice != null ? (
+            <Link
+              className="text-link"
+              href={`${basePath}${explorerQueryToSearch(query, { minPrice: undefined, maxPrice: undefined, priceCurrency: undefined, page: 1 })}`}
+            >
+              Any price
+            </Link>
+          ) : null}
+        </div>
         <div className="filter-row">
           <label className="field grow">
             Search
@@ -207,28 +281,25 @@ export function FilterBar({ query, facets, basePath }: { query: ExplorerQuery; f
               Min liquidity
               <input name="minLiquidity" type="number" min={0} max={100} inputMode="numeric" defaultValue={query.minLiquidity ?? ""} />
             </label>
-            <label className="field">
-              Price currency
-              <select name="priceCurrency" defaultValue={query.priceCurrency ?? ""}>
-                <option value="">Choose to filter by price</option>
-                {facets.currencies.map((currency) => (
-                  <option key={currency} value={currency}>
-                    {currency}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field">
-              Min price
-              <input name="minPrice" type="number" min={0} step="0.01" inputMode="decimal" defaultValue={query.minPrice ?? ""} />
-            </label>
-            <label className="field">
-              Max price
-              <input name="maxPrice" type="number" min={0} step="0.01" inputMode="decimal" defaultValue={query.maxPrice ?? ""} />
-            </label>
+            {facets.currencies.some((currency) => currency !== EXPLORER_DEFAULT_CURRENCY) ? (
+              <label className="field">
+                Price currency
+                <select name="priceCurrency" defaultValue={query.priceCurrency ?? ""}>
+                  <option value="">US dollars (default)</option>
+                  {facets.currencies
+                    .filter((currency) => currency !== EXPLORER_DEFAULT_CURRENCY)
+                    .map((currency) => (
+                      <option key={currency} value={currency}>
+                        {currency}
+                      </option>
+                    ))}
+                </select>
+              </label>
+            ) : null}
           </div>
           <p className="subtle" style={{ margin: 0 }}>
-            Price bounds apply only within the chosen currency, so prices are never compared across currencies.{" "}
+            Price ranges use US dollars (TCGplayer market price) unless another currency is chosen. Cards from sets that are
+            not out yet are left out of price ranges, since presale prices are not a real market.{" "}
             <Link className="text-link" href={`${basePath}${explorerQueryToSearch({ ...query, ...CLEARED })}`}>
               Clear filters
             </Link>
