@@ -138,6 +138,10 @@ describe("card explorer on PostgreSQL as app_user", () => {
     const talked = await listCardExplorerPage(db, parseExplorerQuery({ view: "talked", sort: "social_posts", window: "90d", pageSize: "48" }));
     for (const row of talked.rows) expect(row.sentiment.classified + row.sentiment.unknown).toBeGreaterThanOrEqual(0);
     expect(talked.total).toBeLessThanOrEqual(all.total);
+    const dated = await listCardExplorerPage(db, parseExplorerQuery({ releasedFrom: "1990-01-01", releasedTo: "2100-01-01" }));
+    const none = await listCardExplorerPage(db, parseExplorerQuery({ releasedFrom: "2099-01-01" }));
+    expect(dated.total).toBeLessThanOrEqual(all.total);
+    expect(none.total).toBe(0);
   });
   it("pages through ties exactly as one whole-catalog sort would", async () => {
     const db = appConn!.db;

@@ -125,6 +125,10 @@ export type ExplorerQuery = {
   priceCurrency?: string;
   minPrice?: number;
   maxPrice?: number;
+  /** Set release day on or after this date (YYYY-MM-DD). */
+  releasedFrom?: string;
+  /** Set release day on or before this date (YYYY-MM-DD). */
+  releasedTo?: string;
   view: ExplorerView;
   sort: ExplorerSort;
   window: ExplorerWindow;
@@ -163,6 +167,14 @@ function bounded(value: string | string[] | undefined, min: number, max: number)
   const n = Number(raw);
   if (!Number.isFinite(n) || n < min || n > max) return undefined;
   return n;
+}
+
+/** A calendar day as YYYY-MM-DD, or undefined when it is not a real date. */
+function isoDay(value: string | string[] | undefined): string | undefined {
+  const raw = first(value);
+  if (!raw || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) return undefined;
+  const date = new Date(`${raw}T00:00:00Z`);
+  return Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== raw ? undefined : raw;
 }
 
 function oneOf<T extends string>(value: string | string[] | undefined, allowed: readonly T[], fallback: T): T {
@@ -210,6 +222,8 @@ export function parseExplorerQuery(raw: RawParams): ExplorerQuery {
     priceCurrency: currencyOk ? priceCurrency : undefined,
     minPrice: currencyOk ? bounded(raw.minPrice, 0, 1e9) : undefined,
     maxPrice: currencyOk ? bounded(raw.maxPrice, 0, 1e9) : undefined,
+    releasedFrom: isoDay(raw.releasedFrom),
+    releasedTo: isoDay(raw.releasedTo),
     view: oneOf(raw.view, EXPLORER_VIEWS, EXPLORER_DEFAULTS.view),
     sort: oneOf(raw.sort, EXPLORER_SORTS, EXPLORER_DEFAULTS.sort),
     window: oneOf(raw.window, EXPLORER_WINDOWS, EXPLORER_DEFAULTS.window),
@@ -240,6 +254,8 @@ export function explorerQueryToSearch(query: ExplorerQuery, overrides: Partial<E
     "priceCurrency",
     "minPrice",
     "maxPrice",
+    "releasedFrom",
+    "releasedTo",
     "sort",
     "window",
     "mode",
@@ -477,6 +493,10 @@ function filterClauses(query: ExplorerQuery): SQL[] {
     // so a card from an unreleased set never lands in a price range.
     clauses.push(sql`(st.release_date IS NULL OR m.observed_at >= st.release_date::timestamp AT TIME ZONE 'UTC')`);
   }
+  // Cards from sets released in a date range. Sets with no known release day
+  // (One Piece, Dragon Ball for now) never match a date range.
+  if (query.releasedFrom) clauses.push(sql`st.release_date >= ${query.releasedFrom}::date`);
+  if (query.releasedTo) clauses.push(sql`st.release_date <= ${query.releasedTo}::date`);
   if (query.q) {
     const pattern = likePattern(query.q);
     const exact = query.q.toLowerCase();

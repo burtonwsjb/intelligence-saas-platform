@@ -4635,6 +4635,10 @@ button[disabled] {
   font-size: var(--text-s);
 }
 
+.price-inputs input[type="date"] {
+  width: 9.5rem;
+}
+
 .price-inputs input:focus {
   outline: none;
   border-color: var(--accent);

@@ -146,6 +146,28 @@ export function FilterBar({ query, facets, basePath }: { query: ExplorerQuery; f
             </Link>
           ) : null}
         </div>
+        <div className="quick-picks" aria-label="Release date">
+          <span className="quick-picks-label">Released</span>
+          <span className="price-inputs">
+            <label>
+              <span className="visually-hidden">Released on or after</span>
+              <input name="releasedFrom" type="date" defaultValue={query.releasedFrom ?? ""} />
+            </label>
+            <span aria-hidden="true">to</span>
+            <label>
+              <span className="visually-hidden">Released on or before</span>
+              <input name="releasedTo" type="date" defaultValue={query.releasedTo ?? ""} />
+            </label>
+          </span>
+          {query.releasedFrom || query.releasedTo ? (
+            <Link
+              className="text-link"
+              href={`${basePath}${explorerQueryToSearch(query, { releasedFrom: undefined, releasedTo: undefined, page: 1 })}`}
+            >
+              Any date
+            </Link>
+          ) : null}
+        </div>
         <div className="filter-row">
           <label className="field grow">
             Search
@@ -326,5 +348,7 @@ const CLEARED: Partial<ExplorerQuery> = {
   priceCurrency: undefined,
   minPrice: undefined,
   maxPrice: undefined,
+  releasedFrom: undefined,
+  releasedTo: undefined,
   page: 1,
 };

@@ -63,6 +63,14 @@ describe("explorer query parsing", () => {
     expect(parseExplorerQuery({ view: "talked" }).view).toBe("talked");
   });
 
+  it("keeps real release dates only", () => {
+    const query = parseExplorerQuery({ releasedFrom: "2024-01-01", releasedTo: "2025-02-30" });
+    expect(query.releasedFrom).toBe("2024-01-01");
+    expect(query.releasedTo).toBeUndefined();
+    expect(parseExplorerQuery({ releasedTo: "2025'; drop" }).releasedTo).toBeUndefined();
+    expect(explorerQueryToSearch(query)).toBe("?releasedFrom=2024-01-01");
+  });
+
   it("keeps price bounds with their currency and round-trips URL state", () => {
     const query = parseExplorerQuery({ priceCurrency: "usd", minPrice: "5", view: "caution", mode: "table", page: "3" });
     expect(query.priceCurrency).toBe("USD");
